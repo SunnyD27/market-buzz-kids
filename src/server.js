@@ -5,6 +5,7 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateDigest } from './generate.js';
 import { storage } from './storage.js';
+import { renderConsentEmail, renderVerifyEmail, sendEmail } from './emails.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -129,13 +130,24 @@ app.post('/api/signup', (req, res) => {
     signup_ip:    req.ip,
   });
 
-  // Phase 5 stub: the consent / verify URL would be emailed in Phase 6.
-  // For now, log it to the server console so the dev can click through.
+  // Build the verify / consent URL and render the email.
+  // Phase 5: emails are logged to console by sendEmail() — clickable.
+  // Phase 6: same call site, sendEmail() will use Resend.
   const linkPath = tokenRow.purpose === 'parental_consent'
     ? `/api/consent?token=${tokenRow.token}`
     : `/api/verify?token=${tokenRow.token}`;
   const linkURL = `${req.protocol}://${req.get('host')}${linkPath}`;
-  console.log(`[signup] ${tokenRow.purpose} link for ${user.parent_email}: ${linkURL}`);
+
+  const email = tokenRow.purpose === 'parental_consent'
+    ? renderConsentEmail(user, linkURL)
+    : renderVerifyEmail(user, linkURL);
+
+  // Fire-and-forget — we don't block the response on email delivery, and we
+  // don't want a transient send failure to look like a signup failure to the
+  // parent. Phase 6 should add a retry queue.
+  sendEmail({ to: user.parent_email, ...email }).catch(err =>
+    console.error('[signup] sendEmail failed:', err)
+  );
 
   return res.status(200).json({
     ok: true,
@@ -146,6 +158,98 @@ app.post('/api/signup', (req, res) => {
       : 'Verification email queued.',
   });
 });
+
+// ============================================================
+// API — verify email (ages 13-16) + parental consent (ages 10-12)
+// ============================================================
+// Both endpoints are GETs because they're clicked from emails. Both share
+// the same activation page (it's HTML, not JSON, since a parent reaches it
+// via their browser).
+
+app.get('/api/verify', (req, res) => {
+  handleTokenClick(req, res, 'email_verify');
+});
+app.get('/api/consent', (req, res) => {
+  handleTokenClick(req, res, 'parental_consent');
+});
+
+function handleTokenClick(req, res, expectedPurpose) {
+  const token = String(req.query.token || '');
+  if (!token) {
+    return res.status(400).type('html').send(activationPage({ ok: false, reason: 'missing_token' }));
+  }
+  const result = storage.consumeToken(token, { ip: req.ip });
+  if (!result.ok) {
+    return res.status(400).type('html').send(activationPage({ ok: false, reason: result.reason }));
+  }
+  // If the token purpose doesn't match the endpoint (e.g. someone hits
+  // /api/consent with an email_verify token), still treat it as activation
+  // since both endpoints just consume tokens — but log it for visibility.
+  if (result.token.purpose !== expectedPurpose) {
+    console.warn(`[token] mismatched endpoint: expected ${expectedPurpose}, got ${result.token.purpose}`);
+  }
+  return res.status(200).type('html').send(activationPage({
+    ok: true,
+    action: result.action,
+    user: result.user,
+  }));
+}
+
+function activationPage({ ok, reason, action, user }) {
+  const isOk = ok === true;
+  let title, message, hint;
+  if (isOk) {
+    if (action === 'consent_granted') {
+      title = "🎉 Consent confirmed!";
+      message = `Thanks. <strong>${escapeHTML(user.kid_first_name)}</strong>'s account is now active. The first daily digest arrives tomorrow at 7&nbsp;AM EST.`;
+      hint = 'You can request data deletion anytime at <a href="/parent/delete-data" style="color:#58a6ff;">/parent/delete-data</a>.';
+    } else {
+      title = "✅ Email confirmed!";
+      message = `Thanks. <strong>${escapeHTML(user.kid_first_name)}</strong>'s account is now active. The first daily digest arrives tomorrow at 7&nbsp;AM EST.`;
+      hint = 'You can request data deletion anytime at <a href="/parent/delete-data" style="color:#58a6ff;">/parent/delete-data</a>.';
+    }
+  } else {
+    const reasons = {
+      not_found:     'This activation link is invalid or has already been used.',
+      already_used:  'This link has already been used. Your account should already be active.',
+      expired:       'This activation link has expired (links are valid for 7 days). Please sign up again.',
+      user_missing:  'The associated account no longer exists.',
+      missing_token: 'No activation token provided.',
+    };
+    title = "Couldn't activate";
+    message = reasons[reason] || 'Something went wrong.';
+    hint = '<a href="/" style="color:#58a6ff;">Return to the signup page →</a>';
+  }
+  return `<!DOCTYPE html>
+<html><head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>${escapeHTML(title.replace(/^[^a-zA-Z]+/, ''))} — Market Buzz Kids</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
+<style>
+  body { background:#0d1117;color:#e6edf3;font-family:'Fredoka',sans-serif;
+         display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px; }
+  .card { max-width:540px;background:#161b22;border:1px solid #21262d;border-radius:20px;padding:36px 28px; }
+  h1 { font-size:36px;margin-bottom:14px;color:#fff;letter-spacing:-0.5px; }
+  p  { font-size:17px;line-height:1.55;color:#e6edf3;margin-bottom:12px; }
+  .hint { font-size:13px;color:#8b949e;margin-top:20px; }
+  .cta { display:inline-block;margin-top:18px;padding:12px 22px;border-radius:999px;
+         background:linear-gradient(135deg,#bc8cff,#58a6ff);color:#fff;text-decoration:none;font-weight:700;
+         min-height:44px; }
+  .cta:hover { transform:translateY(-1px); }
+</style></head><body>
+<div class="card">
+  <h1>${title}</h1>
+  <p>${message}</p>
+  <p class="hint">${hint}</p>
+  ${isOk ? '<a class="cta" href="/digest">See today\'s digest →</a>' : ''}
+</div>
+</body></html>`;
+}
+
+function escapeHTML(s) {
+  return String(s == null ? '' : s).replace(/[&<>"']/g, c =>
+    ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+}
 
 function slice120(v) {
   return typeof v === 'string' ? v.slice(0, 120) : null;
