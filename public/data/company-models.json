@@ -1,0 +1,335 @@
+[
+  {
+    "ticker": "GOOGL",
+    "name": "Google",
+    "emoji": "🔎",
+    "shortModel": "Makes most of its money showing ads — mostly on Google Search and YouTube.",
+    "surprise": "Google ads bring in over $200 billion a year. The 'free' search isn't free — advertisers pay every time someone clicks.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "META",
+    "name": "Meta (Instagram & Facebook)",
+    "emoji": "📱",
+    "shortModel": "Nearly all of its money comes from ads in Instagram and Facebook feeds.",
+    "surprise": "About 98% of Meta's revenue is advertising. You are not the customer — advertisers are.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "AAPL",
+    "name": "Apple",
+    "emoji": "📱",
+    "shortModel": "Sells iPhones — and takes a cut of every app and subscription sold on those phones.",
+    "surprise": "Apple's Services (App Store, iCloud, Apple Music) make more profit than the Mac and iPad combined.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "MSFT",
+    "name": "Microsoft",
+    "emoji": "💻",
+    "shortModel": "Sells monthly subscriptions to Office/365 and rents out cloud computing power through Azure.",
+    "surprise": "Microsoft barely sells 'boxed software' anymore — almost everything is a subscription.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "AMZN",
+    "name": "Amazon",
+    "emoji": "📦",
+    "shortModel": "Online store sales are the biggest revenue, but its cloud business (AWS) earns most of the profit.",
+    "surprise": "AWS rents servers to companies like Netflix, Airbnb, and the U.S. government — it makes way more profit than shipping packages.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "NFLX",
+    "name": "Netflix",
+    "emoji": "🍿",
+    "shortModel": "Charges a monthly subscription to stream shows and movies.",
+    "surprise": "Netflix spends about $17 billion a year on making and licensing content. That's their #1 cost.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "TSLA",
+    "name": "Tesla",
+    "emoji": "🚗",
+    "shortModel": "Sells electric cars — mostly the Model Y and Model 3.",
+    "surprise": "Tesla also sells 'regulatory credits' to other carmakers who can't meet emissions rules. That's pure profit.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "NVDA",
+    "name": "Nvidia",
+    "emoji": "🧠",
+    "shortModel": "Sells the chips that power AI and video games. Data centers are now their biggest customer.",
+    "surprise": "Nvidia chips used to be mostly for gaming. Now AI companies buy so many chips, gaming is a smaller slice of the business.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "V",
+    "name": "Visa",
+    "emoji": "💳",
+    "shortModel": "Takes a tiny percentage of every credit/debit card swipe — billions of times a day.",
+    "surprise": "Visa doesn't lend money or issue cards. Banks do that. Visa just runs the network — and earns a fee on every transaction.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "MA",
+    "name": "Mastercard",
+    "emoji": "💳",
+    "shortModel": "Takes a tiny percentage of every card transaction it processes — just like Visa.",
+    "surprise": "Visa and Mastercard together handle most of the world's card payments. They don't lend money — they just run the rails.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "KO",
+    "name": "Coca-Cola",
+    "emoji": "🥤",
+    "shortModel": "Sells concentrated syrup to bottling companies — Coca-Cola the company doesn't actually deliver soda to stores.",
+    "surprise": "The famous red truck? That's a bottler, not Coke itself. Coca-Cola the company is mainly a giant syrup supplier.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "MCD",
+    "name": "McDonald's",
+    "emoji": "🍔",
+    "shortModel": "Most McDonald's are owned by franchisees — McDonald's collects rent and royalties from them.",
+    "surprise": "McDonald's is basically a giant real-estate company. They own the land and buildings and rent them to franchisees.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "SBUX",
+    "name": "Starbucks",
+    "emoji": "☕",
+    "shortModel": "Sells coffee directly at thousands of company-owned stores around the world.",
+    "surprise": "Unlike McDonald's, Starbucks owns and runs most of its stores itself — that's a very different business model.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "CMG",
+    "name": "Chipotle",
+    "emoji": "🌯",
+    "shortModel": "Sells burritos and bowls at company-owned restaurants — Chipotle doesn't franchise.",
+    "surprise": "Every single Chipotle in the world is owned by Chipotle the company. No franchisees.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "DPZ",
+    "name": "Domino's Pizza",
+    "emoji": "🍕",
+    "shortModel": "Most stores are franchised — Domino's the company makes money from royalties plus selling dough and supplies to franchisees.",
+    "surprise": "Domino's also runs a huge dough-making and supply business, selling ingredients to its own franchisees.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "DASH",
+    "name": "DoorDash",
+    "emoji": "🛵",
+    "shortModel": "Takes a cut (around 25-30%) of every food delivery order it processes for restaurants.",
+    "surprise": "Restaurants pay DoorDash a big chunk of every order. That's why delivery is so much more expensive than dine-in.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "UBER",
+    "name": "Uber",
+    "emoji": "🚙",
+    "shortModel": "Takes a cut of every ride and every Uber Eats food delivery — it doesn't own the cars.",
+    "surprise": "Uber doesn't own a single car. Drivers own them. Uber just runs the app that connects riders to drivers.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "ABNB",
+    "name": "Airbnb",
+    "emoji": "🏠",
+    "shortModel": "Takes a service fee on every booking — Airbnb doesn't own any of the houses.",
+    "surprise": "Airbnb owns zero properties. They just run the marketplace and take a cut from both the host and the guest.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "SPOT",
+    "name": "Spotify",
+    "emoji": "🎧",
+    "shortModel": "Monthly subscriptions for ad-free music — plus ads played to free-tier listeners.",
+    "surprise": "Spotify pays about 70 cents of every dollar to music labels and artists. That's why they keep raising prices.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "RBLX",
+    "name": "Roblox",
+    "emoji": "🎮",
+    "shortModel": "Roblox takes a cut every time someone buys Robux to spend in games other kids made.",
+    "surprise": "Roblox itself doesn't make most of the games. Kid developers do — and Roblox keeps a big slice of every purchase.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "EA",
+    "name": "EA Sports",
+    "emoji": "🏈",
+    "shortModel": "Sells sports games like Madden, FIFA (EA Sports FC), and NHL — plus in-game purchases for Ultimate Team.",
+    "surprise": "EA makes more money from Ultimate Team card packs than from selling the games themselves.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "TTWO",
+    "name": "Take-Two Interactive",
+    "emoji": "🎮",
+    "shortModel": "Makes blockbuster games like Grand Theft Auto and NBA 2K — plus in-game purchases.",
+    "surprise": "GTA V (released in 2013) is still one of the highest-earning entertainment products ever made — over $8 billion.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "NTDOY",
+    "name": "Nintendo",
+    "emoji": "🎮",
+    "shortModel": "Sells the Switch console and first-party games like Mario, Zelda, and Pokémon.",
+    "surprise": "Nintendo barely makes money on hardware. The Switch's profit really comes from the games — Mario Kart 8 has sold over 60 million copies.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "DIS",
+    "name": "Disney",
+    "emoji": "🏰",
+    "shortModel": "Theme parks, cruises, and resort tickets are now Disney's largest profit source — bigger than movies.",
+    "surprise": "When a hit Disney movie comes out, it really pays off years later: as a parks ride, merch, and a Disney+ show.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "NKE",
+    "name": "Nike",
+    "emoji": "👟",
+    "shortModel": "Designs and sells athletic shoes and clothing — through its own stores, its app, and retail partners.",
+    "surprise": "Nike doesn't run the factories that make its shoes. Other companies do, and Nike pays them. Nike focuses on design and brand.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "COST",
+    "name": "Costco",
+    "emoji": "🛒",
+    "shortModel": "Most of Costco's profit comes from membership fees — not from the markup on items it sells.",
+    "surprise": "Costco sells stuff at almost zero markup. The annual membership fee is the real moneymaker.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "WMT",
+    "name": "Walmart",
+    "emoji": "🏬",
+    "shortModel": "Sells groceries and general merchandise at thin margins — but at enormous scale (the U.S.'s biggest grocer).",
+    "surprise": "Walmart is the largest private employer in the U.S. — about 1.6 million American workers.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "SHOP",
+    "name": "Shopify",
+    "emoji": "🛍️",
+    "shortModel": "Monthly subscriptions to small businesses to run their online stores — plus a cut of payments processed through Shopify.",
+    "surprise": "Lots of brands you see on Instagram and TikTok ads are actually running on Shopify behind the scenes.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "PYPL",
+    "name": "PayPal",
+    "emoji": "💸",
+    "shortModel": "Takes a small fee on each payment processed through PayPal or Venmo.",
+    "surprise": "PayPal owns Venmo. The 'free' Venmo payments to friends are free — but PayPal makes money from businesses that accept Venmo.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "HOOD",
+    "name": "Robinhood",
+    "emoji": "🏹",
+    "shortModel": "Doesn't charge trade commissions — earns money by routing your trade orders to big trading firms and on interest from your cash.",
+    "surprise": "Robinhood trades feel 'free' but the app is paid by Wall Street firms in exchange for routing your orders to them.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "COIN",
+    "name": "Coinbase",
+    "emoji": "🪙",
+    "shortModel": "Charges a fee every time someone buys or sells crypto on its platform.",
+    "surprise": "When crypto prices crash, Coinbase makes a lot less money — because fewer people trade. The business goes up and down with crypto hype.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "ADBE",
+    "name": "Adobe",
+    "emoji": "🖌️",
+    "shortModel": "Monthly subscriptions to creative software like Photoshop, Illustrator, and Acrobat (PDFs).",
+    "surprise": "Adobe stopped selling Photoshop as a one-time purchase years ago. Now everyone has to pay every month, forever.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "CRM",
+    "name": "Salesforce",
+    "emoji": "📊",
+    "shortModel": "Sells subscriptions to giant business software that tracks customers (CRM = Customer Relationship Management).",
+    "surprise": "Almost every Fortune 500 company uses Salesforce. That's a huge moat — companies hate switching once it's installed.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "JPM",
+    "name": "JPMorgan Chase",
+    "emoji": "🏦",
+    "shortModel": "Makes money lending out customers' deposits at higher rates than it pays them — plus investment banking fees.",
+    "surprise": "Every dollar deposited in a Chase account isn't sitting in a vault. The bank lends most of it out to other people.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "GS",
+    "name": "Goldman Sachs",
+    "emoji": "💼",
+    "shortModel": "Investment banking — helping huge companies buy each other, go public (IPO), and trade securities.",
+    "surprise": "Goldman doesn't take regular checking accounts like Chase does. It mainly serves big companies and rich people.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "PG",
+    "name": "Procter & Gamble",
+    "emoji": "🧴",
+    "shortModel": "Owns dozens of household brands (Tide, Pampers, Gillette, Crest) and sells them to retailers like Walmart and Target.",
+    "surprise": "You probably use 5+ P&G products before lunch and don't even know it — Tide, Crest, Pampers, Bounty, Gillette are all theirs.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "LYV",
+    "name": "Live Nation",
+    "emoji": "🎤",
+    "shortModel": "Concert tickets (it owns Ticketmaster) plus sponsorships and concession sales at venues.",
+    "surprise": "Live Nation owns Ticketmaster — that's why those service fees on concert tickets feel so big.",
+    "principle": 4,
+    "confidence": "high"
+  }
+]
