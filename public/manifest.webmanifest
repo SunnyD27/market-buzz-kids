@@ -2,7 +2,7 @@
   "name": "Market Buzz Kids",
   "short_name": "Market Buzz",
   "description": "The daily stock market cheat code for kids — games, stories, and lessons in 3 minutes a day.",
-  "start_url": "/",
+  "start_url": "/digest",
   "scope": "/",
   "display": "standalone",
   "orientation": "portrait-primary",
