@@ -1,0 +1,250 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>Market Buzz Kids — Games Preview</title>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/engagement.css">
+<link rel="stylesheet" href="/games/styles.css">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  :root {
+    --bg: #0d1117; --card: #161b22; --card-border: #21262d;
+    --green: #3fb950; --green-glow: rgba(63,185,80,0.15);
+    --red: #f85149; --red-glow: rgba(248,81,73,0.15);
+    --blue: #58a6ff; --blue-glow: rgba(88,166,255,0.12);
+    --purple: #bc8cff; --yellow: #f0c040; --yellow-glow: rgba(240,192,64,0.12);
+    --text: #e6edf3; --text-dim: #8b949e; --text-bright: #ffffff;
+    --orange: #f0883e;
+  }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: 'Fredoka', sans-serif;
+    min-height: 100vh; padding: 20px 16px 60px;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .preview-container { max-width: 680px; margin: 0 auto; }
+  .preview-header {
+    text-align: center; margin-bottom: 20px;
+  }
+  .preview-header h1 {
+    font-size: 24px; font-weight: 700; color: var(--text-bright);
+    background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow));
+    -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .preview-header p { color: var(--text-dim); margin-top: 4px; font-size: 13px; }
+  .preview-nav {
+    display: flex; flex-wrap: wrap; gap: 8px;
+    justify-content: center; margin: 16px 0 22px;
+  }
+  .preview-nav a {
+    padding: 8px 14px;
+    background: var(--card);
+    border: 1px solid var(--card-border);
+    border-radius: 999px;
+    color: var(--text);
+    text-decoration: none;
+    font-size: 13px; font-weight: 600;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  .preview-nav a:hover, .preview-nav a.active {
+    border-color: var(--purple); background: rgba(188,140,255,0.12); color: var(--text-bright);
+  }
+  .preview-nav a.disabled {
+    opacity: 0.4; pointer-events: none; color: var(--text-dim);
+  }
+  .preview-nav a.disabled::after { content: " (soon)"; font-size: 11px; opacity: 0.7; }
+  .preview-tools {
+    display: flex; gap: 8px; justify-content: center;
+    margin-bottom: 14px;
+  }
+  .preview-tools button {
+    background: rgba(248,81,73,0.10); border: 1px solid rgba(248,81,73,0.35);
+    color: var(--red); padding: 6px 12px; border-radius: 8px;
+    font-family: 'Fredoka', sans-serif; font-size: 12px; cursor: pointer;
+  }
+  .preview-tools .info {
+    font-family: 'Space Mono', monospace; font-size: 11px;
+    color: var(--text-dim); display: flex; align-items: center; padding: 0 8px;
+  }
+  /* Profile bar styling (re-uses engagement.css) */
+  #investor-profile { margin: 0 0 16px; }
+</style>
+</head>
+<body>
+
+<div class="preview-container">
+
+  <div class="preview-header">
+    <h1>🎮 Market Buzz Kids — Games Preview</h1>
+    <p>Each game runs standalone with sample data so you can review it before it ships into the daily digest.</p>
+  </div>
+
+  <!-- Engagement profile bar shows XP / streak as you play -->
+  <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
+
+  <div class="preview-nav" id="gameNav">
+    <!-- Built games -->
+    <a href="?game=compound" data-game="compound">Compound Interest</a>
+    <!-- Coming up (disabled until each is built and shown to Sunny for review) -->
+    <a href="?game=match"          data-game="match"          class="disabled" aria-disabled="true">Match the Company</a>
+    <a href="?game=time-machine"   data-game="time-machine"   class="disabled" aria-disabled="true">Time Machine</a>
+    <a href="?game=bull-bear"      data-game="bull-bear"      class="disabled" aria-disabled="true">Bull or Bear</a>
+    <a href="?game=price-is-right" data-game="price-is-right" class="disabled" aria-disabled="true">Price is Right</a>
+  </div>
+
+  <div class="preview-tools">
+    <button onclick="resetEngagement()">⟲ Reset XP/streak</button>
+    <button onclick="reloadSample()">🔄 New sample</button>
+    <span class="info" id="stateInfo"></span>
+  </div>
+
+  <div id="gameHost"></div>
+
+  <p style="text-align:center; font-size:12px; color:var(--text-dim); margin-top:30px; line-height:1.6;">
+    These are isolated previews. Production games will be wired into the Daily Challenge picker
+    in the main digest. XP/streak persists across reloads (localStorage).
+  </p>
+
+</div>
+
+<script src="/engagement.js"></script>
+<script src="/games/shared.js"></script>
+<!-- Game modules are loaded lazily by the script below based on ?game= param -->
+<script>
+(function () {
+  const params = new URLSearchParams(location.search);
+  const game = params.get('game') || 'compound';
+
+  // Highlight active tab
+  document.querySelectorAll('#gameNav a').forEach(a => {
+    if (a.dataset.game === game) a.classList.add('active');
+  });
+
+  const host = document.getElementById('gameHost');
+
+  function loadScript(src) {
+    return new Promise((resolve, reject) => {
+      const s = document.createElement('script');
+      s.src = src; s.onload = resolve; s.onerror = reject;
+      document.head.appendChild(s);
+    });
+  }
+
+  function refreshStateInfo() {
+    if (!window.MarketBuzz) return;
+    const s = window.MarketBuzz.getState();
+    document.getElementById('stateInfo').textContent =
+      `XP ${s.xp} · 🔥 ${s.streak} · 🛡️ ${s.shields} · today's games: ${s.today.gamesPlayed.length}/3`;
+  }
+  setInterval(refreshStateInfo, 500);
+
+  // Game-launch table — each entry knows which JS to load + how to produce sample data.
+  const launchers = {
+    'compound': async () => {
+      await loadScript('/games/compound.js');
+      window.MBGames.compound.render(host, sampleCompound(), { onComplete });
+    },
+    'match': async () => {
+      await loadScript('/games/match.js');
+      const data = await sampleMatch();
+      window.MBGames.match.render(host, data, { onComplete });
+    },
+    'time-machine': async () => {
+      await loadScript('/games/time-machine.js');
+      const data = await sampleTimeMachine();
+      window.MBGames['time-machine'].render(host, data, { onComplete });
+    },
+    'bull-bear': async () => {
+      await loadScript('/games/bull-bear.js');
+      const data = await sampleBullBear();
+      window.MBGames['bull-bear'].render(host, data, { onComplete });
+    },
+    'price-is-right': async () => {
+      await loadScript('/games/price-is-right.js');
+      window.MBGames['price-is-right'].render(host, samplePriceIsRight(), { onComplete });
+    },
+  };
+
+  function onComplete(result) {
+    if (window.MarketBuzz) {
+      window.MarketBuzz.recordGamePlayed(game, result || {});
+    }
+    refreshStateInfo();
+  }
+
+  // ---- Sample data factories ----
+  // These mimic what the daily generator will hand each game in production.
+
+  function sampleCompound() {
+    const seeds = [
+      { id:'birthday-50',  amount: 50,   framing: "🎂 You got <strong>$50</strong> for your birthday. Instead of spending it, you invested it." },
+      { id:'allowance',    amount: 260,  framing: "💰 You saved <strong>$5 a week</strong> from your allowance for a year — that's $260." },
+      { id:'newborn',      amount: 1000, framing: "👶 Imagine someone invested <strong>$1,000</strong> for you the day you were born." },
+      { id:'odd-job',      amount: 200,  framing: "🛠️ You earned <strong>$200</strong> mowing lawns this summer." },
+    ];
+    return seeds[Math.floor(Math.random() * seeds.length)];
+  }
+
+  async function sampleMatch() {
+    const res = await fetch('/data/company-models.json');
+    const all = await res.json();
+    const four = window.MBGames.shared.shuffle(all).slice(0, 4);
+    return { companies: four };
+  }
+
+  async function sampleTimeMachine() {
+    const res = await fetch('/data/time-machine-prices.json');
+    const all = await res.json();
+    const scenario = all[Math.floor(Math.random() * all.length)];
+    return scenario;
+  }
+
+  async function sampleBullBear() {
+    const res = await fetch('/data/historical-charts.json');
+    const all = await res.json();
+    return all[Math.floor(Math.random() * all.length)];
+  }
+
+  function samplePriceIsRight() {
+    // In production, the daily generator pulls a live FMP quote. For preview
+    // we hardcode a recent-ish ballpark and let the game show real-price vs
+    // options at play time.
+    const samples = [
+      { ticker:'DIS',  name:'Disney',     realPrice: 95.40 },
+      { ticker:'NKE',  name:'Nike',       realPrice: 75.20 },
+      { ticker:'SBUX', name:'Starbucks',  realPrice: 87.50 },
+      { ticker:'RBLX', name:'Roblox',     realPrice: 56.10 },
+      { ticker:'CMG',  name:'Chipotle',   realPrice: 52.30 },
+    ];
+    return samples[Math.floor(Math.random() * samples.length)];
+  }
+
+  window.resetEngagement = function () {
+    if (window.MarketBuzz) window.MarketBuzz._debugReset();
+    refreshStateInfo();
+    // Reload to clear any in-progress game state too.
+    location.reload();
+  };
+  window.reloadSample = function () { location.reload(); };
+
+  // Wait for MarketBuzz init to register, then launch.
+  function launch() {
+    const fn = launchers[game];
+    if (!fn) {
+      host.innerHTML = '<div class="mbg-card"><div class="mbg-title">Unknown game: ' + game + '</div></div>';
+      return;
+    }
+    fn().catch(err => {
+      host.innerHTML = '<div class="mbg-card"><div class="mbg-title">Failed to load ' + game + '</div><pre style="color:var(--red); font-size:12px; white-space:pre-wrap;">' + (err && err.stack || err) + '</pre><p style="color:var(--text-dim); font-size:12px; margin-top:10px;">If a dataset is missing, that game just hasn\'t been built yet. Try another tab.</p></div>';
+    });
+  }
+
+  if (window.MarketBuzz) launch();
+  else document.addEventListener('DOMContentLoaded', launch);
+})();
+</script>
+
+</body>
+</html>
