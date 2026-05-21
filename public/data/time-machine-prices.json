@@ -1,0 +1,365 @@
+[
+  {
+    "id": "obvious-winner-2007",
+    "year": 2007,
+    "anchor": "January 2007",
+    "framing": "It's January 2007. Apple is about to announce something called the iPhone. Nokia phones outsell every competitor. Microsoft is the boring giant. Google is the new tech king.",
+    "lessonHeadline": "The obvious winner wasn't always obvious",
+    "lessonBody": "<p>In January 2007, Nokia was the #1 phone maker in the world — by a lot. Apple had no phone business yet. Within 5 years, Nokia's smartphone business was gone, sold to Microsoft for scraps. The 'safe' pick turned out to be the worst one.</p><p>Microsoft looked sleepy. It quietly built cloud computing (Azure) and turned into one of the most valuable companies on Earth — about a 14× return.</p><p>Apple delivered the legendary iPhone return. Google delivered too. But picking which of these would win — and which would die — was almost impossible from January 2007.</p><p><strong>That's exactly why diversification matters.</strong> If you'd bought all 4 in equal amounts, you'd still have crushed the market — because the winners' gains outweigh the losers' losses.</p>",
+    "principle": 2,
+    "choices": [
+      {
+        "ticker": "AAPL",
+        "name": "Apple",
+        "priceThen": 85,
+        "asOf": "Jan 9, 2007 close (the day iPhone was unveiled)",
+        "splitFactor": 28,
+        "status": "active",
+        "approxNow": 215,
+        "eventNote": "Was about to announce the iPhone, but the market didn't know what would happen."
+      },
+      {
+        "ticker": "GOOGL",
+        "name": "Google",
+        "priceThen": 460,
+        "asOf": "Jan 2007 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 175,
+        "eventNote": "Already dominant in search. Hot stock everyone wanted."
+      },
+      {
+        "ticker": "NOK",
+        "name": "Nokia",
+        "priceThen": 21,
+        "asOf": "Jan 2007 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 4.20,
+        "eventNote": "World's #1 phone maker. Looked unstoppable."
+      },
+      {
+        "ticker": "MSFT",
+        "name": "Microsoft",
+        "priceThen": 31,
+        "asOf": "Jan 2007 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 425,
+        "eventNote": "The 'boring' tech giant. Most people thought its best days were behind it."
+      }
+    ]
+  },
+
+  {
+    "id": "survivors-2010",
+    "year": 2010,
+    "anchor": "January 2010",
+    "framing": "It's January 2010. Streaming is just starting. BlackBerrys are everywhere — every executive has one. Blockbuster Video has 4,000 stores in the U.S.",
+    "lessonHeadline": "Sometimes the household name doesn't survive",
+    "lessonBody": "<p>Blockbuster filed for bankruptcy just 9 months later, in September 2010. Stores closed. Shares became worthless. <strong>If you'd put your $1,000 there, you'd have $0.</strong></p><p>BlackBerry lost its smartphone empire to the iPhone within 5 years. Down ~94% to today.</p><p>Apple kept making iPhones. Netflix pivoted from mailing DVDs to streaming, then to making its own shows. Both grew enormously.</p><p>The scary lesson: in 2010, Blockbuster and BlackBerry were brands every kid recognized. They felt safer than the 'new' tech. <strong>Familiarity is not the same as safety.</strong></p>",
+    "principle": 5,
+    "choices": [
+      {
+        "ticker": "AAPL",
+        "name": "Apple",
+        "priceThen": 30.57,
+        "asOf": "Jan 4, 2010 close",
+        "splitFactor": 28,
+        "status": "active",
+        "approxNow": 215,
+        "eventNote": "iPad was about to launch. Everyone loved the iPhone but worried Apple was overvalued."
+      },
+      {
+        "ticker": "NFLX",
+        "name": "Netflix",
+        "priceThen": 54,
+        "asOf": "Jan 2010 close",
+        "splitFactor": 7,
+        "status": "active",
+        "approxNow": 680,
+        "eventNote": "Mostly known for mailing red DVD envelopes. Streaming was just a tiny side feature."
+      },
+      {
+        "ticker": "BB",
+        "name": "BlackBerry (then RIM)",
+        "priceThen": 68,
+        "asOf": "Jan 2010 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 3.80,
+        "eventNote": "Every executive in America had a BlackBerry. Considered the gold standard."
+      },
+      {
+        "ticker": "BBI",
+        "name": "Blockbuster Video",
+        "priceThen": 0.45,
+        "asOf": "Jan 2010 close",
+        "splitFactor": 1,
+        "status": "bankrupt",
+        "finalMultiplier": 0,
+        "outcomeNote": "Filed Chapter 11 bankruptcy in September 2010. Stores closed nationwide by 2014. Shares became worthless."
+      }
+    ]
+  },
+
+  {
+    "id": "ipo-year-2012",
+    "year": 2012,
+    "anchor": "End of 2012",
+    "framing": "It's December 2012. Facebook just had its huge IPO in May — the stock dropped 50% in its first months, then started recovering. Google and Amazon are already giants. Yahoo's search business is bleeding users to Google.",
+    "lessonHeadline": "Hype is dangerous — even on stocks that eventually win",
+    "lessonBody": "<p>Facebook's IPO was hyped as the deal of the decade. Then the stock CRASHED — down 50% in its first 4 months. Anyone who bought at the IPO and panicked sold lost a ton. Anyone who held on... made about 19× by today.</p><p>Yahoo's story is wild. The search business kept losing. But in 2005, Yahoo had bought a 40% stake in a Chinese company called Alibaba. By the time Yahoo's pieces were sold off (Verizon bought the core in 2017, the Alibaba stake spun off into Altaba), shareholders had roughly tripled their money — not from search, but from one brilliant decision a decade earlier.</p><p>Google and Amazon? Both just kept growing.</p><p><strong>Lesson: don't gamble on the hype. Buy companies you understand and HOLD them.</strong> Facebook's biggest threat to investors wasn't the company — it was their own panic.</p>",
+    "principle": 7,
+    "choices": [
+      {
+        "ticker": "META",
+        "name": "Facebook (now Meta)",
+        "priceThen": 26.62,
+        "asOf": "Dec 31, 2012 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 510,
+        "eventNote": "IPO'd at $38 in May, dropped to $18 within months. Recovered to ~$27 by year-end."
+      },
+      {
+        "ticker": "GOOGL",
+        "name": "Google",
+        "priceThen": 354,
+        "asOf": "Dec 31, 2012 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 175,
+        "eventNote": "Already the dominant search and Android force."
+      },
+      {
+        "ticker": "AMZN",
+        "name": "Amazon",
+        "priceThen": 251,
+        "asOf": "Dec 31, 2012 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 195,
+        "eventNote": "Big online store. AWS cloud was growing but not yet famous."
+      },
+      {
+        "ticker": "YHOO",
+        "name": "Yahoo!",
+        "priceThen": 19.95,
+        "asOf": "Dec 31, 2012 close",
+        "splitFactor": 1,
+        "status": "acquired",
+        "finalMultiplier": 3.0,
+        "outcomeNote": "Verizon bought Yahoo's core business in 2017. The remaining stake (mostly Alibaba) became 'Altaba' and was liquidated in 2019. Total return: about 3× — almost entirely from the 2005 Alibaba investment, NOT from Yahoo's search."
+      }
+    ]
+  },
+
+  {
+    "id": "boring-beats-exciting-2014",
+    "year": 2014,
+    "anchor": "January 2014",
+    "framing": "It's January 2014. Apple is huge — but lots of people think it peaked. Amazon is growing like crazy. Coca-Cola is the safe, boring grandma stock. Twitter just IPO'd two months ago and is the hottest social network in the world.",
+    "lessonHeadline": "The exciting story stock is almost never the best investment",
+    "lessonBody": "<p>Twitter looked like the future of communication. Every celebrity, politician, and athlete was on it. Then it just... couldn't grow. The user base stalled. In 2022, Elon Musk bought it and took it private. Anyone holding TWTR stock got cashed out at <strong>less than they paid</strong> in early 2014.</p><p>Coke (boring grandma stock) plodded along — about 1.7× plus dividends. Steady but unspectacular.</p><p>Apple and Amazon? Both delivered massive returns. The 'peak' narrative on Apple was completely wrong.</p><p><strong>Lesson: 'most exciting story' rarely equals 'best investment.'</strong> Investors are paying for a future that has to actually come true — and it usually doesn't, or doesn't quickly enough.</p>",
+    "principle": 7,
+    "choices": [
+      {
+        "ticker": "AAPL",
+        "name": "Apple",
+        "priceThen": 76,
+        "asOf": "Jan 2014 close",
+        "splitFactor": 28,
+        "status": "active",
+        "approxNow": 215,
+        "eventNote": "Many analysts said it had 'peaked' and the best growth was behind it."
+      },
+      {
+        "ticker": "AMZN",
+        "name": "Amazon",
+        "priceThen": 398,
+        "asOf": "Jan 2014 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 195,
+        "eventNote": "Online store growing fast. AWS was a side hustle most people didn't talk about."
+      },
+      {
+        "ticker": "KO",
+        "name": "Coca-Cola",
+        "priceThen": 41,
+        "asOf": "Jan 2014 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 71,
+        "eventNote": "The boring blue-chip your grandma owns. Pays a steady dividend every quarter."
+      },
+      {
+        "ticker": "TWTR",
+        "name": "Twitter",
+        "priceThen": 67,
+        "asOf": "Jan 2014 close",
+        "splitFactor": 1,
+        "status": "acquired",
+        "finalMultiplier": 0.81,
+        "outcomeNote": "Elon Musk bought Twitter in October 2022 at $54.20 per share — less than the early-2014 price. Anyone holding from Jan 2014 lost money. Now operates privately as 'X'."
+      }
+    ]
+  },
+
+  {
+    "id": "boring-beats-exciting-2015",
+    "year": 2015,
+    "anchor": "January 2015",
+    "framing": "It's January 2015. Tesla is the hottest car company on Earth. Costco is the boring warehouse club. Walmart is the slow giant. GoPro just IPO'd and every kid wants one of their cameras for Christmas.",
+    "lessonHeadline": "When a company can't grow past one product, the stock crashes",
+    "lessonBody": "<p>GoPro made an amazing camera. But — they only made cameras. They couldn't expand into other categories. When smartphone cameras got good enough, GoPro had nowhere to go. The stock lost over 95%.</p><p>Tesla was the clear winner here — about 17× — but the ride wasn't smooth. Tesla stock had multiple 50%+ crashes along the way. Most kids would have panic-sold during one of them.</p><p>Costco (boring!) delivered about 6× — better than most tech stocks. Walmart delivered ~3× plus dividends.</p><p><strong>Lesson: ask 'how does this company grow from here?' before buying.</strong> A one-trick pony is fragile, no matter how cool the trick.</p>",
+    "principle": 4,
+    "choices": [
+      {
+        "ticker": "TSLA",
+        "name": "Tesla",
+        "priceThen": 222,
+        "asOf": "Jan 2015 close",
+        "splitFactor": 15,
+        "status": "active",
+        "approxNow": 260,
+        "eventNote": "Just launched the Model S. Everyone called Elon Musk a visionary or a hype-man."
+      },
+      {
+        "ticker": "WMT",
+        "name": "Walmart",
+        "priceThen": 86,
+        "asOf": "Jan 2015 close",
+        "splitFactor": 3,
+        "status": "active",
+        "approxNow": 95,
+        "eventNote": "The boring grocery giant. People worried Amazon would eat its lunch."
+      },
+      {
+        "ticker": "COST",
+        "name": "Costco",
+        "priceThen": 143,
+        "asOf": "Jan 2015 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 920,
+        "eventNote": "Warehouse club. Everyone loved the $1.50 hot dog but called it a 'boring' stock."
+      },
+      {
+        "ticker": "GPRO",
+        "name": "GoPro",
+        "priceThen": 53,
+        "asOf": "Jan 2015 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 1.10,
+        "eventNote": "The hot Christmas gadget. Every action sports kid wanted one. Stock was rocketing."
+      }
+    ]
+  },
+
+  {
+    "id": "nobody-predicts-2019",
+    "year": 2019,
+    "anchor": "December 31, 2019",
+    "framing": "It's New Year's Eve 2019. COVID-19 is a thing that hasn't happened yet — no one in the world has heard the word 'lockdown.' Zoom is a video chat tool nerds use at work. Peloton is for rich at-home cyclists. Disney just launched Disney+ and is the king of entertainment. Nvidia makes chips for gamers.",
+    "lessonHeadline": "Nobody could have predicted any of this. Not one person.",
+    "lessonBody": "<p>Within 3 months of this date, COVID locked down most of the planet. Zoom and Peloton exploded — for a while. Zoom hit $568 in late 2020 (you'd have had an 8× gain in a year). Peloton hit $171 in early 2021. Disney's parks closed and the stock got hammered.</p><p>By 2023, every story had flipped. Zoom flatlined as people returned to offices. Peloton crashed 95% from the peak. Disney still hasn't fully recovered. And Nvidia? The 'gamer chip' company became the most important AI chip maker in the world. <strong>Nvidia delivered one of the biggest stock returns in history.</strong></p><p>Anyone who picked the COVID winners in March 2020 looked like a genius. Anyone who held them through 2023 mostly broke even or worse. The real winner was the company doing something completely unrelated.</p><p><strong>This is exactly why diversification works.</strong> Own a piece of everything. Because in any 5-year window, the actual winner will be something nobody saw coming.</p>",
+    "principle": 2,
+    "choices": [
+      {
+        "ticker": "ZM",
+        "name": "Zoom",
+        "priceThen": 68,
+        "asOf": "Dec 31, 2019 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 75,
+        "eventNote": "A video chat tool nerds used at work. IPO'd 8 months earlier."
+      },
+      {
+        "ticker": "PTON",
+        "name": "Peloton",
+        "priceThen": 28,
+        "asOf": "Dec 31, 2019 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 6,
+        "eventNote": "Fancy at-home exercise bikes. IPO'd 3 months earlier. Considered niche."
+      },
+      {
+        "ticker": "DIS",
+        "name": "Disney",
+        "priceThen": 144,
+        "asOf": "Dec 31, 2019 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 100,
+        "eventNote": "Just launched Disney+. Parks packed every day of the year. King of entertainment."
+      },
+      {
+        "ticker": "NVDA",
+        "name": "Nvidia",
+        "priceThen": 59,
+        "asOf": "Dec 31, 2019 close",
+        "splitFactor": 10,
+        "status": "active",
+        "approxNow": 135,
+        "eventNote": "Made graphics cards for gamers. Cool company, but most people didn't think about it much."
+      }
+    ]
+  },
+
+  {
+    "id": "survivors-vs-casualties-2005",
+    "year": 2005,
+    "anchor": "January 2005",
+    "framing": "It's January 2005. Google just IPO'd 5 months ago — everyone's debating if it's overvalued. Amazon is an online bookstore (mostly). Best Buy and Circuit City are the two giant electronics retailers — both in every American mall.",
+    "lessonHeadline": "Same industry. Different decisions. Wildly different outcomes.",
+    "lessonBody": "<p>Best Buy and Circuit City were two electronics retailers in 2005. Same stores. Same customers. Same products on shelves. <strong>One survived. One didn't.</strong></p><p>Circuit City made a series of bad decisions — fired their highest-paid (and best) salespeople to save money, fell behind on e-commerce, expanded too fast — and filed for bankruptcy in 2008. Liquidated in 2009. Anyone holding the stock got <strong>zero</strong>.</p><p>Best Buy doubled down on customer experience (Geek Squad), got serious about online, and survived. About 4× from 2005 to today.</p><p>Google and Amazon? Two of the greatest investments of the 21st century.</p><p><strong>Lesson: 'this industry is dying' is too lazy.</strong> Within every troubled industry, there's a survivor and a casualty. Picking which is which is almost impossible from the outside — which is why owning many companies (diversifying) beats trying to pick one.</p>",
+    "principle": 2,
+    "choices": [
+      {
+        "ticker": "GOOGL",
+        "name": "Google",
+        "priceThen": 197,
+        "asOf": "Jan 2005 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 175,
+        "eventNote": "IPO'd 5 months earlier at $85. Already up 130%. Many called it a bubble."
+      },
+      {
+        "ticker": "AMZN",
+        "name": "Amazon",
+        "priceThen": 45,
+        "asOf": "Jan 2005 close",
+        "splitFactor": 20,
+        "status": "active",
+        "approxNow": 195,
+        "eventNote": "Mostly an online bookstore. AWS didn't exist yet. Many called it the 'next Pets.com.'"
+      },
+      {
+        "ticker": "BBY",
+        "name": "Best Buy",
+        "priceThen": 36,
+        "asOf": "Jan 2005 close",
+        "splitFactor": 1,
+        "status": "active",
+        "approxNow": 90,
+        "eventNote": "One of two giant electronics retailers. In every mall in America."
+      },
+      {
+        "ticker": "CC",
+        "name": "Circuit City",
+        "priceThen": 16,
+        "asOf": "Jan 2005 close",
+        "splitFactor": 1,
+        "status": "bankrupt",
+        "finalMultiplier": 0,
+        "outcomeNote": "Filed Chapter 11 in November 2008. Liquidated in 2009 — all 567 stores closed within months. Shares became worthless."
+      }
+    ]
+  }
+]
