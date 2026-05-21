@@ -91,7 +91,7 @@
     <a href="?game=match"          data-game="match">Match the Company</a>
     <a href="?game=time-machine"   data-game="time-machine">Time Machine</a>
     <a href="?game=bull-bear"      data-game="bull-bear">Bull or Bear</a>
-    <a href="?game=price-is-right" data-game="price-is-right" class="disabled" aria-disabled="true">Price is Right</a>
+    <a href="?game=price-is-right" data-game="price-is-right">Price is Right</a>
   </div>
 
   <div class="preview-tools">
@@ -208,17 +208,51 @@
   }
 
   function samplePriceIsRight() {
-    // In production, the daily generator pulls a live FMP quote. For preview
-    // we hardcode a recent-ish ballpark and let the game show real-price vs
-    // options at play time.
+    // In production, the daily generator pulls a LIVE FMP quote at generation
+    // time and generates the two distractor prices at ~±30%. For preview we
+    // hardcode realistic-ballpark prices + the "tiny piece of..." stories.
+    // These will be stale by the time the user reads this — that's fine, the
+    // production generator will inject fresh prices daily.
+    // Each company carries its OWN principle so Price is Right doesn't feel
+    // like it always teaches the same lesson. Production daily generator
+    // (Phase 6) must provide `principle` per company too — Claude will pick
+    // whichever principle the piece-of-business story most strongly hits.
     const samples = [
-      { ticker:'DIS',  name:'Disney',     realPrice: 95.40 },
-      { ticker:'NKE',  name:'Nike',       realPrice: 75.20 },
-      { ticker:'SBUX', name:'Starbucks',  realPrice: 87.50 },
-      { ticker:'RBLX', name:'Roblox',     realPrice: 56.10 },
-      { ticker:'CMG',  name:'Chipotle',   realPrice: 52.30 },
+      { ticker:'DIS',  name:'Disney',    emoji:'🏰', realPrice: 95, principle: 4,
+        piece: "When you buy one share, you own a tiny piece of theme parks, Marvel movies, ESPN, Disney+, AND Baby Yoda. Disney is WAY more than movies — most of their profit now comes from parks and streaming." },
+      { ticker:'NKE',  name:'Nike',      emoji:'👟', realPrice: 75, principle: 7,
+        piece: "When you buy one share, you own a tiny piece of every Nike shoe sold worldwide and every Jordan deal. Investors don't 'bet on' Nike — they 'own' a piece of the brand." },
+      { ticker:'SBUX', name:'Starbucks', emoji:'☕', realPrice: 90, principle: 7,
+        piece: "When you buy one share, you own a tiny piece of every latte poured at every Starbucks on Earth — over 38,000 stores in 80+ countries. Every coffee is your coffee (a tiny bit)." },
+      { ticker:'RBLX', name:'Roblox',    emoji:'🎮', realPrice: 55, principle: 7,
+        piece: "When you buy one share, you own a tiny piece of every Robux purchase made by every kid in every Roblox game. Even though kid developers make the games, Roblox takes a cut — and you'd own a slice of that cut." },
+      { ticker:'CMG',  name:'Chipotle',  emoji:'🌯', realPrice: 55, principle: 4,
+        piece: "When you buy one share, you own a tiny piece of every burrito and bowl sold at every Chipotle — AND every Chipotle is owned by the company itself (unlike McDonald's, which franchises). One simple business model, end to end." },
+      { ticker:'AAPL', name:'Apple',     emoji:'📱', realPrice: 215, principle: 4,
+        piece: "When you buy one share, you own a tiny piece of every iPhone sold AND every App Store purchase made worldwide. Surprising fact: Apple's Services business (App Store, iCloud, Apple Music) now makes more profit than the iPad and Mac combined." },
+      { ticker:'COST', name:'Costco',    emoji:'🛒', realPrice: 920, principle: 4,
+        piece: "When you buy one share, you own a tiny piece of every Costco membership renewed, every rotisserie chicken sold, and every $1.50 hot dog. Most of Costco's profit isn't the markup on what they sell — it's those annual membership fees." },
+      { ticker:'KO',   name:'Coca-Cola', emoji:'🥤', realPrice: 71, principle: 1,
+        piece: "When you buy one share, you own a tiny piece of every Coke, Sprite, Fanta, Dasani, and Powerade sold worldwide. Coca-Cola has paid investors a dividend every single quarter since 1920 — that's over 100 years of letting time and compounding work for shareholders." },
+      { ticker:'NVDA', name:'Nvidia',    emoji:'🧠', realPrice: 135, principle: 6,
+        piece: "When you buy one share, you own a tiny piece of every AI chip Nvidia sells to OpenAI, Google, Microsoft, and Amazon. When ChatGPT launched in 2022, Nvidia chips became the most-wanted product on Earth — and the stock tripled in a year. News really does move markets." },
+      { ticker:'MCD',  name:'McDonald\'s', emoji:'🍔', realPrice: 295, principle: 4,
+        piece: "When you buy one share, you own a tiny piece of every Big Mac sold — and a tiny piece of the LAND under most McDonald's restaurants. McDonald's is really a real estate company in disguise: they own the buildings and rent them to franchisees." },
     ];
-    return samples[Math.floor(Math.random() * samples.length)];
+    const pick = samples[Math.floor(Math.random() * samples.length)];
+    // Build 3 options: real price + 2 distractors at roughly -30% and +30%,
+    // rounded to plausible-looking values. This mirrors what the production
+    // generator will do.
+    const real = pick.realPrice;
+    const low  = roundPlausible(real * 0.7);
+    const high = roundPlausible(real * 1.3);
+    return Object.assign({}, pick, { options: [low, real, high] });
+  }
+  function roundPlausible(p) {
+    // Round to whole dollar above $20, nearest $0.50 below.
+    if (p >= 100) return Math.round(p / 5) * 5;
+    if (p >= 20)  return Math.round(p);
+    return Math.round(p * 2) / 2;
   }
 
   window.resetEngagement = function () {
