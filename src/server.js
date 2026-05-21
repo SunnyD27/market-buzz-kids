@@ -4,6 +4,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateDigest } from './generate.js';
+import { storage } from './storage.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -53,6 +54,103 @@ app.get('/digest', (req, res) => {
   }
 });
 
+// ============================================================
+// API — signup
+// ============================================================
+
+// Whitelists for the optional dropdowns — anything outside these gets dropped.
+const INVEST_EXPERIENCES = new Set(['not_yet','index_funds','individual_stocks','crypto','not_sure']);
+const REFERRAL_SOURCES   = new Set(['friend','social','school','news','other']);
+
+// Loose UA-based device classifier. Good enough for analytics — not used for
+// any authorization decision.
+function classifyDevice(ua) {
+  if (!ua) return 'unknown';
+  const s = ua.toLowerCase();
+  if (/ipad|tablet|android(?!.*mobile)/i.test(s)) return 'tablet';
+  if (/mobile|iphone|ipod|android/i.test(s)) return 'mobile';
+  if (/windows|macintosh|linux/i.test(s)) return 'desktop';
+  return 'unknown';
+}
+
+app.post('/api/signup', (req, res) => {
+  const body = req.body || {};
+  const errors = {};
+
+  // ---- Validate required fields ----
+  const parent_email = String(body.parent_email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
+    errors.parent_email = 'Please enter a valid email address.';
+  }
+  const kid_first_name = String(body.kid_first_name || '').trim();
+  if (!kid_first_name) {
+    errors.kid_first_name = "Kid's first name is required.";
+  } else if (kid_first_name.length > 50) {
+    errors.kid_first_name = 'Name is too long (max 50 chars).';
+  }
+  const kid_age = parseInt(body.kid_age, 10);
+  if (!Number.isFinite(kid_age) || kid_age < 10 || kid_age > 16) {
+    errors.kid_age = 'Please choose an age between 10 and 16.';
+  }
+
+  if (Object.keys(errors).length) {
+    return res.status(400).json({ ok: false, errors });
+  }
+
+  // ---- Duplicate email check ----
+  if (storage.findActiveUserByEmail(parent_email)) {
+    return res.status(409).json({
+      ok: false,
+      message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
+    });
+  }
+
+  // ---- Whitelist optional fields ----
+  const invest_experience = INVEST_EXPERIENCES.has(body.invest_experience) ? body.invest_experience : null;
+  const referral_source   = REFERRAL_SOURCES.has(body.referral_source)     ? body.referral_source   : null;
+
+  // ---- Capture request metadata ----
+  const userAgent = String(req.headers['user-agent'] || '').slice(0, 500);
+
+  const { user, tokenRow } = storage.createUserFromSignup({
+    parent_email,
+    kid_first_name,
+    kid_age,
+    invest_experience,
+    referral_source,
+    utm_source:   slice120(body.utm_source),
+    utm_medium:   slice120(body.utm_medium),
+    utm_campaign: slice120(body.utm_campaign),
+    utm_content:  slice120(body.utm_content),
+    utm_term:     slice120(body.utm_term),
+    user_agent:   userAgent,
+    device_type:  classifyDevice(userAgent),
+    timezone:     typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : null,
+    signup_ip:    req.ip,
+  });
+
+  // Phase 5 stub: the consent / verify URL would be emailed in Phase 6.
+  // For now, log it to the server console so the dev can click through.
+  const linkPath = tokenRow.purpose === 'parental_consent'
+    ? `/api/consent?token=${tokenRow.token}`
+    : `/api/verify?token=${tokenRow.token}`;
+  const linkURL = `${req.protocol}://${req.get('host')}${linkPath}`;
+  console.log(`[signup] ${tokenRow.purpose} link for ${user.parent_email}: ${linkURL}`);
+
+  return res.status(200).json({
+    ok: true,
+    consent_required: user.consent_required,
+    // Don't return the user object — minimize info disclosure.
+    message: user.consent_required
+      ? 'Parental consent email queued.'
+      : 'Verification email queued.',
+  });
+});
+
+function slice120(v) {
+  return typeof v === 'string' ? v.slice(0, 120) : null;
+}
+
 // Admin: trigger digest generation manually.
 app.get('/generate', async (req, res) => {
   const key = req.query.key;
@@ -93,6 +191,7 @@ app.listen(PORT, () => {
   console.log(`📈 Market Buzz Kids running on port ${PORT}`);
   console.log(`   Landing:        /`);
   console.log(`   Digest:         /digest`);
+  console.log(`   Signup API:     POST /api/signup`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
 });
