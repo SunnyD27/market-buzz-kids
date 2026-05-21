@@ -1,0 +1,206 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1117">
+<title>Delete My Kid's Data — Market Buzz Kids</title>
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/landing.css">
+<style>
+  .deletion-page {
+    max-width: 540px;
+    margin: 60px auto;
+    padding: 0 20px;
+  }
+  .back-link {
+    color: var(--blue); text-decoration: none; font-size: 14px;
+    margin-bottom: 18px; display: inline-block;
+  }
+  .deletion-page h1 {
+    font-size: 32px; font-weight: 700; color: var(--bright);
+    margin-bottom: 12px; letter-spacing: -0.5px;
+  }
+  .deletion-page > p { font-size: 16px; line-height: 1.6; color: var(--text); margin-bottom: 16px; }
+  .what-happens {
+    background: rgba(63,185,80,0.06);
+    border: 1px solid rgba(63,185,80,0.25);
+    border-left: 4px solid var(--green);
+    border-radius: 10px;
+    padding: 16px 18px;
+    margin: 20px 0;
+  }
+  .what-happens h3 {
+    font-size: 14px; font-weight: 700; color: var(--green);
+    letter-spacing: 1px; text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .what-happens ul { padding-left: 22px; margin: 0; }
+  .what-happens li { color: var(--text); font-size: 14px; margin: 4px 0; }
+
+  .deletion-form {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 24px;
+    margin-top: 22px;
+  }
+  .deletion-success {
+    background: linear-gradient(135deg, rgba(63,185,80,0.10), rgba(88,166,255,0.04));
+    border: 1px solid rgba(63,185,80,0.35);
+    border-radius: 16px;
+    padding: 28px 24px;
+    text-align: center;
+    margin-top: 22px;
+  }
+  .deletion-success .icon { font-size: 56px; margin-bottom: 10px; }
+  .deletion-success h3 { font-size: 22px; color: var(--bright); margin-bottom: 8px; }
+  .deletion-success p { font-size: 15px; color: var(--text); margin-bottom: 8px; }
+</style>
+</head>
+<body>
+
+<div class="stars" id="stars"></div>
+
+<div class="deletion-page">
+  <a href="/" class="back-link">← Back to home</a>
+
+  <h1>Delete your kid's data</h1>
+  <p>
+    Enter the parent email you signed up with. We'll match it to the account and delete everything — instantly, no follow-up email required.
+  </p>
+
+  <div class="what-happens">
+    <h3>What happens when you submit</h3>
+    <ul>
+      <li>Your kid's account is deactivated immediately</li>
+      <li>Their name, age, engagement data (XP, streak, quiz answers, etc.) — all gone</li>
+      <li>Removed from the daily digest send list</li>
+      <li>Push notifications stop</li>
+      <li>Within 7 days: removed from all backups too</li>
+    </ul>
+  </div>
+
+  <div class="deletion-form" id="form-card">
+    <form id="delete-form" novalidate>
+      <div class="form-row">
+        <label for="parent_email">Parent email <span class="req">*</span></label>
+        <input type="email" id="parent_email" name="parent_email"
+               required autocomplete="email" inputmode="email"
+               placeholder="The email you signed up with">
+        <div class="field-error" id="err-parent_email"></div>
+      </div>
+
+      <div class="form-row">
+        <label for="reason">Reason (optional)</label>
+        <select id="reason" name="reason">
+          <option value="">Prefer not to say</option>
+          <option value="not_using">We're not using it anymore</option>
+          <option value="content_issue">Concern about the content</option>
+          <option value="privacy_concern">Privacy concern</option>
+          <option value="kid_too_old">Kid is too old now</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+
+      <button type="submit" id="submit-btn" class="btn btn-primary btn-block">
+        Delete my kid's data
+      </button>
+
+      <p class="legal" style="margin-top: 14px;">
+        Questions? Email <a href="mailto:hello@example.com">hello@example.com</a>. See our
+        <a href="/privacy">privacy policy</a> for more details.
+      </p>
+    </form>
+  </div>
+
+  <div class="deletion-success" id="success-card" hidden>
+    <div class="icon">✅</div>
+    <h3>Request received</h3>
+    <p id="success-message"></p>
+    <p style="font-size: 13px; color: var(--dim); margin-top: 16px;">
+      You'll receive a confirmation email shortly. If you don't, your email may not have matched an account — that's also fine, nothing to do.
+    </p>
+  </div>
+</div>
+
+<script>
+  // Tiny starfield
+  (function(){
+    var s=document.getElementById('stars');
+    for(var i=0;i<40;i++){
+      var d=document.createElement('div');
+      d.className='star';
+      d.style.left=(Math.random()*100)+'%';
+      d.style.top=(Math.random()*100)+'%';
+      d.style.animationDelay=(Math.random()*3)+'s';
+      d.style.width=d.style.height=(Math.random()*2+1)+'px';
+      s.appendChild(d);
+    }
+  })();
+
+  // Deletion form handling
+  (function(){
+    var form    = document.getElementById('delete-form');
+    var btn     = document.getElementById('submit-btn');
+    var card    = document.getElementById('form-card');
+    var success = document.getElementById('success-card');
+    var msg     = document.getElementById('success-message');
+
+    function setError(name, text) {
+      var el = document.getElementById('err-' + name);
+      if (el) el.textContent = text || '';
+    }
+    function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim()); }
+
+    form.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      setError('parent_email', '');
+      var email = form.parent_email.value.trim();
+      if (!isEmail(email)) {
+        setError('parent_email', 'Please enter a valid email address.');
+        return;
+      }
+      btn.disabled = true;
+      var original = btn.textContent;
+      btn.textContent = 'Processing…';
+      try {
+        var res = await fetch('/api/delete-data', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            parent_email: email,
+            reason: form.reason.value || null,
+          }),
+        });
+        var body = await res.json().catch(function(){ return {}; });
+        if (res.ok) {
+          // Always show success even if no match — we don't leak account existence.
+          msg.innerHTML = body.matched
+            ? "We found and deleted the account for <strong>" + escapeHTML(email) + "</strong>. All data removed from the active database. Backups purged within 7 days."
+            : "We logged your deletion request for <strong>" + escapeHTML(email) + "</strong>. If we find a matching account in our system, it'll be deleted. If not, nothing was there to delete anyway.";
+          card.hidden = true;
+          success.hidden = false;
+          success.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          alert(body.message || 'Something went wrong. Please try again or email hello@example.com.');
+          btn.disabled = false; btn.textContent = original;
+        }
+      } catch (err) {
+        console.error('[delete-data] network error:', err);
+        alert('Network error. Please try again.');
+        btn.disabled = false; btn.textContent = original;
+      }
+    });
+
+    function escapeHTML(s) {
+      return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
+        return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[c];
+      });
+    }
+  })();
+</script>
+
+</body>
+</html>

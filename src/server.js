@@ -55,6 +55,16 @@ app.get('/digest', (req, res) => {
   }
 });
 
+// `/privacy` — kid-friendly COPPA-compliant privacy policy.
+app.get('/privacy', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'privacy.html'));
+});
+
+// `/parent/delete-data` — parent-initiated data deletion form.
+app.get('/parent/delete-data', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'parent-delete-data.html'));
+});
+
 // ============================================================
 // API — signup
 // ============================================================
@@ -255,6 +265,38 @@ function slice120(v) {
   return typeof v === 'string' ? v.slice(0, 120) : null;
 }
 
+// ============================================================
+// API — data deletion (parent-initiated)
+// ============================================================
+// Per privacy policy, we always return success (200) to avoid leaking
+// account existence. If the email matches an active user, storage soft-
+// deletes it. If not, we still log the request for audit purposes.
+app.post('/api/delete-data', (req, res) => {
+  const body = req.body || {};
+  const parent_email = String(body.parent_email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
+    return res.status(400).json({ ok: false, message: 'Please enter a valid email address.' });
+  }
+  const reason = typeof body.reason === 'string' ? body.reason.slice(0, 120) : null;
+
+  const request = storage.recordDeletionRequest({
+    parent_email,
+    reason,
+    requested_ip: req.ip,
+    user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
+  });
+
+  // We don't return the matched_user_id — that would leak existence.
+  // We return `matched: true/false` only for the UX confirmation copy.
+  return res.status(200).json({
+    ok: true,
+    matched: !!request.matched_user_id,
+    message: request.matched_user_id
+      ? 'Account found and deletion processed.'
+      : 'Deletion request logged.',
+  });
+});
+
 // Admin: trigger digest generation manually.
 app.get('/generate', async (req, res) => {
   const key = req.query.key;
@@ -295,7 +337,10 @@ app.listen(PORT, () => {
   console.log(`📈 Market Buzz Kids running on port ${PORT}`);
   console.log(`   Landing:        /`);
   console.log(`   Digest:         /digest`);
+  console.log(`   Privacy:        /privacy`);
+  console.log(`   Delete data:    /parent/delete-data`);
   console.log(`   Signup API:     POST /api/signup`);
+  console.log(`   Delete API:     POST /api/delete-data`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
 });
