@@ -78,11 +78,15 @@ export function buildHTML(content) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Market Buzz Kids">
-<link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<meta name="theme-color" content="#0d1117">
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="apple-touch-icon" href="/icons/icon.svg">
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <title>Market Buzz Kids</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/engagement.css">
 <script src="/engagement.js" defer></script>
+<script src="/pwa.js" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {

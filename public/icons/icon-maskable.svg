@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <!--
+    Maskable icon: Android adaptive icons crop ~10% off each edge. Per the
+    "safe zone" spec (https://web.dev/maskable-icon/), the central 40% radius
+    must contain everything. We keep the chart compressed into the center.
+  -->
+  <defs>
+    <linearGradient id="mbg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#161b22"/>
+      <stop offset="100%" stop-color="#0d1117"/>
+    </linearGradient>
+    <linearGradient id="mline" x1="0" y1="0" x2="1" y2="0">
+      <stop offset="0%" stop-color="#bc8cff"/>
+      <stop offset="50%" stop-color="#58a6ff"/>
+      <stop offset="100%" stop-color="#f0c040"/>
+    </linearGradient>
+  </defs>
+  <rect width="512" height="512" fill="url(#mbg)"/>
+  <path d="M 150 330 L 210 290 L 260 305 L 320 235 L 380 175"
+        fill="none" stroke="url(#mline)" stroke-width="26"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M 380 175 L 350 185 M 380 175 L 370 210"
+        fill="none" stroke="#f0c040" stroke-width="26" stroke-linecap="round"/>
+</svg>

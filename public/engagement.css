@@ -146,3 +146,72 @@
   .mb-confetti, .mb-celeb, .mb-toast,
   .ip-progress-fill { transition: none !important; animation: none !important; }
 }
+
+/* ---- PWA add-to-homescreen banner (pwa.js) ---- */
+
+#mb-pwa-banner {
+  position: fixed;
+  left: 50%; bottom: 12px;
+  transform: translate(-50%, 130%);
+  z-index: 9990;
+  max-width: 560px;
+  width: calc(100vw - 24px);
+  background: linear-gradient(135deg, rgba(22,27,34,0.96), rgba(13,17,23,0.96));
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid rgba(240,192,64,0.35);
+  border-radius: 16px;
+  box-shadow: 0 12px 36px rgba(0,0,0,0.55);
+  transition: transform 0.35s cubic-bezier(.34,1.2,.64,1);
+}
+#mb-pwa-banner.mb-pwa-banner-show {
+  transform: translate(-50%, 0);
+}
+.mb-pwa-banner-inner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+}
+.mb-pwa-banner-icon {
+  font-size: 22px;
+  line-height: 1;
+  flex-shrink: 0;
+}
+.mb-pwa-banner-msg {
+  flex: 1; min-width: 0;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--text-bright);
+}
+.mb-pwa-banner-action {
+  flex-shrink: 0;
+  background: linear-gradient(135deg, var(--yellow), var(--orange));
+  color: #0d1117;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px; font-weight: 700;
+  padding: 8px 14px;
+  border-radius: 999px;
+  border: none;
+  cursor: pointer;
+  min-height: 36px;
+}
+.mb-pwa-banner-action:active { transform: scale(0.96); }
+.mb-pwa-banner-close {
+  flex-shrink: 0;
+  background: transparent;
+  color: var(--text-dim);
+  font-size: 22px;
+  line-height: 1;
+  padding: 4px 8px;
+  border: none;
+  cursor: pointer;
+  border-radius: 6px;
+}
+.mb-pwa-banner-close:hover { color: var(--text-bright); background: rgba(255,255,255,0.05); }
+
+@media (max-width: 380px) {
+  .mb-pwa-banner-msg { font-size: 12px; }
+  .mb-pwa-banner-action { padding: 8px 12px; font-size: 12px; }
+}

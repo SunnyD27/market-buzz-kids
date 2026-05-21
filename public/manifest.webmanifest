@@ -1,0 +1,26 @@
+{
+  "name": "Market Buzz Kids",
+  "short_name": "Market Buzz",
+  "description": "The daily stock market cheat code for kids — games, stories, and lessons in 3 minutes a day.",
+  "start_url": "/",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d1117",
+  "theme_color": "#0d1117",
+  "categories": ["education", "finance", "kids"],
+  "icons": [
+    {
+      "src": "/icons/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "/icons/icon-maskable.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ]
+}
