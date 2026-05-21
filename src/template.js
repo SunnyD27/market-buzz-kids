@@ -81,6 +81,8 @@ export function buildHTML(content) {
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 <title>Market Buzz Kids</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/engagement.css">
+<script src="/engagement.js" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
   :root {
@@ -187,6 +189,9 @@ export function buildHTML(content) {
     <div class="tagline">The daily stock market cheat code for kids</div>
   </div>
 
+  <!-- Investor Profile Bar — rendered by /engagement.js from localStorage -->
+  <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
+
   <div class="section-header">
     <span class="emoji">🏆</span>
     <h2>Market Scoreboard</h2>
@@ -258,22 +263,26 @@ export function buildHTML(content) {
     <div class="line"></div>
   </div>
 
-  <div class="word-card">
+  <div class="word-card" id="word-card">
     <div class="word-label">🔤 INVESTING VOCABULARY</div>
     <div class="the-word">${escapeHTML(wordOfDay.word)}</div>
     <div class="word-type">${escapeHTML(wordOfDay.type)} · ${escapeHTML(wordOfDay.context)}</div>
-    <div class="word-def">${escapeHTML(wordOfDay.definition)}</div>
+    <button type="button" class="word-reveal-btn" id="wordRevealBtn" onclick="revealWord()">Tap to reveal definition (+5 XP)</button>
+    <div class="word-def word-def-hidden" id="wordDef">${escapeHTML(wordOfDay.definition)}</div>
   </div>
 
   <div class="footer">
     <div class="rocket">🚀</div>
     <p style="margin-top: 6px;">Market Buzz Kids — Built for future investors</p>
     <p style="margin-top: 4px; font-size: 11px; color: #484f58;">Not financial advice. Just getting smarter every day.</p>
+    <!-- Scroll-to-bottom XP marker: engagement.js watches this with IntersectionObserver -->
+    <div id="mb-bottom-marker" aria-hidden="true" style="height:1px"></div>
   </div>
 
 </div>
 
 <script>
+  // ---- Twinkling starfield ----
   const starsEl = document.getElementById('stars');
   for (let i = 0; i < 80; i++) {
     const star = document.createElement('div');
@@ -285,10 +294,13 @@ export function buildHTML(content) {
     starsEl.appendChild(star);
   }
 
+  // ---- Quiz (Game 1 in the engagement engine) ----
   const correctIdx = ${quiz.correctIndex};
   function checkAnswer(btn, isCorrect) {
     const buttons = document.querySelectorAll('.quiz-btn');
-    buttons.forEach(b => { b.disabled = true; b.style.cursor = 'default'; });
+    // Guard against double-counting if the user taps twice quickly.
+    if (btn.dataset.answered === '1') return;
+    buttons.forEach(b => { b.disabled = true; b.style.cursor = 'default'; b.dataset.answered = '1'; });
     if (isCorrect) {
       btn.classList.add('correct');
     } else {
@@ -296,6 +308,15 @@ export function buildHTML(content) {
       buttons[correctIdx].classList.add('correct');
     }
     document.getElementById('quizAnswer').classList.add('visible');
+    if (window.MarketBuzz) {
+      window.MarketBuzz.recordGamePlayed('quiz', { correct: isCorrect });
+    }
+  }
+
+  // ---- Word of Day tap-to-reveal (+5 XP, once per day) ----
+  function revealWord() {
+    document.getElementById('word-card').classList.add('word-revealed');
+    if (window.MarketBuzz) window.MarketBuzz.recordWordRevealed();
   }
 </script>
 
