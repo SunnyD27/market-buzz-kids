@@ -40,8 +40,22 @@ without the underlying numbers ever drifting.
   "haven't used this one recently" + day's theme, and rewrites `framing` /
   `lessonBody` fresh each day.
 
-### `historical-charts.json` (Bull or Bear)
-- Not yet built.
+### `historical-charts.json`
+- Used by: **Bull or Bear** game.
+- Shape: array of scenarios. Each has:
+  - `contextShape` / `outcomeShape` — normalized monthly values (start at $100).
+    Captures the trajectory of a real historical price move without
+    claiming a specific dollar value for a specific ticker on a specific
+    day. The chart the kid sees is **unlabeled** — no Y-axis, no dates,
+    no ticker.
+  - `actualDirection` / `actualReturnPct` — what actually happened in
+    the outcome period. These are facts I can verify from memory for
+    famous events.
+  - `company`, `ticker`, `era`, `story`, `lessonBody`, `principle` —
+    revealed only after the kid guesses.
+- Daily selection: rotate through scenarios, biased away from
+  recently-used. Phase 6: Claude picks + rewrites `story` /
+  `lessonHeadline` / `lessonBody` daily; the chart facts stay locked.
 
 ## Adding new scenarios
 
