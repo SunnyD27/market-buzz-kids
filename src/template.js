@@ -1,12 +1,14 @@
-// src/template.js — Builds the final HTML page from generated content
+// src/template.js — Builds the final HTML page from generated content.
+// Phase 1: Market Buzz Kids — VOO removed, Today's Mover added, Did You Know
+// replaces Coming Up. Engagement systems (XP, ranks, streaks, games) come in
+// later phases.
 
 export function buildHTML(content) {
   const {
-    date, tradingDay, marketVibe, vibeEmoji, vibeSummary, vooNote, bigPicture,
-    scoreboard, stories, comingUp, quiz, wordOfDay,
+    date, marketVibe, vibeSummary, bigPicture,
+    scoreboard, stories, didYouKnow, quiz, wordOfDay,
   } = content;
 
-  const vibeColor = marketVibe === 'green' ? '#3fb950' : marketVibe === 'red' ? '#f85149' : '#f0c040';
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
 
   const badgeClasses = { hot: 'hot', new: 'new', money: 'money', world: 'world', brain: 'brain' };
@@ -23,31 +25,17 @@ export function buildHTML(content) {
     </div>
   `).join('');
 
-  const comingUpHTML = comingUp.map((item, i) => `
-    <div class="upcoming-item" style="animation-delay: ${0.1 + i * 0.1}s">
-      <div class="date-badge"><div class="day">${escapeHTML(item.day)}</div></div>
-      <div class="upcoming-text">
-        <h4>${escapeHTML(item.title)}</h4>
-        <p>${escapeHTML(item.description)}</p>
-      </div>
-      <div class="upcoming-emoji">${item.emoji || '📅'}</div>
-    </div>
-  `).join('');
-
   const quizOptionsHTML = quiz.options.map((opt, i) => `
     <button class="quiz-btn" onclick="checkAnswer(this, ${i === quiz.correctIndex})">${escapeHTML(opt)}</button>
   `).join('');
 
-  function scoreCard(key, label, isVoo = false) {
+  function scoreCard(key, label) {
     const s = scoreboard[key];
     if (!s) return '';
     const dir = s.direction === 'up' ? 'up' : 'down';
     const arrow = s.direction === 'up' ? 'arrow-up' : 'arrow-down';
-    const yourClass = isVoo ? ' yours' : '';
-    const yourBadge = isVoo ? '<div class="your-badge">YOUR FUND</div>' : '';
     return `
-      <div class="score-card ${dir}${yourClass}">
-        ${yourBadge}
+      <div class="score-card ${dir}">
         <div class="name">${escapeHTML(label)}</div>
         <div class="price">${escapeHTML(s.price)}</div>
         <div class="change"><span class="${arrow}"></span> ${escapeHTML(s.change)}</div>
@@ -56,6 +44,32 @@ export function buildHTML(content) {
     `;
   }
 
+  function topMoverCard() {
+    const s = scoreboard.topMover;
+    if (!s) return '';
+    const dir = s.direction === 'up' ? 'up' : 'down';
+    const arrow = s.direction === 'up' ? 'arrow-up' : 'arrow-down';
+    return `
+      <div class="score-card ${dir} mover">
+        <div class="mover-badge">TODAY'S MOVER</div>
+        <div class="mover-name">${escapeHTML(s.name)}</div>
+        <div class="mover-ticker">${escapeHTML(s.ticker)}</div>
+        <div class="price">${escapeHTML(s.price)}</div>
+        <div class="change"><span class="${arrow}"></span> ${escapeHTML(s.change)}</div>
+      </div>
+    `;
+  }
+
+  // Today's Mover one-liner gets its own callout row under the scoreboard so
+  // the "WHY it moved" explanation has room to breathe — the vibe text is too
+  // long to fit inside the gold card cleanly.
+  const topMoverWhyHTML = scoreboard.topMover?.vibe
+    ? `
+      <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
+        ⭐ <strong style="color: var(--yellow);">Why ${escapeHTML(scoreboard.topMover.name)} moved:</strong> ${escapeHTML(scoreboard.topMover.vibe)}
+      </p>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -63,9 +77,9 @@ export function buildHTML(content) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Market Buzz">
+<meta name="apple-mobile-web-app-title" content="Market Buzz Kids">
 <link rel="apple-touch-icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
-<title>Market Buzz Daily</title>
+<title>Market Buzz Kids</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -107,9 +121,11 @@ export function buildHTML(content) {
   .arrow-up::before { content: "▲"; font-size: 12px; }
   .arrow-down::before { content: "▼"; font-size: 12px; }
   .score-card .vibe { font-size: 12px; color: var(--text-dim); margin-top: 6px; font-style: italic; }
-  .score-card.yours { background: linear-gradient(135deg, rgba(240,192,64,0.08), rgba(240,136,62,0.08)); border-color: rgba(240,192,64,0.4); box-shadow: 0 4px 24px rgba(240,192,64,0.15), inset 0 0 30px rgba(240,192,64,0.03); position: relative; }
-  .score-card.yours:hover { box-shadow: 0 6px 28px rgba(240,192,64,0.25), inset 0 0 30px rgba(240,192,64,0.05); }
-  .your-badge { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 2px; background: linear-gradient(135deg, var(--yellow), var(--orange)); color: #0d1117; padding: 3px 8px; border-radius: 6px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
+  .score-card.mover { background: linear-gradient(135deg, rgba(240,192,64,0.10), rgba(240,136,62,0.08)); border-color: rgba(240,192,64,0.4); box-shadow: 0 4px 24px rgba(240,192,64,0.18), inset 0 0 30px rgba(240,192,64,0.03); position: relative; }
+  .score-card.mover:hover { box-shadow: 0 6px 28px rgba(240,192,64,0.28), inset 0 0 30px rgba(240,192,64,0.05); }
+  .mover-badge { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 2px; background: linear-gradient(135deg, var(--yellow), var(--orange)); color: #0d1117; padding: 3px 8px; border-radius: 6px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
+  .mover-name { font-size: 14px; font-weight: 700; color: var(--yellow); margin-bottom: 2px; line-height: 1.2; }
+  .mover-ticker { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
   .story-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-bottom: 14px; animation: fadeIn 0.5s ease-out both; transition: transform 0.2s; }
   .story-card:hover { transform: translateY(-2px); }
   .story-card .badge { display: inline-block; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; font-weight: 700; }
@@ -122,15 +138,11 @@ export function buildHTML(content) {
   .story-card p { font-size: 15px; line-height: 1.65; color: var(--text); }
   .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(88,166,255,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: 14px; color: var(--text); line-height: 1.55; }
   .story-card .why-it-matters strong { color: var(--blue); font-weight: 600; }
-  .upcoming-list { display: flex; flex-direction: column; gap: 10px; animation: fadeIn 0.5s ease-out both; }
-  .upcoming-item { background: var(--card); border: 1px solid var(--card-border); border-radius: 14px; padding: 14px 16px; display: flex; align-items: center; gap: 12px; transition: transform 0.2s; }
-  .upcoming-item:hover { transform: translateX(4px); }
-  .upcoming-item .date-badge { background: rgba(88,166,255,0.1); border: 1px solid rgba(88,166,255,0.2); border-radius: 10px; padding: 6px 10px; text-align: center; min-width: 52px; }
-  .upcoming-item .date-badge .day { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--blue); font-weight: 700; text-transform: uppercase; }
-  .upcoming-item .upcoming-text { flex: 1; }
-  .upcoming-item .upcoming-text h4 { font-size: 15px; font-weight: 600; color: var(--text-bright); margin-bottom: 2px; }
-  .upcoming-item .upcoming-text p { font-size: 13px; color: var(--text-dim); line-height: 1.4; }
-  .upcoming-item .upcoming-emoji { font-size: 24px; }
+  .dyk-card { background: linear-gradient(135deg, rgba(188,140,255,0.10), rgba(88,166,255,0.06)); border: 1px solid rgba(188,140,255,0.3); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
+  .dyk-card .dyk-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; }
+  .dyk-card .dyk-fact { font-size: 17px; font-weight: 500; color: var(--text-bright); line-height: 1.5; margin-bottom: 12px; }
+  .dyk-card .dyk-connection { font-size: 14px; color: var(--text); line-height: 1.55; padding: 12px 14px; background: rgba(188,140,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
+  .dyk-card .dyk-connection strong { color: var(--purple); font-weight: 600; }
   .quiz-card { background: linear-gradient(135deg, rgba(188,140,255,0.08), rgba(88,166,255,0.08)); border: 1px solid rgba(188,140,255,0.25); border-radius: 16px; padding: 24px; text-align: center; animation: fadeIn 0.5s ease-out both; }
   .quiz-card .quiz-label { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 12px; }
   .quiz-card .quiz-question { font-size: 18px; font-weight: 600; color: var(--text-bright); margin-bottom: 20px; line-height: 1.4; }
@@ -170,9 +182,9 @@ export function buildHTML(content) {
 <div class="container">
 
   <div class="header">
-    <div class="logo"><span class="logo-emoji">📈</span> Market Buzz</div>
+    <div class="logo"><span class="logo-emoji">📈</span> Market Buzz Kids</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
-    <div class="tagline">Your daily cheat code for the stock market</div>
+    <div class="tagline">The daily stock market cheat code for kids</div>
   </div>
 
   <div class="section-header">
@@ -185,16 +197,14 @@ export function buildHTML(content) {
     ${scoreCard('sp500', 'S&P 500')}
     ${scoreCard('nasdaq', 'NASDAQ')}
     ${scoreCard('dow', 'DOW')}
-    ${scoreCard('voo', 'VOO', true)}
+    ${topMoverCard()}
   </div>
 
   <div class="vibe-bar">
     <p style="font-size: 16px; font-weight: 500; color: var(--text-bright);">
       ${vibeCircle} <strong>${marketVibe === 'green' ? 'Green day!' : marketVibe === 'red' ? 'Red day.' : 'Mixed day.'}</strong> ${escapeHTML(vibeSummary)}
     </p>
-    <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
-      ⭐ <strong style="color: var(--yellow);">VOO Watch:</strong> ${escapeHTML(vooNote)}
-    </p>
+    ${topMoverWhyHTML}
   </div>
 
   <div class="big-picture">
@@ -214,13 +224,15 @@ export function buildHTML(content) {
   ${storiesHTML}
 
   <div class="section-header">
-    <span class="emoji">📅</span>
-    <h2>Coming Up</h2>
+    <span class="emoji">🤯</span>
+    <h2>Did You Know?</h2>
     <div class="line"></div>
   </div>
 
-  <div class="upcoming-list">
-    ${comingUpHTML}
+  <div class="dyk-card">
+    <div class="dyk-label">🧠 ${escapeHTML(didYouKnow?.category || 'mind-blowing numbers')}</div>
+    <div class="dyk-fact">${escapeHTML(didYouKnow?.fact || '')}</div>
+    ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
   </div>
 
   <div class="section-header">
@@ -255,7 +267,7 @@ export function buildHTML(content) {
 
   <div class="footer">
     <div class="rocket">🚀</div>
-    <p style="margin-top: 6px;">Market Buzz Daily — Built for future investors</p>
+    <p style="margin-top: 6px;">Market Buzz Kids — Built for future investors</p>
     <p style="margin-top: 4px; font-size: 11px; color: #484f58;">Not financial advice. Just getting smarter every day.</p>
   </div>
 

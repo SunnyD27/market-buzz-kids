@@ -1,3 +1,5 @@
+import { CURATED_TICKERS, lookupCompany } from './companies.js';
+
 const FMP_BASE = 'https://financialmodelingprep.com/stable';
 
 async function fmpFetch(path, label) {
@@ -19,7 +21,8 @@ async function fmpFetch(path, label) {
 }
 
 export async function fetchMarketData(apiKey) {
-  const symbols = ['^GSPC', '^IXIC', '^DJI', 'VOO'];
+  // Phase 1: indices only — VOO removed in favor of "Today's Mover" card.
+  const symbols = ['^GSPC', '^IXIC', '^DJI'];
   const results = {};
   for (const symbol of symbols) {
     try {
@@ -55,7 +58,7 @@ export async function fetchNews(apiKey) {
       fmpFetch(`/general-news?page=0&apikey=${apiKey}`, 'general-news'),
       fmpFetch(`/stock-news?tickers=SPY&limit=5&apikey=${apiKey}`, 'stock-news(SPY)'),
       fmpFetch(`/stock-news?tickers=NVDA,AAPL,MSFT,GOOGL,AMZN,TSLA,META&limit=8&apikey=${apiKey}`, 'stock-news(big-tech)'),
-      fmpFetch(`/stock-news?tickers=VOO,QQQ&limit=3&apikey=${apiKey}`, 'stock-news(VOO,QQQ)'),
+      fmpFetch(`/stock-news?tickers=QQQ&limit=3&apikey=${apiKey}`, 'stock-news(QQQ)'),
       fmpFetch(`/fmp-articles?page=0&size=5&apikey=${apiKey}`, 'fmp-articles'),
     ]);
 
@@ -122,11 +125,67 @@ export async function fetchMovers(apiKey) {
   }
 }
 
+/**
+ * Fetch batch quotes for the curated company list and pick the single stock
+ * with the largest absolute % move today. This is "Today's Mover" — the
+ * gold-highlighted card in the scoreboard.
+ *
+ * Strategy:
+ *   - Batch quote endpoint supports comma-separated symbols, so this is one
+ *     HTTP call regardless of curated-list size.
+ *   - We return the raw quote for the winner + the curated company metadata
+ *     (display name, sector) so the template and AI prompt can use both.
+ *   - If the API fails or returns no usable data, return null and let the
+ *     caller decide how to degrade.
+ */
+export async function fetchTopMover(apiKey) {
+  try {
+    const tickers = CURATED_TICKERS.join(',');
+    const data = await fmpFetch(
+      `/quote?symbol=${encodeURIComponent(tickers)}&apikey=${apiKey}`,
+      'quote(curated-batch)',
+    );
+    const quotes = Array.isArray(data) ? data : (data ? [data] : []);
+    const valid = quotes.filter(q =>
+      q && typeof q.price === 'number' && typeof q.changesPercentage === 'number',
+    );
+    if (valid.length === 0) {
+      console.error('[Data] Top mover: no valid quotes returned from curated batch');
+      return null;
+    }
+    // Sort by absolute % change, descending.
+    valid.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
+    const winner = valid[0];
+    const company = lookupCompany(winner.symbol);
+    return {
+      ticker: winner.symbol,
+      displayName: company?.name || winner.name || winner.symbol,
+      sector: company?.sector || null,
+      price: winner.price,
+      change: winner.change,
+      changesPercentage: winner.changesPercentage,
+      previousClose: winner.previousClose,
+      // Include the top 5 candidates so the AI prompt can see alternatives if
+      // it wants context on whether today's pick is dramatic or muted.
+      runnersUp: valid.slice(1, 5).map(q => ({
+        ticker: q.symbol,
+        name: lookupCompany(q.symbol)?.name || q.name || q.symbol,
+        changesPercentage: q.changesPercentage,
+        price: q.price,
+      })),
+    };
+  } catch (err) {
+    console.error('[Data] Failed to fetch top mover:', err.message);
+    return null;
+  }
+}
+
 export async function fetchAllData(apiKey) {
-  const [marketData, news, movers] = await Promise.all([
+  const [marketData, news, movers, topMover] = await Promise.all([
     fetchMarketData(apiKey),
     fetchNews(apiKey),
     fetchMovers(apiKey),
+    fetchTopMover(apiKey),
   ]);
-  return { marketData, news, movers };
+  return { marketData, news, movers, topMover };
 }

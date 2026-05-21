@@ -15,17 +15,18 @@ export async function generateDigest() {
   if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not set');
 
   console.log('[Generate] Step 1/3: Fetching market data from FMP...');
-  const { marketData, news, movers } = await fetchAllData(fmpKey);
+  const { marketData, news, movers, topMover } = await fetchAllData(fmpKey);
   console.log(`[Generate]   Indices: ${Object.keys(marketData).length} symbols`);
   console.log(`[Generate]   News: ${news.length} articles`);
   console.log(`[Generate]   Movers: ${movers.topGainers.length} gainers, ${movers.topLosers.length} losers`);
+  console.log(`[Generate]   Today's Mover: ${topMover ? `${topMover.ticker} (${topMover.displayName}) ${topMover.changesPercentage?.toFixed?.(2)}%` : 'unavailable'}`);
 
   if (Object.keys(marketData).length === 0) {
     throw new Error('No market data returned from FMP — check API key');
   }
 
   console.log('[Generate] Step 2/3: Generating kid-friendly content via Claude...');
-  const content = await generateContent(marketData, news, movers);
+  const content = await generateContent(marketData, news, movers, topMover);
 
   console.log('[Generate] Step 3/3: Building HTML...');
   const html = buildHTML(content);
