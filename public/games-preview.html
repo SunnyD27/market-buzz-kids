@@ -85,9 +85,8 @@
   <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
 
   <div class="preview-nav" id="gameNav">
-    <!-- Built games -->
-    <a href="?game=compound" data-game="compound">Compound Interest</a>
-    <!-- Coming up (disabled until each is built and shown to Sunny for review) -->
+    <a href="?game=today"          data-game="today" style="background:linear-gradient(135deg,var(--purple),var(--blue));color:#fff;border-color:transparent;font-weight:700;">🚀 Today's Challenge</a>
+    <a href="?game=compound"       data-game="compound">Compound Interest</a>
     <a href="?game=match"          data-game="match">Match the Company</a>
     <a href="?game=time-machine"   data-game="time-machine">Time Machine</a>
     <a href="?game=bull-bear"      data-game="bull-bear">Bull or Bear</a>
@@ -165,7 +164,94 @@
       await loadScript('/games/price-is-right.js');
       window.MBGames['price-is-right'].render(host, samplePriceIsRight(), { onComplete });
     },
+    'today': async () => {
+      // Demonstrates the full Daily Challenge picker — today's 3 games
+      // chosen by the rotation, each hydrated with sample data.
+      // In production, the Phase 6 daily generator provides the hydrated bundle.
+      await Promise.all([
+        loadScript('/games/daily-challenge.js'),
+        loadScript('/games/compound.js'),
+        loadScript('/games/match.js'),
+        loadScript('/games/time-machine.js'),
+        loadScript('/games/bull-bear.js'),
+        loadScript('/games/price-is-right.js'),
+      ]);
+      const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
+      const types = window.MBGames.dailyChallenge.pickGamesForDate(today);
+      const games = [];
+      for (const t of types) {
+        const data = await sampleFor(t);
+        games.push({ type: t, data });
+      }
+      window.MBGames.dailyChallenge.render(host, { games }, {});
+    },
   };
+
+  async function sampleFor(type) {
+    if (type === 'compound')       return sampleCompound();
+    if (type === 'match')          return await sampleMatch();
+    if (type === 'time-machine')   return await sampleTimeMachine();
+    if (type === 'bull-bear')      return await sampleBullBear();
+    if (type === 'price-is-right') return samplePriceIsRight();
+    if (type === 'quiz')           return sampleQuiz();
+    return null;
+  }
+  function sampleQuiz() {
+    // The real quiz lives in the digest template; for preview we hand-roll a
+    // stand-in so the picker can show a 3rd card on quiz-day rotations.
+    return {
+      question: "If you buy 1 share of a company, what do you actually own?",
+      options: [
+        "A piece of the company itself",
+        "A loan you gave the company",
+        "A discount coupon",
+        "Nothing — it's just paper",
+      ],
+      correctIndex: 0,
+      explanation: "Stocks are ownership. One share = a tiny slice of the whole business — its buildings, its workers, its future profits. That's why investors say 'own,' not 'bet.'",
+      principle: 7,
+    };
+  }
+  // The Quiz module isn't a standalone game file yet (the existing quiz is
+  // baked into the digest template). For the picker preview, we register a
+  // minimal inline renderer that mirrors the template's logic.
+  window.MBGames = window.MBGames || {};
+  window.MBGames.quiz = window.MBGames.quiz || { render: renderInlineQuiz };
+  function renderInlineQuiz(host, data, opts) {
+    let answered = false;
+    host.innerHTML = `
+      <div class="mbg-card" id="qz-card">
+        <div class="mbg-label">🧠 Daily Challenge · The Quiz</div>
+        <div class="mbg-title">${esc(data.question)}</div>
+        <div id="qz-options" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;"></div>
+        <div class="mbg-reveal" id="qz-reveal"></div>
+      </div>`;
+    const optHost = host.querySelector('#qz-options');
+    data.options.forEach((opt, i) => {
+      const b = document.createElement('button');
+      b.type = 'button'; b.className = 'mbg-btn'; b.textContent = opt;
+      b.addEventListener('click', () => {
+        if (answered) return;
+        answered = true;
+        const correct = i === data.correctIndex;
+        Array.from(optHost.children).forEach((bb, j) => {
+          bb.disabled = true;
+          if (j === data.correctIndex) bb.classList.add('mbg-btn-correct');
+          else if (j === i && !correct) bb.classList.add('mbg-btn-wrong');
+        });
+        window.MBGames.shared.renderReveal(host.querySelector('#qz-card'), {
+          resultKind: correct ? 'correct' : 'wrong',
+          resultLabel: correct ? '🎯 Correct!' : '🤔 Not quite',
+          headline: 'The lesson',
+          body: '<p>' + esc(data.explanation) + '</p>',
+          principle: data.principle || 7,
+        });
+        if (opts.onComplete) opts.onComplete({ correct });
+      });
+      optHost.appendChild(b);
+    });
+  }
+  function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
 
   function onComplete(result) {
     if (window.MarketBuzz) {

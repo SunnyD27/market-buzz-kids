@@ -385,6 +385,98 @@
 .mbg-pir-option.correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
 .mbg-pir-option.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
 
+/* ---- Daily Challenge picker ---- */
+.dc-wrap {
+  background: linear-gradient(135deg, rgba(188,140,255,0.10), rgba(88,166,255,0.04));
+  border: 1px solid var(--card-border);
+  border-radius: 18px;
+  padding: 18px;
+  margin: 14px 0;
+}
+.dc-header {
+  display: flex; justify-content: space-between; align-items: center;
+  margin-bottom: 14px; flex-wrap: wrap; gap: 8px;
+}
+.dc-label {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px; letter-spacing: 2px; text-transform: uppercase;
+  color: var(--purple);
+  font-weight: 700;
+}
+.dc-progress {
+  font-family: 'Space Mono', monospace;
+  font-size: 11px; letter-spacing: 1px;
+  color: var(--text-dim);
+  padding: 4px 10px;
+  background: rgba(255,255,255,0.05);
+  border-radius: 999px;
+}
+.dc-progress-perfect {
+  background: linear-gradient(135deg, var(--purple), var(--yellow));
+  color: #0d1117; font-weight: 700;
+}
+.dc-grid { display: flex; flex-direction: column; gap: 10px; }
+
+.dc-card {
+  background: var(--card);
+  border: 1px solid var(--card-border);
+  border-radius: 14px;
+  overflow: hidden;
+  transition: border-color 0.2s, box-shadow 0.2s;
+}
+.dc-card:hover { border-color: var(--purple); }
+.dc-card-expanded { border-color: var(--purple); box-shadow: 0 6px 24px rgba(0,0,0,0.25); }
+.dc-card-played:not(.dc-card-expanded) { border-color: rgba(63,185,80,0.4); background: rgba(63,185,80,0.04); }
+
+.dc-card-head {
+  display: flex; align-items: center; gap: 12px;
+  padding: 14px 16px;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.dc-card-head:hover { background: rgba(255,255,255,0.02); }
+.dc-card-icon { font-size: 32px; line-height: 1; flex-shrink: 0; }
+.dc-card-info { flex: 1; min-width: 0; }
+.dc-card-name { font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 2px; }
+.dc-card-blurb { font-size: 13px; color: var(--text-dim); line-height: 1.45; }
+.dc-card-cta {
+  font-family: 'Space Mono', monospace;
+  font-size: 12px; font-weight: 700; letter-spacing: 0.5px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: linear-gradient(135deg, var(--purple), var(--blue));
+  color: #fff;
+  white-space: nowrap;
+  flex-shrink: 0;
+  /* Larger touch target for iPad */
+  min-height: 36px;
+  display: inline-flex; align-items: center;
+}
+.dc-cta-played {
+  background: rgba(63,185,80,0.18);
+  color: var(--green);
+  border: 1px solid rgba(63,185,80,0.4);
+}
+.dc-card-expanded .dc-card-cta {
+  background: rgba(248,81,73,0.12);
+  color: var(--red);
+  border: 1px solid rgba(248,81,73,0.3);
+}
+.dc-card-body {
+  padding: 0 8px 16px;
+  border-top: 1px solid var(--card-border);
+}
+/* Remove the inner game-card margins so it nestles cleanly inside the parent. */
+.dc-card-body .mbg-card { margin: 12px 0 0; }
+
+@media (max-width: 480px) {
+  .dc-card-head { padding: 12px; gap: 10px; }
+  .dc-card-icon { font-size: 26px; }
+  .dc-card-name { font-size: 15px; }
+  .dc-card-blurb { font-size: 12px; }
+}
+
 /* Honesty disclosure for Bull/Bear unlabeled charts */
 .mbg-data-note {
   margin-top: 12px;
