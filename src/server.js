@@ -58,15 +58,29 @@ app.get('/', (req, res) => {
 });
 
 // `/digest` — the daily digest (what `/` used to serve).
-// Kid-facing surface. PWA start_url points here. Only shown to signed-up
-// users (linked from the daily teaser email) — the public landing CTA
-// points to /sample instead, see below.
+// Kid-facing surface. PWA start_url points here. Linked from the daily
+// teaser email + the activation page.
+//
+// Fallback behavior: if public/index.html doesn't exist yet (fresh
+// container that hasn't generated today's digest yet, OR cron hasn't
+// fired), render the sample so the kid gets immediate value instead of a
+// "brewing" placeholder. This is critical UX: a kid who just signed up
+// hits /digest right after activation and must see content, not a
+// "come back later" message. Once the boot-time generation finishes (or
+// the 7 AM cron runs), refreshing serves the real index.html.
 app.get('/digest', (req, res) => {
   const digestPath = path.join(__dirname, '..', 'public', 'index.html');
   if (fs.existsSync(digestPath)) {
-    res.sendFile(digestPath);
-  } else {
-    res.status(200).type('html').send(digestBrewingPage());
+    return res.sendFile(digestPath);
+  }
+  try {
+    const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
+    const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
+    content.isSample = true;
+    return res.status(200).type('html').send(buildHTML(content));
+  } catch (err) {
+    console.error('[digest] fallback render failed:', err.message);
+    return res.status(200).type('html').send(digestBrewingPage());
   }
 });
 
@@ -534,10 +548,63 @@ cron.schedule('0 7 * * *', async () => {
   timezone: 'America/New_York',
 });
 
+// ============================================================
+// Boot-time digest bootstrap
+// ============================================================
+// Railway containers wipe public/index.html on every redeploy (it's
+// gitignored), so without this, the digest is missing for hours after
+// each deploy until the 7 AM cron fires. This checks at boot whether
+// today's digest exists in NY time; if not, fires generateDigest() in
+// the background. Fire-and-forget — never blocks server startup, and
+// failures just log (the 7 AM cron is still the safety net).
+async function bootstrapTodaysDigest() {
+  const dataPath = path.join(__dirname, '..', 'public', 'digest-data.json');
+  const todayNY = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+
+  if (fs.existsSync(dataPath)) {
+    try {
+      const content = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+      const gen = content?.generated_at ? new Date(content.generated_at) : null;
+      if (gen && !isNaN(gen)) {
+        const genDay = new Intl.DateTimeFormat('en-CA', {
+          timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
+        }).format(gen);
+        if (genDay === todayNY) {
+          console.log('[Bootstrap] Today\'s digest already present — skipping.');
+          return;
+        }
+      }
+      console.log('[Bootstrap] Existing digest is stale — regenerating.');
+    } catch {
+      console.log('[Bootstrap] digest-data.json malformed — regenerating.');
+    }
+  } else {
+    console.log('[Bootstrap] No digest found — generating today\'s for the first time.');
+  }
+
+  // Require both keys before attempting — otherwise generateDigest throws
+  // synchronously and the unhandled rejection is noisy.
+  if (!process.env.FMP_API_KEY || !process.env.ANTHROPIC_API_KEY) {
+    console.warn('[Bootstrap] FMP_API_KEY or ANTHROPIC_API_KEY not set — skipping. /digest will fall back to /sample until keys are configured.');
+    return;
+  }
+
+  try {
+    await generateDigest();
+    process.env.LAST_GENERATED = new Date().toISOString();
+    console.log('[Bootstrap] ✅ Initial digest generated.');
+  } catch (err) {
+    console.error('[Bootstrap] Initial generation failed (will retry at 7 AM cron):', err.message);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`📈 Market Buzz Kids running on port ${PORT}`);
   console.log(`   Landing:        /`);
-  console.log(`   Digest:         /digest`);
+  console.log(`   Digest:         /digest  (fallback: /sample when index.html missing)`);
+  console.log(`   Sample:         /sample`);
   console.log(`   Privacy:        /privacy`);
   console.log(`   Delete data:    /parent/delete-data`);
   console.log(`   Signup API:     POST /api/signup`);
@@ -545,6 +612,9 @@ app.listen(PORT, () => {
   console.log(`   Teaser fan-out: POST /api/cron/send-digest (X-Cron-Secret)`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
+
+  // Fire-and-forget bootstrap. If anything fails, the 7 AM cron will recover.
+  bootstrapTodaysDigest();
 });
 
 // ============================================================
