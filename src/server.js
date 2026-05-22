@@ -11,6 +11,7 @@ import { generateDigest } from './generate.js';
 import { buildHTML } from './template.js';
 import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
+import { getTodaysDigest, todayNY } from './digest-store.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -57,29 +58,65 @@ app.get('/', (req, res) => {
   }
 });
 
-// `/digest` — the daily digest (what `/` used to serve).
-// Kid-facing surface. PWA start_url points here. Linked from the daily
-// teaser email + the activation page.
+// `/digest` — the daily digest. Kid-facing surface, linked from the
+// daily teaser email + the activation page. PWA start_url points here.
 //
-// Fallback behavior: if public/index.html doesn't exist yet (fresh
-// container that hasn't generated today's digest yet, OR cron hasn't
-// fired), render the sample so the kid gets immediate value instead of a
-// "brewing" placeholder. This is critical UX: a kid who just signed up
-// hits /digest right after activation and must see content, not a
-// "come back later" message. Once the boot-time generation finishes (or
-// the 7 AM cron runs), refreshing serves the real index.html.
-app.get('/digest', (req, res) => {
+// Read-path priority (Phase 6.7):
+//   1. public/index.html on disk — fastest (sendFile, no JSON parsing).
+//      Populated by generateDigest() and persisted across requests
+//      within the same container's lifetime.
+//   2. daily_digests row in Postgres — source of truth. Survives
+//      redeploys, restarts, container rotation. If disk is empty (fresh
+//      container), we re-render from the DB row and warm the disk so
+//      subsequent requests hit the fast path.
+//   3. /sample fallback — only when (2) also has nothing. This means
+//      today's row hasn't been generated AT ALL yet (e.g., first deploy
+//      of the day before the bootstrap finished). Sample provides
+//      immediate value so the kid is never stuck on a "brewing" page.
+//
+// Critical invariant: paths 1 and 2 ALWAYS serve identical content for
+// the same calendar day, regardless of how many redeploys have happened.
+// The DB row is locked via ON CONFLICT DO NOTHING in saveDigest().
+app.get('/digest', async (req, res) => {
   const digestPath = path.join(__dirname, '..', 'public', 'index.html');
   if (fs.existsSync(digestPath)) {
     return res.sendFile(digestPath);
   }
+
+  // Disk empty — try the DB.
+  try {
+    const dbDigest = await getTodaysDigest();
+    if (dbDigest?.content) {
+      const html = buildHTML(dbDigest.content);
+      // Warm the disk so the next request (and the rest of this
+      // container's lifetime) hits the fast path.
+      try {
+        fs.mkdirSync(path.dirname(digestPath), { recursive: true });
+        fs.writeFileSync(digestPath, html, 'utf-8');
+        fs.writeFileSync(
+          path.join(__dirname, '..', 'public', 'digest-data.json'),
+          JSON.stringify(dbDigest.content, null, 2),
+          'utf-8',
+        );
+      } catch (writeErr) {
+        // Non-fatal — we can still serve the response from memory.
+        console.warn('[digest] disk warm-up failed (non-fatal):', writeErr.message);
+      }
+      return res.status(200).type('html').send(html);
+    }
+  } catch (err) {
+    console.error('[digest] DB lookup failed:', err.message);
+    // Fall through to sample.
+  }
+
+  // DB row missing too — show the sample so the kid gets immediate value.
   try {
     const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
     const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
     content.isSample = true;
     return res.status(200).type('html').send(buildHTML(content));
   } catch (err) {
-    console.error('[digest] fallback render failed:', err.message);
+    console.error('[digest] sample fallback also failed:', err.message);
     return res.status(200).type('html').send(digestBrewingPage());
   }
 });
@@ -521,13 +558,17 @@ app.get('/api/health', async (req, res) => {
 // share their own try/catch so a failure in one logs cleanly without
 // taking the process down.
 cron.schedule('0 7 * * *', async () => {
-  console.log(`[Cron] Starting daily digest generation at ${new Date().toISOString()}`);
+  console.log(`[Cron] 7 AM EST daily run at ${new Date().toISOString()}`);
+  // generateDigest() is idempotent — if today's row was already created
+  // by a boot-time bootstrap (rare on a quiet deploy day), this just
+  // reads it back from Postgres and writes it to disk. No double work,
+  // no overwriting. The first generation of the day wins.
   let generated = false;
   try {
     await generateDigest();
     process.env.LAST_GENERATED = new Date().toISOString();
     generated = true;
-    console.log('[Cron] Digest generated successfully.');
+    console.log('[Cron] Digest ready (fresh or cached).');
   } catch (err) {
     console.error('[Cron] Generation failed — SKIPPING teaser fan-out to avoid sending stale content:', err.message);
   }
@@ -549,54 +590,34 @@ cron.schedule('0 7 * * *', async () => {
 });
 
 // ============================================================
-// Boot-time digest bootstrap
+// Boot-time digest bootstrap (Phase 6.7)
 // ============================================================
-// Railway containers wipe public/index.html on every redeploy (it's
-// gitignored), so without this, the digest is missing for hours after
-// each deploy until the 7 AM cron fires. This checks at boot whether
-// today's digest exists in NY time; if not, fires generateDigest() in
-// the background. Fire-and-forget — never blocks server startup, and
-// failures just log (the 7 AM cron is still the safety net).
+// Now that generateDigest() is itself idempotent (it checks the
+// daily_digests Postgres table first and skips the FMP+Claude pipeline
+// when today's row exists), this is just a thin wrapper that calls it.
+//
+// Call sites:
+//   - On every container boot (fire-and-forget after app.listen).
+//   - From the 7 AM EST cron handler.
+//
+// If today's row is already in Postgres, generateDigest() just reads it
+// back, writes it to disk for fast serving, and returns. No API calls.
+// If the row is missing, the full pipeline runs and INSERTs it.
+//
+// Either way: same content for every visitor for the rest of the day.
 async function bootstrapTodaysDigest() {
-  const dataPath = path.join(__dirname, '..', 'public', 'digest-data.json');
-  const todayNY = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
-
-  if (fs.existsSync(dataPath)) {
-    try {
-      const content = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
-      const gen = content?.generated_at ? new Date(content.generated_at) : null;
-      if (gen && !isNaN(gen)) {
-        const genDay = new Intl.DateTimeFormat('en-CA', {
-          timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit',
-        }).format(gen);
-        if (genDay === todayNY) {
-          console.log('[Bootstrap] Today\'s digest already present — skipping.');
-          return;
-        }
-      }
-      console.log('[Bootstrap] Existing digest is stale — regenerating.');
-    } catch {
-      console.log('[Bootstrap] digest-data.json malformed — regenerating.');
-    }
-  } else {
-    console.log('[Bootstrap] No digest found — generating today\'s for the first time.');
-  }
-
-  // Require both keys before attempting — otherwise generateDigest throws
-  // synchronously and the unhandled rejection is noisy.
+  // Skip cleanly if generation keys aren't set yet — /digest will fall
+  // back to the sample until they are.
   if (!process.env.FMP_API_KEY || !process.env.ANTHROPIC_API_KEY) {
-    console.warn('[Bootstrap] FMP_API_KEY or ANTHROPIC_API_KEY not set — skipping. /digest will fall back to /sample until keys are configured.');
+    console.warn(`[Bootstrap] FMP_API_KEY or ANTHROPIC_API_KEY not set — skipping. /digest will fall back to /sample until keys are configured.`);
     return;
   }
-
+  console.log(`[Bootstrap] Checking digest cache for ${todayNY()}...`);
   try {
     await generateDigest();
-    process.env.LAST_GENERATED = new Date().toISOString();
-    console.log('[Bootstrap] ✅ Initial digest generated.');
+    console.log('[Bootstrap] ✅ Digest ready on disk.');
   } catch (err) {
-    console.error('[Bootstrap] Initial generation failed (will retry at 7 AM cron):', err.message);
+    console.error('[Bootstrap] Failed (will retry at 7 AM cron):', err.message);
   }
 }
 

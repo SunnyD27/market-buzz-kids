@@ -20,29 +20,47 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-if (!process.env.DATABASE_URL) {
-  console.warn('[db] DATABASE_URL not set — DB-backed routes will error until you set it.');
+// Lazy pool init — same reasoning as the Anthropic lazy client in ai.js.
+// In ESM, modules execute in dependency order: when generate.js imports
+// digest-store.js → db.js, db.js's body runs BEFORE generate.js's body
+// has had a chance to call dotenv.config(). If we constructed the Pool
+// at module load, it'd see DATABASE_URL=undefined. Reading process.env
+// at first-query time is safe and has no measurable cost.
+let _pool = null;
+function getPool() {
+  if (_pool) return _pool;
+  if (!process.env.DATABASE_URL) {
+    console.warn('[db] DATABASE_URL not set — DB-backed routes will error until you set it.');
+  }
+  _pool = new Pool({
+    connectionString: process.env.DATABASE_URL,
+    ssl: { rejectUnauthorized: false },
+  });
+  _pool.on('error', (err) => {
+    console.error('[db] idle client error:', err.message);
+  });
+  return _pool;
 }
 
-export const pool = new Pool({
-  connectionString: process.env.DATABASE_URL,
-  ssl: { rejectUnauthorized: false },
-});
-
-// Surface pool-level errors instead of letting them bubble as unhandled.
-pool.on('error', (err) => {
-  console.error('[db] idle client error:', err.message);
+// Backward-compat: a few callers may still reference `pool` directly.
+// Make it a getter so the first access still triggers lazy init.
+export const pool = new Proxy({}, {
+  get(_t, prop) {
+    const p = getPool();
+    const v = p[prop];
+    return typeof v === 'function' ? v.bind(p) : v;
+  },
 });
 
 export function query(text, params) {
-  return pool.query(text, params);
+  return getPool().query(text, params);
 }
 
 export function getClient() {
-  return pool.connect();
+  return getPool().connect();
 }
 
 export async function healthCheck() {
-  const { rows } = await pool.query('SELECT 1 AS ok');
+  const { rows } = await getPool().query('SELECT 1 AS ok');
   return rows[0]?.ok === 1;
 }

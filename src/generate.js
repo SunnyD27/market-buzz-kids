@@ -12,16 +12,63 @@ import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
+import { todayNY, getTodaysDigest, saveDigest } from './digest-store.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-export async function generateDigest() {
+/**
+ * Idempotent digest generation. Phase 6.7 contract:
+ *
+ *   - If today's row already exists in daily_digests, do NOTHING fresh —
+ *     read the existing content from Postgres, write it to disk for
+ *     fast /digest serving, and return. No FMP calls, no Claude calls.
+ *
+ *   - If today's row does NOT exist, run the full pipeline (FMP fetch,
+ *     Claude content gen, game hydration, content-history recording),
+ *     persist into Postgres via ON CONFLICT DO NOTHING, then write to
+ *     disk. If another container races and wins the INSERT, our local
+ *     content is discarded and we write the winning row to disk instead
+ *     — all callers end up with identical content.
+ *
+ * This guarantees: every visitor for the rest of the calendar day
+ * (America/New_York) sees the SAME digest, regardless of how many
+ * redeploys happen.
+ *
+ * @param {object} [opts]
+ * @param {boolean} [opts.force=false] — DEV ONLY. Skip the DB cache check
+ *   and produce a fresh digest. The INSERT still uses ON CONFLICT DO
+ *   NOTHING, so an existing row remains immutable; force just wastes
+ *   API calls. Useful only if today's row exists but you want to
+ *   pre-warm the disk (e.g., after wiping public/index.html locally).
+ */
+export async function generateDigest(opts = {}) {
+  const publicDir = path.join(__dirname, '..', 'public');
+  const htmlPath = path.join(publicDir, 'index.html');
+  const dataPath = path.join(publicDir, 'digest-data.json');
+  const today = todayNY();
+
+  // ── Cache check: today's row already in Postgres? ────────────────
+  if (!opts.force) {
+    const existing = await getTodaysDigest();
+    if (existing) {
+      console.log(`[Generate] Today's digest (${today}) already exists in DB — using cached copy. No API calls.`);
+      mkdirSync(publicDir, { recursive: true });
+      const html = buildHTML(existing.content);
+      writeFileSync(htmlPath, html, 'utf-8');
+      writeFileSync(dataPath, JSON.stringify(existing.content, null, 2), 'utf-8');
+      console.log(`[Generate] ✅ Cached digest written to disk (${(html.length / 1024).toFixed(1)} KB)`);
+      return htmlPath;
+    }
+  }
+
+  // ── No cached row — run the full pipeline ─────────────────────────
   const fmpKey = process.env.FMP_API_KEY;
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!fmpKey) throw new Error('FMP_API_KEY not set');
   if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not set');
 
+  console.log(`[Generate] Generating fresh digest for ${today}...`);
   console.log('[Generate] Step 1/3: Fetching market data from FMP...');
   const { marketData, news, movers, topMover } = await fetchAllData(fmpKey);
   console.log(`[Generate]   Indices: ${Object.keys(marketData).length} symbols`);
@@ -51,21 +98,10 @@ export async function generateDigest() {
   //   - hydrateDailyGames: today's 3-game daily challenge (new, Phase 6.5)
   // The games hydrator needs the generated quiz IF 'quiz' is in today's
   // rotation, so we await content first, then pass quiz into the games call.
-  // (The games call itself parallelizes its 0-2 internal reframer calls.)
   const content = await generateContent(marketData, news, movers, topMover, {
     recentWords,
     recentFacts,
   });
-
-  // Persist what we just picked so the next run avoids it.
-  if (content?.wordOfDay?.word) {
-    record('word', content.wordOfDay.word);
-    console.log(`[Generate]   Word of the Day: "${content.wordOfDay.word}" recorded`);
-  }
-  if (content?.didYouKnow?.fact) {
-    record('fact', content.didYouKnow.fact);
-    console.log(`[Generate]   Did You Know fact recorded (${content.didYouKnow.fact.length} chars)`);
-  }
 
   const dailyChallenge = await hydrateDailyGames({
     fmpKey,
@@ -74,25 +110,43 @@ export async function generateDigest() {
   content.dailyChallenge = dailyChallenge;
   console.log(`[Generate]   Daily challenge: ${dailyChallenge.picked.join(', ')}`);
 
-  console.log('[Generate] Step 3/3: Building HTML...');
-  const html = buildHTML(content);
+  const fullPayload = { ...content, generated_at: new Date().toISOString() };
 
-  const publicDir = path.join(__dirname, '..', 'public');
+  // ── Persist to Postgres FIRST (the source of truth) ────────────────
+  // ON CONFLICT DO NOTHING — if a parallel container raced and won,
+  // we DISCARD our freshly-generated content and use theirs instead so
+  // every container ends up writing identical files to disk.
+  console.log('[Generate] Step 3/3: Persisting to Postgres + disk...');
+  const saveResult = await saveDigest(today, fullPayload);
+
+  if (saveResult.inserted) {
+    console.log(`[Generate]   ✅ Inserted new row in daily_digests for ${today} — this is now the canonical digest of the day.`);
+    // Only record word/fact rotation on a REAL insert. A losing race
+    // means our content is being thrown away — don't pollute rotation
+    // history with a word that's not actually being shown.
+    if (content?.wordOfDay?.word) {
+      record('word', content.wordOfDay.word);
+      console.log(`[Generate]   Word of the Day: "${content.wordOfDay.word}" recorded to rotation history`);
+    }
+    if (content?.didYouKnow?.fact) {
+      record('fact', content.didYouKnow.fact);
+      console.log(`[Generate]   Did You Know fact recorded to rotation history`);
+    }
+  } else {
+    console.log(`[Generate]   ⚠ Lost race — today's row was inserted by another process. Using their content.`);
+  }
+
+  // Use whichever content is in the DB (either ours or the race winner's).
+  const canonical = saveResult.row?.content || fullPayload;
+
   mkdirSync(publicDir, { recursive: true });
-  const outputPath = path.join(publicDir, 'index.html');
-  writeFileSync(outputPath, html, 'utf-8');
+  const html = buildHTML(canonical);
+  writeFileSync(htmlPath, html, 'utf-8');
+  writeFileSync(dataPath, JSON.stringify(canonical, null, 2), 'utf-8');
 
-  // Also persist the structured content so the daily teaser email (Phase 6.2)
-  // and any future server-side consumer can read today's digest without
-  // re-parsing the HTML. This is NOT the digest template — it's the raw JSON
-  // payload `buildHTML()` consumed.
-  const dataPath = path.join(publicDir, 'digest-data.json');
-  const payload = { ...content, generated_at: new Date().toISOString() };
-  writeFileSync(dataPath, JSON.stringify(payload, null, 2), 'utf-8');
-
-  console.log(`[Generate] ✅ Digest written to ${outputPath} (${(html.length / 1024).toFixed(1)} KB)`);
+  console.log(`[Generate] ✅ Digest written to ${htmlPath} (${(html.length / 1024).toFixed(1)} KB)`);
   console.log(`[Generate] ✅ Digest data written to ${dataPath}`);
-  return outputPath;
+  return htmlPath;
 }
 
 if (process.argv[1] && process.argv[1].includes('generate.js')) {

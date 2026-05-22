@@ -132,3 +132,23 @@ CREATE TABLE IF NOT EXISTS engagement (
 );
 
 CREATE INDEX IF NOT EXISTS engagement_day_idx ON engagement (day);
+
+-- ============================================================
+-- daily_digests (Phase 6.7 — immutable daily digest)
+-- ============================================================
+-- One row per calendar day (America/New_York). Generated once by whoever
+-- (cron or first container boot) calls generateDigest() that day; locked
+-- in via ON CONFLICT DO NOTHING. Every visitor for the rest of that day
+-- reads the SAME row → identical content even across container redeploys.
+--
+-- `content` is the full JSON payload that buildHTML() consumes — scoreboard,
+-- stories, didYouKnow, wordOfDay, dailyChallenge, etc. Stored as JSONB so we
+-- can query/filter individual fields if a future report needs them.
+CREATE TABLE IF NOT EXISTS daily_digests (
+  digest_date    DATE         PRIMARY KEY,
+  content        JSONB        NOT NULL,
+  generated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS daily_digests_generated_at_idx
+  ON daily_digests (generated_at DESC);
