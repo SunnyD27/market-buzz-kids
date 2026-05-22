@@ -6,7 +6,8 @@
 export function buildHTML(content) {
   const {
     date, marketVibe, vibeSummary, bigPicture,
-    scoreboard, stories, didYouKnow, quiz, wordOfDay,
+    scoreboard, stories, didYouKnow, wordOfDay,
+    dailyChallenge,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -25,9 +26,22 @@ export function buildHTML(content) {
     </div>
   `).join('');
 
-  const quizOptionsHTML = quiz.options.map((opt, i) => `
-    <button class="quiz-btn" onclick="checkAnswer(this, ${i === quiz.correctIndex})">${escapeHTML(opt)}</button>
-  `).join('');
+  // Phase 6.4: the bare quiz section was replaced by the Daily Challenge
+  // picker. The picker decides today's 3 games (rotation in
+  // public/games/daily-challenge.js) and renders them as expandable cards.
+  // Today's hydrated game payloads come from src/games.js via
+  // content.dailyChallenge. If for some reason dailyChallenge isn't
+  // present, we omit the section entirely rather than fall back to a
+  // partial bare quiz.
+  const hasDailyChallenge = !!(dailyChallenge && Array.isArray(dailyChallenge.games) && dailyChallenge.games.length);
+  const dailyChallengeSectionHTML = hasDailyChallenge ? `
+  <div class="section-header">
+    <span class="emoji">🚀</span>
+    <h2>Today's Daily Challenge</h2>
+    <div class="line"></div>
+  </div>
+  <div id="daily-challenge-host"></div>
+  ` : '';
 
   function scoreCard(key, label) {
     const s = scoreboard[key];
@@ -85,6 +99,7 @@ export function buildHTML(content) {
 <title>Market Buzz Kids</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/engagement.css">
+<link rel="stylesheet" href="/games/styles.css">
 <script src="/engagement.js" defer></script>
 <script src="/pwa.js" defer></script>
 <style>
@@ -244,22 +259,7 @@ export function buildHTML(content) {
     ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
   </div>
 
-  <div class="section-header">
-    <span class="emoji">🧠</span>
-    <h2>Pop Quiz</h2>
-    <div class="line"></div>
-  </div>
-
-  <div class="quiz-card">
-    <div class="quiz-label">⚡ TEST YOUR KNOWLEDGE</div>
-    <div class="quiz-question">${escapeHTML(quiz.question)}</div>
-    <div class="quiz-options">
-      ${quizOptionsHTML}
-    </div>
-    <div class="quiz-answer" id="quizAnswer">
-      <strong>✅ ${escapeHTML(quiz.options[quiz.correctIndex])}!</strong> ${escapeHTML(quiz.explanation)}
-    </div>
-  </div>
+  ${dailyChallengeSectionHTML}
 
   <div class="section-header">
     <span class="emoji">📖</span>
@@ -285,6 +285,18 @@ export function buildHTML(content) {
 
 </div>
 
+<!-- Phase 6.4: game modules. Loaded synchronously and in order before the
+     inline render call below so window.MBGames is fully populated. -->
+${hasDailyChallenge ? `
+<script src="/games/shared.js"></script>
+<script src="/games/daily-challenge.js"></script>
+<script src="/games/compound.js"></script>
+<script src="/games/match.js"></script>
+<script src="/games/time-machine.js"></script>
+<script src="/games/bull-bear.js"></script>
+<script src="/games/price-is-right.js"></script>
+` : ''}
+
 <script>
   // ---- Twinkling starfield ----
   const starsEl = document.getElementById('stars');
@@ -298,30 +310,66 @@ export function buildHTML(content) {
     starsEl.appendChild(star);
   }
 
-  // ---- Quiz (Game 1 in the engagement engine) ----
-  const correctIdx = ${quiz.correctIndex};
-  function checkAnswer(btn, isCorrect) {
-    const buttons = document.querySelectorAll('.quiz-btn');
-    // Guard against double-counting if the user taps twice quickly.
-    if (btn.dataset.answered === '1') return;
-    buttons.forEach(b => { b.disabled = true; b.style.cursor = 'default'; b.dataset.answered = '1'; });
-    if (isCorrect) {
-      btn.classList.add('correct');
-    } else {
-      btn.classList.add('wrong');
-      buttons[correctIdx].classList.add('correct');
-    }
-    document.getElementById('quizAnswer').classList.add('visible');
-    if (window.MarketBuzz) {
-      window.MarketBuzz.recordGamePlayed('quiz', { correct: isCorrect });
-    }
-  }
-
   // ---- Word of Day tap-to-reveal (+5 XP, once per day) ----
   function revealWord() {
     document.getElementById('word-card').classList.add('word-revealed');
     if (window.MarketBuzz) window.MarketBuzz.recordWordRevealed();
   }
+
+  ${hasDailyChallenge ? `
+  // ---- Daily Challenge (Phase 6.4) -------------------------------------
+  // Inline quiz renderer — the quiz module isn't a standalone file (its
+  // original implementation lived inline in this template). Registering on
+  // window.MBGames.quiz so the picker can render quiz cards just like any
+  // other game type. Mirrors public/games-preview.html's inline renderer.
+  window.MBGames = window.MBGames || {};
+  if (!window.MBGames.quiz) {
+    window.MBGames.quiz = { render: function (host, data, opts) {
+      var answered = false;
+      host.innerHTML =
+        '<div class="mbg-card" id="qz-card">' +
+          '<div class="mbg-label">🧠 Daily Challenge · The Quiz</div>' +
+          '<div class="mbg-title">' + esc(data.question) + '</div>' +
+          '<div id="qz-options" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;"></div>' +
+          '<div class="mbg-reveal" id="qz-reveal"></div>' +
+        '</div>';
+      var optHost = host.querySelector('#qz-options');
+      data.options.forEach(function (opt, i) {
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'mbg-btn'; b.textContent = opt;
+        b.addEventListener('click', function () {
+          if (answered) return;
+          answered = true;
+          var correct = i === data.correctIndex;
+          Array.from(optHost.children).forEach(function (bb, j) {
+            bb.disabled = true;
+            if (j === data.correctIndex) bb.classList.add('mbg-btn-correct');
+            else if (j === i && !correct) bb.classList.add('mbg-btn-wrong');
+          });
+          window.MBGames.shared.renderReveal(host.querySelector('#qz-card'), {
+            resultKind: correct ? 'correct' : 'wrong',
+            resultLabel: correct ? '🎯 Correct!' : '🤔 Not quite',
+            headline: 'The lesson',
+            body: '<p>' + esc(data.explanation || '') + '</p>',
+            principle: data.principle || 7,
+          });
+          if (opts && opts.onComplete) opts.onComplete({ correct: correct });
+        });
+        optHost.appendChild(b);
+      });
+      function esc(s){return String(s||'').replace(/[&<>"\\']/g,function(c){return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"\\'":'&#039;'}[c]);});}
+    }};
+  }
+
+  // Today's hydrated bundle, baked in at generation time. JSON.stringify
+  // produces a safe string literal — no XSS risk since values are escaped.
+  var __DC_BUNDLE = ${JSON.stringify({ games: dailyChallenge.games.map(g => ({ type: g.type, data: g.data })) })};
+  (function () {
+    var host = document.getElementById('daily-challenge-host');
+    if (!host || !window.MBGames || !window.MBGames.dailyChallenge) return;
+    window.MBGames.dailyChallenge.render(host, __DC_BUNDLE, {});
+  })();
+  ` : ''}
 </script>
 
 </body>

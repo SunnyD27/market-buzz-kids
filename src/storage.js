@@ -1,124 +1,122 @@
 /**
- * src/storage.js — In-memory store for Phase 5.
+ * src/storage.js — Postgres-backed storage (Phase 6.1).
  *
- * Mirrors src/schema.sql exactly. Every helper returns plain objects
- * with the same shape Neon will return in Phase 6, so swapping the
- * backend is a search-and-replace of these helpers.
+ * Same public surface as the Phase 5 in-memory store, but every helper now
+ * round-trips to Neon via src/db.js. All helpers are async — callers must
+ * `await` them.
  *
- * State is process-local: lost on server restart. That's fine for
- * Phase 5 — the goal is end-to-end UX validation (signup → verify
- * URL → activate flips), not durability.
+ * Tables (see src/schema.sql):
+ *   users                  — one row per signup, soft-deleted via deleted_at
+ *   verification_tokens    — one row per outstanding verify/consent link
+ *   deletion_requests      — audit log of parent-initiated deletions
  *
- * Logs every state change to console so you can watch signups stream
- * in during local testing.
+ * Two operations span multiple rows and use transactions:
+ *   createUserFromSignup — INSERT user + INSERT token
+ *   consumeToken         — UPDATE token + UPDATE user (+ flip is_active)
+ *   recordDeletionRequest — UPDATE user (soft-delete) + INSERT deletion_request
  */
 
-import { randomUUID, randomBytes } from 'crypto';
-
-// ---- State buckets (private to this module) ------------------------------
-
-/** Map<userId, userRow> */
-const users = new Map();
-/** Map<token, tokenRow> */
-const tokens = new Map();
-/** Array<deletionRequestRow> */
-const deletionRequests = [];
+import { randomBytes } from 'crypto';
+import { query, getClient } from './db.js';
 
 // ---- Helpers -------------------------------------------------------------
 
-function nowIso() { return new Date().toISOString(); }
 function newToken() { return randomBytes(32).toString('hex'); }
-function tokenTtlIso(days) {
-  return new Date(Date.now() + days * 86400_000).toISOString();
+
+function tokenExpiry(days) {
+  return new Date(Date.now() + days * 86400_000);
 }
 
 function emailKey(email) { return String(email || '').trim().toLowerCase(); }
 
-/** Find an active (non-deleted) user by parent email. */
-function findActiveUserByEmail(email) {
-  const key = emailKey(email);
-  for (const u of users.values()) {
-    if (u.deleted_at === null && emailKey(u.parent_email) === key) return u;
-  }
-  return null;
+// ---- Lookups -------------------------------------------------------------
+
+/** Find an active (non-deleted) user by parent email. Case-insensitive. */
+async function findActiveUserByEmail(email) {
+  const { rows } = await query(
+    `SELECT * FROM users
+      WHERE LOWER(parent_email) = $1 AND deleted_at IS NULL
+      LIMIT 1`,
+    [emailKey(email)]
+  );
+  return rows[0] || null;
 }
 
-function findUserById(id) {
-  return users.get(id) || null;
+async function findUserById(id) {
+  const { rows } = await query(`SELECT * FROM users WHERE id = $1 LIMIT 1`, [id]);
+  return rows[0] || null;
 }
 
 // ---- User lifecycle ------------------------------------------------------
 
 /**
- * Create a fresh user from validated signup input.
- * Returns the user row (which Phase 6 will be a Postgres returning row).
- *
- * Side effects: also creates the appropriate token row (email_verify OR
- * parental_consent) and returns it alongside.
+ * Create a fresh user + its verify/consent token in one transaction.
+ * Returns { user, tokenRow } — same shape Phase 5 returned.
  */
-function createUserFromSignup(input) {
-  // input is already validated by the route — we don't re-validate here.
-  // Caller responsibility: ensure parent_email/kid_first_name/kid_age set.
+async function createUserFromSignup(input) {
   const consentRequired = input.kid_age >= 10 && input.kid_age <= 12;
-  const user = {
-    id: randomUUID(),
-
-    parent_email: input.parent_email.trim(),
-    kid_first_name: input.kid_first_name.trim(),
-    kid_age: input.kid_age,
-
-    invest_experience: input.invest_experience || null,
-    referral_source: input.referral_source || null,
-
-    utm_source: input.utm_source || null,
-    utm_medium: input.utm_medium || null,
-    utm_campaign: input.utm_campaign || null,
-    utm_content: input.utm_content || null,
-    utm_term: input.utm_term || null,
-
-    user_agent: input.user_agent || null,
-    device_type: input.device_type || 'unknown',
-    timezone: input.timezone || null,
-    signup_ip: input.signup_ip || null,
-    signup_at: nowIso(),
-
-    email_verified: false,
-    email_verified_at: null,
-
-    consent_required: consentRequired,
-    consent_given: false,
-    consent_method: null,
-    consent_timestamp: null,
-    consent_ip: null,
-
-    is_active: false,
-
-    push_subscription: null,
-
-    deleted_at: null,
-    deletion_reason: null,
-
-    created_at: nowIso(),
-    updated_at: nowIso(),
-  };
-  users.set(user.id, user);
-
-  // Create the appropriate token. Ages 10-12 get a 'parental_consent'
-  // token; ages 13-16 get an 'email_verify' token. Both expire in 7 days.
   const purpose = consentRequired ? 'parental_consent' : 'email_verify';
-  const tokenRow = {
-    token: newToken(),
-    user_id: user.id,
-    purpose,
-    expires_at: tokenTtlIso(7),
-    used_at: null,
-    created_at: nowIso(),
-  };
-  tokens.set(tokenRow.token, tokenRow);
+  const token = newToken();
+  const expiresAt = tokenExpiry(7);
 
-  console.log(`[storage] created user ${user.id} (${user.parent_email}, age ${user.kid_age}, consent_required=${consentRequired}, token=${tokenRow.token.slice(0,8)}...)`);
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
 
-  return { user, tokenRow };
+    const userInsert = await client.query(
+      `INSERT INTO users (
+        parent_email, kid_first_name, kid_age,
+        invest_experience, referral_source,
+        utm_source, utm_medium, utm_campaign, utm_content, utm_term,
+        user_agent, device_type, timezone, signup_ip,
+        consent_required
+      ) VALUES (
+        $1, $2, $3,
+        $4, $5,
+        $6, $7, $8, $9, $10,
+        $11, $12, $13, $14,
+        $15
+      )
+      RETURNING *`,
+      [
+        input.parent_email.trim(),
+        input.kid_first_name.trim(),
+        input.kid_age,
+        input.invest_experience || null,
+        input.referral_source || null,
+        input.utm_source || null,
+        input.utm_medium || null,
+        input.utm_campaign || null,
+        input.utm_content || null,
+        input.utm_term || null,
+        input.user_agent || null,
+        input.device_type || 'unknown',
+        input.timezone || null,
+        input.signup_ip || null,
+        consentRequired,
+      ]
+    );
+    const user = userInsert.rows[0];
+
+    const tokenInsert = await client.query(
+      `INSERT INTO verification_tokens (token, user_id, purpose, expires_at)
+       VALUES ($1, $2, $3, $4)
+       RETURNING *`,
+      [token, user.id, purpose, expiresAt]
+    );
+    const tokenRow = tokenInsert.rows[0];
+
+    await client.query('COMMIT');
+
+    console.log(`[storage] created user ${user.id} (${user.parent_email}, age ${user.kid_age}, consent_required=${consentRequired}, token=${token.slice(0, 8)}...)`);
+
+    return { user, tokenRow };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
 }
 
 /**
@@ -126,95 +124,195 @@ function createUserFromSignup(input) {
  *   { ok: true, user, token, action: 'email_verified' | 'consent_granted' }
  *   { ok: false, reason: 'not_found' | 'expired' | 'already_used' | 'user_missing' }
  *
- * On success, mutates the user row to reflect the new state and marks the
- * token as used. Also flips is_active if both verification and (any required)
- * consent are satisfied.
+ * On success, marks the token used and applies the matching state change to
+ * the user (and flips is_active if all gates are satisfied). All in one tx.
  */
-function consumeToken(rawToken, opts = {}) {
-  const t = tokens.get(rawToken);
-  if (!t) return { ok: false, reason: 'not_found' };
-  if (t.used_at) return { ok: false, reason: 'already_used' };
-  if (new Date(t.expires_at).getTime() < Date.now()) {
-    return { ok: false, reason: 'expired' };
+async function consumeToken(rawToken, opts = {}) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const tokRes = await client.query(
+      `SELECT * FROM verification_tokens WHERE token = $1 FOR UPDATE`,
+      [rawToken]
+    );
+    const t = tokRes.rows[0];
+    if (!t) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'not_found' };
+    }
+    if (t.used_at) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'already_used' };
+    }
+    if (new Date(t.expires_at).getTime() < Date.now()) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'expired' };
+    }
+
+    const userRes = await client.query(
+      `SELECT * FROM users WHERE id = $1 FOR UPDATE`,
+      [t.user_id]
+    );
+    const userRow = userRes.rows[0];
+    if (!userRow || userRow.deleted_at) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'user_missing' };
+    }
+
+    // Mark token used.
+    const tokUpd = await client.query(
+      `UPDATE verification_tokens SET used_at = NOW() WHERE token = $1 RETURNING *`,
+      [rawToken]
+    );
+
+    let action;
+    let updatedUser;
+    if (t.purpose === 'email_verify') {
+      const r = await client.query(
+        `UPDATE users
+            SET email_verified = TRUE,
+                email_verified_at = NOW(),
+                is_active = (TRUE AND (NOT consent_required OR consent_given)),
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [userRow.id]
+      );
+      updatedUser = r.rows[0];
+      action = 'email_verified';
+    } else if (t.purpose === 'parental_consent') {
+      // Consent click also implies the parent confirmed their email.
+      const r = await client.query(
+        `UPDATE users
+            SET consent_given = TRUE,
+                consent_method = 'email-plus',
+                consent_timestamp = NOW(),
+                consent_ip = $2,
+                email_verified = TRUE,
+                email_verified_at = NOW(),
+                is_active = TRUE,
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [userRow.id, opts.ip || null]
+      );
+      updatedUser = r.rows[0];
+      action = 'consent_granted';
+    } else {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'not_found' };
+    }
+
+    await client.query('COMMIT');
+
+    if (updatedUser.is_active && !userRow.is_active) {
+      console.log(`[storage] activated user ${updatedUser.id} (${updatedUser.parent_email})`);
+    }
+
+    return { ok: true, user: updatedUser, token: tokUpd.rows[0], action };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-  const user = users.get(t.user_id);
-  if (!user || user.deleted_at) return { ok: false, reason: 'user_missing' };
-
-  t.used_at = nowIso();
-  user.updated_at = nowIso();
-
-  let action;
-  if (t.purpose === 'email_verify') {
-    user.email_verified = true;
-    user.email_verified_at = nowIso();
-    action = 'email_verified';
-  } else if (t.purpose === 'parental_consent') {
-    user.consent_given = true;
-    user.consent_method = 'email-plus';
-    user.consent_timestamp = nowIso();
-    user.consent_ip = opts.ip || null;
-    // For ages 10-12, the consent click ALSO implies parent confirmed email.
-    user.email_verified = true;
-    user.email_verified_at = nowIso();
-    action = 'consent_granted';
-  }
-
-  // Activate the account if everything required is satisfied.
-  const consentSatisfied = !user.consent_required || user.consent_given;
-  if (user.email_verified && consentSatisfied && !user.is_active) {
-    user.is_active = true;
-    console.log(`[storage] activated user ${user.id} (${user.parent_email})`);
-  }
-
-  return { ok: true, user, token: t, action };
 }
 
 // ---- Deletion ------------------------------------------------------------
 
-function recordDeletionRequest(input) {
-  const req = {
-    id: randomUUID(),
-    parent_email: input.parent_email.trim(),
-    reason: input.reason || null,
-    requested_at: nowIso(),
-    requested_ip: input.requested_ip || null,
-    user_agent: input.user_agent || null,
-    matched_user_id: null,
-    processed_at: null,
-    processed_method: null,
-  };
+/**
+ * Record a parent-initiated deletion request. If an active user matches the
+ * parent_email, soft-delete them in the same transaction.
+ */
+async function recordDeletionRequest(input) {
+  const parentEmail = input.parent_email.trim();
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
 
-  // Match against an active user. If found, soft-delete immediately
-  // (process_method: 'automatic'). Phase 6 might add manual review for
-  // tricky cases.
-  const matched = findActiveUserByEmail(input.parent_email);
-  if (matched) {
-    matched.deleted_at = nowIso();
-    matched.deletion_reason = input.reason || null;
-    matched.is_active = false;
-    matched.updated_at = nowIso();
-    req.matched_user_id = matched.id;
-    req.processed_at = nowIso();
-    req.processed_method = 'automatic';
-    console.log(`[storage] processed deletion for user ${matched.id} (${matched.parent_email})`);
-  } else {
-    console.log(`[storage] deletion request logged for unmatched email: ${input.parent_email}`);
+    // Match against an active user.
+    const matchRes = await client.query(
+      `SELECT id, parent_email FROM users
+        WHERE LOWER(parent_email) = $1 AND deleted_at IS NULL
+        FOR UPDATE
+        LIMIT 1`,
+      [emailKey(parentEmail)]
+    );
+    const matched = matchRes.rows[0] || null;
+
+    let matchedUserId = null;
+    let processedAt = null;
+    let processedMethod = null;
+
+    if (matched) {
+      await client.query(
+        `UPDATE users
+            SET deleted_at = NOW(),
+                deletion_reason = $2,
+                is_active = FALSE,
+                updated_at = NOW()
+          WHERE id = $1`,
+        [matched.id, input.reason || null]
+      );
+      matchedUserId = matched.id;
+      processedAt = new Date();
+      processedMethod = 'automatic';
+    }
+
+    const reqRes = await client.query(
+      `INSERT INTO deletion_requests (
+         parent_email, reason, requested_ip, user_agent,
+         matched_user_id, processed_at, processed_method
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING *`,
+      [
+        parentEmail,
+        input.reason || null,
+        input.requested_ip || null,
+        input.user_agent || null,
+        matchedUserId,
+        processedAt,
+        processedMethod,
+      ]
+    );
+
+    await client.query('COMMIT');
+
+    if (matched) {
+      console.log(`[storage] processed deletion for user ${matched.id} (${matched.parent_email})`);
+    } else {
+      console.log(`[storage] deletion request logged for unmatched email: ${parentEmail}`);
+    }
+
+    return reqRes.rows[0];
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
   }
-
-  deletionRequests.push(req);
-  return req;
 }
 
-// ---- Stats (for /health or admin) ---------------------------------------
+// ---- Stats ---------------------------------------------------------------
 
-function counts() {
-  let active = 0, pending = 0, deleted = 0;
-  for (const u of users.values()) {
-    if (u.deleted_at) deleted++;
-    else if (u.is_active) active++;
-    else pending++;
-  }
-  return { total: users.size, active, pending, deleted, deletion_requests: deletionRequests.length };
+async function counts() {
+  const { rows } = await query(
+    `SELECT
+       COUNT(*)::int                                                       AS total,
+       COUNT(*) FILTER (WHERE is_active = TRUE AND deleted_at IS NULL)::int AS active,
+       COUNT(*) FILTER (WHERE is_active = FALSE AND deleted_at IS NULL)::int AS pending,
+       COUNT(*) FILTER (WHERE deleted_at IS NOT NULL)::int                  AS deleted
+     FROM users`
+  );
+  const reqRes = await query(`SELECT COUNT(*)::int AS n FROM deletion_requests`);
+  return {
+    total: rows[0].total,
+    active: rows[0].active,
+    pending: rows[0].pending,
+    deleted: rows[0].deleted,
+    deletion_requests: reqRes.rows[0].n,
+  };
 }
 
 // ---- Module surface ------------------------------------------------------

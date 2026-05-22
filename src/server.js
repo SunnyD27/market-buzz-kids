@@ -1,3 +1,7 @@
+// dotenv with override:true so .env always wins, even if launchd/shell
+// has a stale empty value for any of our keys (real gotcha on macOS).
+import dotenv from 'dotenv';
+dotenv.config({ override: true });
 import express from 'express';
 import cron from 'node-cron';
 import path from 'path';
@@ -5,7 +9,15 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateDigest } from './generate.js';
 import { storage } from './storage.js';
-import { renderConsentEmail, renderVerifyEmail, sendEmail } from './emails.js';
+import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
+import {
+  renderConsentEmail,
+  renderVerifyEmail,
+  renderWelcomeEmail,
+  renderDeletionAckEmail,
+  renderDailyTeaserEmail,
+  sendEmail,
+} from './emails.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -84,7 +96,7 @@ function classifyDevice(ua) {
   return 'unknown';
 }
 
-app.post('/api/signup', (req, res) => {
+app.post('/api/signup', async (req, res) => {
   const body = req.body || {};
   const errors = {};
 
@@ -109,11 +121,16 @@ app.post('/api/signup', (req, res) => {
   }
 
   // ---- Duplicate email check ----
-  if (storage.findActiveUserByEmail(parent_email)) {
-    return res.status(409).json({
-      ok: false,
-      message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
-    });
+  try {
+    if (await storage.findActiveUserByEmail(parent_email)) {
+      return res.status(409).json({
+        ok: false,
+        message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
+      });
+    }
+  } catch (err) {
+    console.error('[signup] duplicate-check failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
   }
 
   // ---- Whitelist optional fields ----
@@ -123,22 +140,35 @@ app.post('/api/signup', (req, res) => {
   // ---- Capture request metadata ----
   const userAgent = String(req.headers['user-agent'] || '').slice(0, 500);
 
-  const { user, tokenRow } = storage.createUserFromSignup({
-    parent_email,
-    kid_first_name,
-    kid_age,
-    invest_experience,
-    referral_source,
-    utm_source:   slice120(body.utm_source),
-    utm_medium:   slice120(body.utm_medium),
-    utm_campaign: slice120(body.utm_campaign),
-    utm_content:  slice120(body.utm_content),
-    utm_term:     slice120(body.utm_term),
-    user_agent:   userAgent,
-    device_type:  classifyDevice(userAgent),
-    timezone:     typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : null,
-    signup_ip:    req.ip,
-  });
+  let user, tokenRow;
+  try {
+    ({ user, tokenRow } = await storage.createUserFromSignup({
+      parent_email,
+      kid_first_name,
+      kid_age,
+      invest_experience,
+      referral_source,
+      utm_source:   slice120(body.utm_source),
+      utm_medium:   slice120(body.utm_medium),
+      utm_campaign: slice120(body.utm_campaign),
+      utm_content:  slice120(body.utm_content),
+      utm_term:     slice120(body.utm_term),
+      user_agent:   userAgent,
+      device_type:  classifyDevice(userAgent),
+      timezone:     typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : null,
+      signup_ip:    req.ip,
+    }));
+  } catch (err) {
+    // 23505 = unique_violation, e.g. a race against the duplicate pre-check.
+    if (err.code === '23505') {
+      return res.status(409).json({
+        ok: false,
+        message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
+      });
+    }
+    console.error('[signup] insert failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
+  }
 
   // Build the verify / consent URL and render the email.
   // Phase 5: emails are logged to console by sendEmail() — clickable.
@@ -183,14 +213,29 @@ app.get('/api/consent', (req, res) => {
   handleTokenClick(req, res, 'parental_consent');
 });
 
-function handleTokenClick(req, res, expectedPurpose) {
+async function handleTokenClick(req, res, expectedPurpose) {
   const token = String(req.query.token || '');
   if (!token) {
     return res.status(400).type('html').send(activationPage({ ok: false, reason: 'missing_token' }));
   }
-  const result = storage.consumeToken(token, { ip: req.ip });
+  let result;
+  try {
+    result = await storage.consumeToken(token, { ip: req.ip });
+  } catch (err) {
+    console.error('[token] consume failed:', err.message);
+    return res.status(500).type('html').send(activationPage({ ok: false, reason: 'server_error' }));
+  }
   if (!result.ok) {
     return res.status(400).type('html').send(activationPage({ ok: false, reason: result.reason }));
+  }
+
+  // Phase 6.2: send the welcome email the moment a user transitions to active.
+  // The first successful token click is exactly that transition.
+  if (result.user?.is_active) {
+    const welcome = renderWelcomeEmail(result.user);
+    sendEmail({ to: result.user.parent_email, ...welcome }).catch(err =>
+      console.error('[welcome] sendEmail failed:', err.message)
+    );
   }
   // If the token purpose doesn't match the endpoint (e.g. someone hits
   // /api/consent with an email_verify token), still treat it as activation
@@ -225,6 +270,7 @@ function activationPage({ ok, reason, action, user }) {
       expired:       'This activation link has expired (links are valid for 7 days). Please sign up again.',
       user_missing:  'The associated account no longer exists.',
       missing_token: 'No activation token provided.',
+      server_error:  'Something went wrong on our side. Please try again in a moment.',
     };
     title = "Couldn't activate";
     message = reasons[reason] || 'Something went wrong.';
@@ -271,7 +317,7 @@ function slice120(v) {
 // Per privacy policy, we always return success (200) to avoid leaking
 // account existence. If the email matches an active user, storage soft-
 // deletes it. If not, we still log the request for audit purposes.
-app.post('/api/delete-data', (req, res) => {
+app.post('/api/delete-data', async (req, res) => {
   const body = req.body || {};
   const parent_email = String(body.parent_email || '').trim();
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
@@ -279,12 +325,25 @@ app.post('/api/delete-data', (req, res) => {
   }
   const reason = typeof body.reason === 'string' ? body.reason.slice(0, 120) : null;
 
-  const request = storage.recordDeletionRequest({
-    parent_email,
-    reason,
-    requested_ip: req.ip,
-    user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
-  });
+  let request;
+  try {
+    request = await storage.recordDeletionRequest({
+      parent_email,
+      reason,
+      requested_ip: req.ip,
+      user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
+    });
+  } catch (err) {
+    console.error('[delete-data] failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Deletion is temporarily unavailable. Please try again in a moment.' });
+  }
+
+  // Phase 6.2: always send a deletion-ack email — same body whether matched
+  // or not, so we never leak account existence through the email channel.
+  const ack = renderDeletionAckEmail({ parent_email });
+  sendEmail({ to: parent_email, ...ack }).catch(err =>
+    console.error('[delete-ack] sendEmail failed:', err.message)
+  );
 
   // We don't return the matched_user_id — that would leak existence.
   // We return `matched: true/false` only for the UX confirmation copy.
@@ -295,6 +354,97 @@ app.post('/api/delete-data', (req, res) => {
       ? 'Account found and deletion processed.'
       : 'Deletion request logged.',
   });
+});
+
+// ============================================================
+// Shared: daily teaser fan-out (used by HTTP endpoint AND in-process cron)
+// ============================================================
+// Loads today's digest content + every active+verified user, sends each one
+// the teaser via Resend, returns counts. Single source of truth — the
+// /api/cron/send-digest endpoint and the 7 AM cron handler both call this.
+//
+// Returns an object { ok, sent, failed, total, started_at, finished_at,
+// error?, status? } — status is 'no_content' | 'malformed_content' |
+// 'db_error' | 'ok'.
+async function sendDailyTeasers() {
+  const started_at = new Date().toISOString();
+  const dataPath = path.join(__dirname, '..', 'public', 'digest-data.json');
+  if (!fs.existsSync(dataPath)) {
+    return { ok: false, status: 'no_content', started_at, finished_at: new Date().toISOString(),
+             error: 'digest-data.json missing — run /generate first.' };
+  }
+  let content;
+  try {
+    content = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+  } catch (err) {
+    return { ok: false, status: 'malformed_content', started_at, finished_at: new Date().toISOString(),
+             error: 'digest-data.json malformed: ' + err.message };
+  }
+
+  let recipients;
+  try {
+    const { rows } = await dbQuery(
+      `SELECT id, parent_email, kid_first_name, kid_age
+         FROM users
+        WHERE is_active = TRUE
+          AND email_verified = TRUE
+          AND deleted_at IS NULL`
+    );
+    recipients = rows;
+  } catch (err) {
+    console.error('[send-digest] DB query failed:', err.message);
+    return { ok: false, status: 'db_error', started_at, finished_at: new Date().toISOString(),
+             error: err.message };
+  }
+
+  console.log(`[send-digest] starting · ${recipients.length} recipient(s)`);
+
+  let sent = 0;
+  let failed = 0;
+  for (const user of recipients) {
+    const email = renderDailyTeaserEmail(user, content);
+    const result = await sendEmail({ to: user.parent_email, ...email });
+    if (result.ok) sent++;
+    else failed++;
+    // Small spacing between sends to stay under Resend's free-tier rate
+    // limit (10 req/sec). 100ms is comfortably under that.
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  const finished_at = new Date().toISOString();
+  console.log(`[send-digest] done · sent=${sent} failed=${failed} total=${recipients.length}`);
+
+  return {
+    ok: true,
+    status: 'ok',
+    sent,
+    failed,
+    total: recipients.length,
+    started_at,
+    finished_at,
+  };
+}
+
+// ============================================================
+// API — daily teaser fan-out (Phase 6.2)
+// ============================================================
+// External callers (Railway cron, GitHub Action, manual curl) hit this to
+// fire teaser emails on demand. Protected by CRON_SECRET via X-Cron-Secret
+// header. For the standard daily flow you don't need to call this — the
+// in-process 7 AM cron below does both generation and fan-out.
+app.post('/api/cron/send-digest', async (req, res) => {
+  const expected = process.env.CRON_SECRET || '';
+  const got = req.header('x-cron-secret') || '';
+  if (!expected || got !== expected) {
+    return res.status(401).json({ ok: false, message: 'Unauthorized.' });
+  }
+  const result = await sendDailyTeasers();
+  const httpStatus = result.status === 'ok' ? 200
+    : result.status === 'no_content' ? 503
+    : result.status === 'malformed_content' ? 500
+    : result.status === 'db_error' ? 500
+    : 500;
+  return res.status(httpStatus).json(result);
 });
 
 // Admin: trigger digest generation manually.
@@ -317,20 +467,50 @@ app.get('/health', (req, res) => {
   res.json({ status: 'ok', lastGenerated: process.env.LAST_GENERATED || 'never' });
 });
 
+// /api/health — Phase 6.1: confirms Postgres connectivity.
+app.get('/api/health', async (req, res) => {
+  try {
+    const ok = await dbHealthCheck();
+    return res.json({ status: ok ? 'ok' : 'fail', db: ok ? 'connected' : 'unknown' });
+  } catch (err) {
+    return res.status(503).json({ status: 'fail', db: 'disconnected', error: err.message });
+  }
+});
+
 // ============================================================
-// Cron — daily digest at 7 AM EST
+// Cron — daily digest + teaser fan-out at 7 AM EST
 // ============================================================
+// Two steps, sequential: (1) generate today's digest HTML + JSON, then
+// (2) email the teaser to every active+verified user. If step 1 fails we
+// SKIP step 2 — don't want to spam yesterday's stale digest. Both steps
+// share their own try/catch so a failure in one logs cleanly without
+// taking the process down.
 cron.schedule('0 7 * * *', async () => {
   console.log(`[Cron] Starting daily digest generation at ${new Date().toISOString()}`);
+  let generated = false;
   try {
     await generateDigest();
     process.env.LAST_GENERATED = new Date().toISOString();
-    console.log('[Cron] Digest generated successfully!');
+    generated = true;
+    console.log('[Cron] Digest generated successfully.');
   } catch (err) {
-    console.error('[Cron] Failed to generate digest:', err.message);
+    console.error('[Cron] Generation failed — SKIPPING teaser fan-out to avoid sending stale content:', err.message);
+  }
+
+  if (!generated) return;
+
+  try {
+    const result = await sendDailyTeasers();
+    if (result.ok) {
+      console.log(`[Cron] Teaser fan-out done · sent=${result.sent} failed=${result.failed} total=${result.total}`);
+    } else {
+      console.error(`[Cron] Teaser fan-out failed (${result.status}): ${result.error}`);
+    }
+  } catch (err) {
+    console.error('[Cron] Teaser fan-out threw:', err.message);
   }
 }, {
-  timezone: 'America/New_York'
+  timezone: 'America/New_York',
 });
 
 app.listen(PORT, () => {
@@ -341,6 +521,7 @@ app.listen(PORT, () => {
   console.log(`   Delete data:    /parent/delete-data`);
   console.log(`   Signup API:     POST /api/signup`);
   console.log(`   Delete API:     POST /api/delete-data`);
+  console.log(`   Teaser fan-out: POST /api/cron/send-digest (X-Cron-Secret)`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
 });

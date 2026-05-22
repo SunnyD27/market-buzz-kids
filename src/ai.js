@@ -1,6 +1,65 @@
 import Anthropic from '@anthropic-ai/sdk';
 
-const client = new Anthropic();
+// Lazy client init. Constructing at module load runs before dotenv
+// finishes overriding stale env (real gotcha on macOS where launchd can
+// inject ANTHROPIC_API_KEY=""). Reading the key at call time is safe and
+// has no measurable cost.
+let _client = null;
+function client() {
+  if (_client) return _client;
+  _client = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
+  return _client;
+}
+
+// ── Kid-safe language scrub ────────────────────────────────────────────
+// Models writing in a "punchy older sibling" voice naturally reach for
+// phrases like "production hell," "what the hell," "sucks," etc. Those are
+// fine for adults but inappropriate in a 10-14 product. We do two things:
+//   1. Tell the model NOT to use them (prompt rule, see PROFANITY_RULE).
+//   2. Scrub the model's output anyway as a safety net (this map).
+// Whole-word matches only — never substring — so we don't mangle e.g. "class"
+// while replacing "ass," or "Shelly" while replacing "hell."
+const PROFANITY_REPLACEMENTS = [
+  [/\bhell\b/gi,     'heck'],
+  [/\bdamn\b/gi,     'darn'],
+  [/\bdamned\b/gi,   'doomed'],
+  [/\bcrap\b/gi,     'junk'],
+  [/\bcrappy\b/gi,   'bad'],
+  [/\bsucks\b/gi,    'is rough'],
+  [/\bsucked\b/gi,   'was rough'],
+  [/\bscrewed\b/gi,  'in trouble'],
+  [/\bpissed\b/gi,   'angry'],
+  // Whole-word ass / asses, but NOT "class," "embarrass," "passed," etc.
+  [/\bass\b/gi,      'rear'],
+  [/\basses\b/gi,    'rears'],
+  // 'WTF' literal
+  [/\bWTF\b/gi,      'whoa'],
+];
+
+/**
+ * Recursively scrub kid-inappropriate language out of any string field in
+ * the given value. Mutates strings in place via re-assignment; arrays and
+ * plain objects are walked. Other types are returned as-is.
+ */
+export function scrubProfanity(v) {
+  if (typeof v === 'string') {
+    let out = v;
+    for (const [re, repl] of PROFANITY_REPLACEMENTS) out = out.replace(re, repl);
+    return out;
+  }
+  if (Array.isArray(v)) return v.map(scrubProfanity);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const k of Object.keys(v)) out[k] = scrubProfanity(v[k]);
+    return out;
+  }
+  return v;
+}
+
+const PROFANITY_RULE = `LANGUAGE RULES (NON-NEGOTIABLE):
+- This is a product for kids 10-14. NEVER use mild profanity or coarse language. That includes "hell" (no "production hell," no "what the hell," no "hell of a"), "damn," "crap," "sucks," "screwed," "pissed," or any stronger word. Use kid-friendly alternatives: "rough patch," "tough stretch," "an incredible," "really," "junk," "is bad," "in trouble," "frustrated."
+- No slang for body parts, no innuendo, no insults aimed at people or groups.
+- If you're tempted to use a stronger word for emphasis, rewrite the sentence instead.`;
 
 // The 8 core investing principles every piece of generated content should
 // reinforce. Surfaced to the model so every "Why It Matters", quiz
@@ -16,7 +75,13 @@ const INVESTING_PRINCIPLES = `
 8. Fees and costs matter — small percentages compound into big differences over time.
 `.trim();
 
-export async function generateContent(marketData, news, movers, topMover) {
+export async function generateContent(marketData, news, movers, topMover, opts = {}) {
+  // Anti-repeat lists loaded by generate.js from state/content-history.json
+  // so the prompt can tell Claude what to avoid today.
+  //   opts.recentWords (string[]) — Word of the Day picks from last N days
+  //   opts.recentFacts (string[]) — Did You Know facts from last N days
+  const recentWords = Array.isArray(opts.recentWords) ? opts.recentWords : [];
+  const recentFacts = Array.isArray(opts.recentFacts) ? opts.recentFacts : [];
   const today = new Date();
   const dateStr = today.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
@@ -34,6 +99,8 @@ export async function generateContent(marketData, news, movers, topMover) {
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
 
   const prompt = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14 and their parents. This is a financial education product disguised as a daily habit — every game, story, and fun fact teaches a real investing principle.
+
+${PROFANITY_RULE}
 
 CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
 
@@ -57,13 +124,13 @@ VOICE & TONE RULES:
 - If there's geopolitical news that affects markets, keep it very high-level (e.g. "tensions eased" not graphic details).
 
 STORY SELECTION RULES (CRITICAL):
-- Return EXACTLY 2 stories by default. Only return 3 if there is a GENUINE third story that's clearly worth a kid's time — never pad to hit a number.
+- Return EXACTLY 3 stories by default. Only drop to 2 if the news feed is genuinely weak that day and there is no plausible third story — never pad to hit a number.
 - Prioritize in this order: (1) major earnings from huge companies like Nvidia, Apple, Google, Amazon, Tesla (2) huge business events like IPOs, mergers, major product launches (3) macro events that move the whole market like oil prices, Fed decisions, inflation data, jobs reports (4) cool tech/science/business stories a kid would find interesting.
 - NEVER write a story that just says "stocks went up" or "stocks went down" — that's what the scoreboard is for.
 - NEVER write a story about random small-cap stocks, penny stocks, or unknown companies.
 - Each story should be about a SPECIFIC event, company, or development — not a general market recap.
 - Every "Why It Matters" box must explicitly teach an investing concept through the lens of the story. Examples: Nvidia earnings → what does "priced in" mean? SpaceX IPO → what's an IPO and why do companies do it? Oil crash → how commodity prices flow through the entire economy.
-- If the news feed is weak on a given day, it's better to write 2 strong stories than to pad with a third.
+- If the news feed is genuinely thin on a given day, 2 strong stories beats 3 padded ones — but the bar to drop below 3 is high.
 
 TODAY'S MOVER RULES:
 - The TOP MOVER below is the biggest absolute-% mover today from a curated list of kid-recognizable companies. Use IT — do not substitute a different stock.
@@ -77,11 +144,14 @@ THE BIG PICTURE:
 DID YOU KNOW (one mind-blowing fact per day):
 - One eye-popping money/investing/business fact. Categories to rotate across days: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
 - The fact MUST tie back to one of the 8 principles. Pick the most relevant principle and reference it in the connection field.
-- Examples:
+- DO NOT pick any fact substantially similar to the following — these have been used in the last 30 days. A "near-restatement" of one of these (same anchor company, same number, same lesson, just reworded) also counts as a repeat. Pick something genuinely different:
+${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
+- Examples of the variety to aim for:
   - "If you invested $1,000 in Amazon in 1997, it'd be worth ~$2.3 million today" → principle 1 (start early)
   - "The stock market has crashed more than 20% about once every 5-7 years — and recovered every single time" → principle 3 (volatility is normal)
   - "Warren Buffett bought his first stock at age 11 and says he started too late" → principle 1
   - "Nintendo was founded in 1889. They made playing cards for 80 years before video games" → principle 4 (companies evolve)
+- Rotate across CATEGORIES too — if recent picks have all been compound-interest math, surprise us with a company-origin or market-history fact today.
 
 QUIZ:
 - Classic multiple choice tied to today's news or an investing concept.
@@ -90,6 +160,9 @@ QUIZ:
 WORD OF THE DAY:
 - One investing/financial term with a kid-friendly analogy. Tied to today's news when possible.
 - Include a "how to use this" sentence connecting the term to real life or a principle.
+- DO NOT pick any of the following words — these have been used in the last 30 days. Pick something genuinely different (not a near-synonym, not a singular/plural variant):
+${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
+- Investing has hundreds of teachable terms — dividend, P/E ratio, ticker, bull market, bear market, volatility, ETF, index, market cap, short squeeze, options, futures, yield, basis point, recession, inflation, deflation, hedge, diversification, compounding, principal, capital gains, etc. Use the breadth.
 
 TODAY'S DATE: ${dateStr}
 TRADING DAY: Data is from ${tradingDayLabel}'s market close.
@@ -161,12 +234,12 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
 }
 
 RULES ON OUTPUT:
-- "stories" array length: 2 by default, 3 only when warranted. Never 1, never 4+.
+- "stories" array length: 3 by default. Only drop to 2 if the news genuinely doesn't support a third. Never 1, never 4+.
 - "principle" fields are integers 1-8 matching the numbered list at the top of this prompt.
 - Stories should be from the provided news + web search — don't invent them.
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
 
-  const response = await client.messages.create({
+  const response = await client().messages.create({
     model: 'claude-sonnet-4-20250514',
     max_tokens: 8000,
     tools: [
@@ -199,7 +272,162 @@ RULES ON OUTPUT:
     .map(block => block.text)
     .join('');
 
-  return parseDigestJSON(text);
+  return parseAndScrubDigestJSON(text);
+}
+
+// ============================================================
+// Phase 6.5 — per-game reframers
+// ============================================================
+// These are small, focused Claude calls that rewrite ONLY the narrative
+// fields of a verified game scenario. They never touch prices, splits,
+// outcomes, or any other "fact" field — those come from the static JSON.
+// On any failure (parse error, API error, validation miss) the caller falls
+// back to the canned text already in the scenario, so the digest always
+// ships.
+//
+// Both reframers share the same envelope: pass in the full scenario, get
+// back ONLY the fields that should be rewritten today.
+
+const REFRAMER_MODEL = 'claude-sonnet-4-20250514';
+
+async function callReframer({ system, user, expectedKeys, label }) {
+  try {
+    const response = await client().messages.create({
+      model: REFRAMER_MODEL,
+      max_tokens: 1200,
+      system,
+      messages: [{ role: 'user', content: user }],
+    });
+    const text = response.content
+      .filter(b => b.type === 'text')
+      .map(b => b.text)
+      .join('');
+    // Strict JSON parse — these prompts are simple, no web search, no citations.
+    const cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
+    const first = cleaned.indexOf('{');
+    const last = cleaned.lastIndexOf('}');
+    if (first === -1 || last <= first) throw new Error('no JSON in response');
+    const parsed = JSON.parse(cleaned.slice(first, last + 1));
+    for (const k of expectedKeys) {
+      if (typeof parsed[k] !== 'string' || !parsed[k].trim()) {
+        throw new Error(`missing or empty field "${k}"`);
+      }
+    }
+    // Belt-and-suspenders: scrub any leftover mild profanity that slipped
+    // past the prompt rule. Whole-word substitutions only.
+    return scrubProfanity(parsed);
+  } catch (err) {
+    console.error(`[AI/${label}] failed: ${err.message} — falling back to canned text.`);
+    return null;
+  }
+}
+
+/**
+ * Reframe a Bull-or-Bear scenario for today's digest. Rewrites the
+ * `story`, `lessonHeadline`, and `lessonBody` fields ONLY. Verified facts
+ * (charts, outcomes, ticker, principle) are unchanged.
+ *
+ * Returns `{ story, lessonHeadline, lessonBody }` on success, or `null`
+ * on any failure (callers fall back to scenario's canned values).
+ */
+export async function reframeBullBear(scenario) {
+  const principleHint = INVESTING_PRINCIPLES;
+  const system = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
+
+${PROFANITY_RULE}
+
+The 8 core investing principles you reinforce:
+
+${principleHint}
+
+You are reframing a verified historical scenario for today's "Bull or Bear?" game. The facts (chart shapes, outcome, ticker, principle) are LOCKED — you are only rewriting the NARRATIVE so the same scenario can feel fresh on different days.`;
+
+  const user = `Here is a verified scenario. The FACTS are locked — your job is only to rewrite the three narrative fields.
+
+SCENARIO (read-only facts):
+- Company: ${scenario.company} (${scenario.ticker})
+- Era: ${scenario.era}
+- Decision point: ${scenario.decisionPoint}
+- What actually happened next: ${scenario.actualDirection.toUpperCase()} ${scenario.actualReturnPct}%
+- Principle to reinforce: #${scenario.principle}
+
+The PREVIOUS framing (for your reference — don't copy it, write something different):
+- previous story: ${scenario.story}
+- previous lesson headline: ${scenario.lessonHeadline}
+- previous lesson body: ${scenario.lessonBody}
+
+Write a fresh take. Return ONLY this JSON, no markdown:
+
+{
+  "story": "2-4 sentences setting up what was happening before the outcome. State the facts (decision point, real numbers) but with a fresh angle from the previous version.",
+  "lessonHeadline": "One short, punchy sentence that teases principle #${scenario.principle}.",
+  "lessonBody": "3-5 short HTML paragraphs (<p>...</p>) explaining what happened and why, ending by tying explicitly to principle #${scenario.principle}. Use <strong> sparingly for emphasis. No other HTML tags."
+}`;
+
+  return callReframer({
+    system,
+    user,
+    expectedKeys: ['story', 'lessonHeadline', 'lessonBody'],
+    label: 'reframeBullBear',
+  });
+}
+
+/**
+ * Reframe a Time Machine scenario for today's digest. Rewrites the
+ * `framing` and `lessonBody` fields ONLY. Verified facts (year, choices,
+ * prices, splits, outcomes, principle) are unchanged.
+ *
+ * Returns `{ framing, lessonBody }` on success, or `null` on failure.
+ */
+export async function reframeTimeMachine(scenario) {
+  const principleHint = INVESTING_PRINCIPLES;
+  const system = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
+
+${PROFANITY_RULE}
+
+The 8 core investing principles you reinforce:
+
+${principleHint}
+
+You are reframing a verified historical scenario for today's "Time Machine Trade" game. The year, the four stock choices, their prices, the outcomes — all LOCKED. You are only rewriting the NARRATIVE so the same scenario can feel fresh on different days.`;
+
+  const choiceSummary = scenario.choices.map(c =>
+    `${c.name} (${c.ticker}): then $${c.priceThen}, status=${c.status}${c.eventNote ? ` — ${c.eventNote}` : ''}`
+  ).join('\n');
+
+  const user = `Here is a verified scenario. The FACTS are locked — your job is only to rewrite the two narrative fields.
+
+SCENARIO (read-only facts):
+- Anchor: ${scenario.anchor}
+- Year: ${scenario.year}
+- Four choices the kid will see:
+${choiceSummary}
+- Principle to reinforce: #${scenario.principle}
+
+PREVIOUS framing (for reference — don't copy):
+- previous framing: ${scenario.framing}
+- previous lesson body: ${scenario.lessonBody}
+
+Write a fresh take. Return ONLY this JSON, no markdown:
+
+{
+  "framing": "2-3 sentences setting the scene of the year. Mention the world, what felt 'safe' vs 'risky' at the time. Make a kid curious which stock to pick. Don't reveal which one won.",
+  "lessonBody": "3-5 short HTML paragraphs (<p>...</p>) that the kid sees AFTER they pick. Reference the actual outcomes (which stock won, which lost) and tie explicitly to principle #${scenario.principle}. Use <strong> sparingly for emphasis. No other HTML tags."
+}`;
+
+  return callReframer({
+    system,
+    user,
+    expectedKeys: ['framing', 'lessonBody'],
+    label: 'reframeTimeMachine',
+  });
+}
+
+// Wrap the main digest parser so its output also gets scrubbed. We define
+// this here as the entrypoint that generateContent calls, then re-export the
+// scrubbed value down below.
+function parseAndScrubDigestJSON(text) {
+  return scrubProfanity(parseDigestJSON(text));
 }
 
 function parseDigestJSON(text) {

@@ -36,7 +36,10 @@ export async function fetchMarketData(apiKey) {
           name: q.name || symbol,
           price: q.price,
           change: q.change,
-          changesPercentage: q.changesPercentage,
+          // FMP /stable renamed `changesPercentage` → `changePercentage`
+          // (the legacy /api/v3 endpoints used the plural). Accept either
+          // so we ride out the rollover.
+          changesPercentage: q.changePercentage ?? q.changesPercentage,
           previousClose: q.previousClose,
           dayHigh: q.dayHigh,
           dayLow: q.dayLow,
@@ -140,17 +143,25 @@ export async function fetchMovers(apiKey) {
  */
 export async function fetchTopMover(apiKey) {
   try {
-    const tickers = CURATED_TICKERS.join(',');
-    const data = await fmpFetch(
-      `/quote?symbol=${encodeURIComponent(tickers)}&apikey=${apiKey}`,
-      'quote(curated-batch)',
-    );
-    const quotes = Array.isArray(data) ? data : (data ? [data] : []);
-    const valid = quotes.filter(q =>
-      q && typeof q.price === 'number' && typeof q.changesPercentage === 'number',
-    );
+    // FMP killed multi-ticker `/stable/quote?symbol=A,B,C` on the free tier
+    // (returns []), and `/stable/batch-quote` is paid-only. So we fan out
+    // one /quote call per curated ticker, in parallel. With ~75 tickers
+    // and FMP's 250/day free limit, this single fan-out is the bulk of
+    // our daily spend — still well under the cap.
+    const results = await Promise.all(CURATED_TICKERS.map(t =>
+      fmpFetch(`/quote?symbol=${encodeURIComponent(t)}&apikey=${apiKey}`, `quote(${t})`)
+        .then(data => Array.isArray(data) ? data[0] : data)
+        .catch(err => { console.error(`[Data] Top-mover fetch(${t}) failed:`, err.message); return null; })
+    ));
+    // FMP renamed `changesPercentage` → `changePercentage` on /stable.
+    // Normalize so the rest of the function (and downstream consumers)
+    // can keep using the historical name.
+    const valid = results
+      .filter(q => q && typeof q.price === 'number' &&
+        typeof (q.changePercentage ?? q.changesPercentage) === 'number')
+      .map(q => ({ ...q, changesPercentage: q.changePercentage ?? q.changesPercentage }));
     if (valid.length === 0) {
-      console.error('[Data] Top mover: no valid quotes returned from curated batch');
+      console.error('[Data] Top mover: no valid quotes returned from per-ticker fan-out');
       return null;
     }
     // Sort by absolute % change, descending.
@@ -178,6 +189,48 @@ export async function fetchTopMover(apiKey) {
     console.error('[Data] Failed to fetch top mover:', err.message);
     return null;
   }
+}
+
+/**
+ * Quote a list of tickers. Returns a map { TICKER: { price, change, changesPercentage } }.
+ * Used by Phase 6.5 game hydration:
+ *   - time-machine: needs today's price for choices with status:'active'
+ *   - price-is-right: needs today's price for the picked ticker
+ *
+ * Implementation note: FMP's free tier does NOT support multi-ticker
+ * `/stable/quote?symbol=A,B,C` — that endpoint returns `[]` for any
+ * comma-separated input and the batch endpoint is paid-only. We therefore
+ * issue N parallel single-ticker calls. Acceptable for our small batches
+ * (≤6 tickers per day). FMP's free tier is 250 calls/day, plenty of room.
+ *
+ * Missing tickers (failed call, no row, non-numeric price) are absent
+ * from the result map — callers fall back to canned values.
+ */
+export async function fetchQuotes(tickers, apiKey) {
+  if (!tickers?.length) return {};
+  const results = await Promise.all(tickers.map(async t => {
+    try {
+      const data = await fmpFetch(
+        `/quote?symbol=${encodeURIComponent(t)}&apikey=${apiKey}`,
+        `quote(${t})`,
+      );
+      const q = Array.isArray(data) ? data[0] : data;
+      if (q?.symbol && typeof q.price === 'number') {
+        return [q.symbol, {
+          price: q.price,
+          change: q.change,
+          // FMP renamed `changesPercentage` → `changePercentage` in the
+          // /stable API. Accept either so we're tolerant of the rollover.
+          changesPercentage: q.changePercentage ?? q.changesPercentage,
+        }];
+      }
+      return null;
+    } catch (err) {
+      console.error(`[Data] fetchQuotes(${t}) failed: ${err.message}`);
+      return null;
+    }
+  }));
+  return Object.fromEntries(results.filter(Boolean));
 }
 
 export async function fetchAllData(apiKey) {

@@ -1,17 +1,44 @@
 /**
- * src/emails.js — Email templates.
+ * src/emails.js — Email rendering + sending (Phase 6.2 wires real Resend).
  *
- * Each exported renderer returns { subject, html, text } — the shape Resend
- * (and most email providers) expects. Phase 5 logs the rendered output to
- * console for testing; Phase 6 wires the actual send call.
+ * Renderers (`render*Email`) are PURE — they build a { subject, html, text }
+ * payload and never hit the network. That keeps them unit-testable and lets
+ * us preview emails by just calling them. The actual network call is
+ * isolated to `sendEmail()`.
  *
- * Two templates so far:
- *   - renderConsentEmail(user, link)   — ages 10-12, COPPA email-plus consent
- *   - renderVerifyEmail(user, link)    — ages 13-16, standard email verification
+ * If RESEND_API_KEY is unset, `sendEmail()` logs the payload to console
+ * (same behavior as the Phase 5 stub) and resolves successfully — the
+ * server still boots and the signup/consent/deletion routes still complete.
  *
- * Templates use inline styles because most email clients strip <style> blocks
- * or ignore external CSS. Dark theme inverted to light for inbox compatibility.
+ * Email types:
+ *   renderVerifyEmail        — ages 13-16, standard email verification
+ *   renderConsentEmail       — ages 10-12, COPPA email-plus consent
+ *   renderWelcomeEmail       — sent the moment a user becomes is_active
+ *   renderDeletionAckEmail   — confirms receipt of a /parent/delete-data request
+ *   renderDailyTeaserEmail   — 7 AM teaser linking to today's web digest
  */
+
+import { Resend } from 'resend';
+
+// ── Config -------------------------------------------------------------
+
+const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
+const APP_BASE_URL = (process.env.APP_BASE_URL || 'http://localhost:3199').replace(/\/$/, '');
+
+// One client per process. Only initialized when the key is present so we
+// don't accidentally crash inside Resend's constructor.
+const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null;
+
+if (!resend) {
+  console.warn('[emails] RESEND_API_KEY not set — sends will be logged to console only.');
+}
+
+// Helpful for tests / external callers.
+export function appUrl(pathname = '/') {
+  if (!pathname.startsWith('/')) pathname = '/' + pathname;
+  return APP_BASE_URL + pathname;
+}
 
 const BRAND = {
   name: 'Market Buzz Kids',
@@ -19,8 +46,10 @@ const BRAND = {
   accent: '#bc8cff',
   gold: '#f0c040',
   blue: '#58a6ff',
+  green: '#1f7a36',
   greenBg: '#e6f7eb',
-  greenText: '#1f7a36',
+  red: '#a02323',
+  redBg: '#fdecec',
 };
 
 function escapeHTML(s) {
@@ -29,40 +58,35 @@ function escapeHTML(s) {
 }
 
 /**
- * Layout shared by both emails — branded header, content slot, footer.
- * @param {object} opts
- * @param {string} opts.preheader  Hidden preview text (shows in inbox list)
- * @param {string} opts.body       Inner HTML (already escaped)
+ * Layout shared by all transactional emails — branded header, content slot,
+ * footer with the working /parent/delete-data link.
  */
 function shell({ preheader, body }) {
+  const deleteLink = appUrl('/parent/delete-data');
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${BRAND.name}</title></head>
 <body style="margin:0;padding:0;background:#f5f7fa;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:#1c2030;line-height:1.55;">
-  <!-- preheader: hidden but shows in inbox preview -->
   <div style="display:none;max-height:0;overflow:hidden;font-size:1px;line-height:1px;color:#f5f7fa;">${escapeHTML(preheader)}</div>
 
   <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background:#f5f7fa;">
     <tr><td align="center" style="padding:32px 12px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:560px;background:#ffffff;border-radius:16px;overflow:hidden;box-shadow:0 4px 14px rgba(0,0,0,0.04);">
 
-        <!-- Header bar -->
         <tr><td style="background:${BRAND.primary};padding:20px 28px;color:#fff;">
           <div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;">
             📈 ${BRAND.name}
           </div>
         </td></tr>
 
-        <!-- Content -->
         <tr><td style="padding:28px 28px 12px 28px;">${body}</td></tr>
 
-        <!-- Footer -->
         <tr><td style="padding:24px 28px 28px 28px;border-top:1px solid #eee;color:#8b91a3;font-size:12px;line-height:1.6;">
           You received this because someone signed your kid up for Market Buzz Kids.
           If that wasn't you, you can safely ignore this — no account will be created without your click.
           <br><br>
           Questions or want to delete data? Reply to this email or visit
-          <a href="https://example.com/parent/delete-data" style="color:${BRAND.blue};">/parent/delete-data</a>.
+          <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a>.
         </td></tr>
 
       </table>
@@ -72,10 +96,11 @@ function shell({ preheader, body }) {
 }
 
 // ============================================================
-// Parental consent email (ages 10-12, COPPA email-plus)
+// 1) Parental consent email (ages 10-12, COPPA email-plus)
 // ============================================================
 export function renderConsentEmail(user, link) {
   const kid = escapeHTML(user.kid_first_name);
+  const deleteLink = appUrl('/parent/delete-data');
   const subject = `Parental consent for ${kid} on Market Buzz Kids`;
   const preheader = `One click to activate ${kid}'s account. We'll explain exactly what we collect and how it's used.`;
 
@@ -88,7 +113,6 @@ export function renderConsentEmail(user, link) {
       for <strong>Market Buzz Kids</strong>. Because ${kid} is under 13, U.S. law (COPPA)
       requires us to get your consent before activating their account.
     </p>
-
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
       Here's exactly what we want you to know before you click:
     </p>
@@ -96,61 +120,43 @@ export function renderConsentEmail(user, link) {
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
            style="background:#f7f4ff;border:1px solid #e8defc;border-left:4px solid ${BRAND.accent};border-radius:8px;margin:0 0 24px 0;">
       <tr><td style="padding:16px 18px;">
-        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin-bottom:10px;">
-          What we collect
-        </div>
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin-bottom:10px;">What we collect</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>${kid}'s first name and age (you gave us these)</li>
-          <li>Engagement data: which games ${kid} plays, quiz answers, XP earned, streak, and Perfect Days</li>
-          <li>If ${kid} adds Market Buzz to their home screen and turns on notifications: a push token (no other phone data)</li>
+          <li>Engagement data: games played, quiz answers, XP, streak, Perfect Days</li>
+          <li>Push token only if ${kid} adds Market Buzz to home screen and turns on notifications</li>
         </ul>
-
-        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">
-          How we use it
-        </div>
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">How we use it</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>Deliver the daily digest at 7&nbsp;AM EST</li>
-          <li>Track ${kid}'s learning progress (rank, streak, what they got right/wrong) so the games feel rewarding</li>
-          <li>Send you a weekly summary email (you can opt out anytime)</li>
+          <li>Track ${kid}'s learning progress (rank, streak, what they got right/wrong)</li>
+          <li>Send you a weekly summary email (opt out anytime)</li>
         </ul>
-
-        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">
-          What we DON'T do
-        </div>
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">What we DON'T do</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>Sell or share ${kid}'s data with third parties</li>
           <li>Use ${kid}'s data to train AI models</li>
           <li>Show ads. Ever.</li>
         </ul>
-
-        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">
-          Your rights
-        </div>
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">Your rights</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>Request all of ${kid}'s data at any time (reply to this email)</li>
-          <li>Delete ${kid}'s account and ALL data instantly via <a href="https://example.com/parent/delete-data" style="color:${BRAND.blue};">/parent/delete-data</a></li>
+          <li>Delete ${kid}'s account and ALL data at <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a></li>
           <li>Refuse further collection — we'll stop immediately if you ask</li>
         </ul>
       </td></tr>
     </table>
 
-    <!-- Consent button -->
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
       <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
-        <a href="${escapeHTML(link)}"
-           style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
+        <a href="${escapeHTML(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
           ✅ I'm ${kid}'s parent/guardian — activate the account
         </a>
       </td></tr>
     </table>
 
-    <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">
-      Or paste this link into your browser:
-    </p>
-    <p style="margin:0 0 18px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">
-      ${escapeHTML(link)}
-    </p>
-
+    <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">Or paste this link into your browser:</p>
+    <p style="margin:0 0 18px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</p>
     <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
       This link expires in 7 days. If you didn't sign up, ignore this email — nothing happens until you click.
     </p>
@@ -165,39 +171,21 @@ export function renderConsentEmail(user, link) {
       `Someone signed up ${kid} (age ${user.kid_age}) for Market Buzz Kids.`,
       `Because ${kid} is under 13, U.S. COPPA law requires your consent before we activate their account.`,
       '',
-      'WHAT WE COLLECT:',
-      `  - ${kid}'s first name and age`,
-      `  - Engagement data: games played, quiz answers, XP, streak, Perfect Days`,
-      `  - Push token (only if ${kid} turns on notifications)`,
-      '',
-      'HOW WE USE IT:',
-      `  - Deliver the daily digest at 7am EST`,
-      `  - Track learning progress for the rank/streak system`,
-      `  - Weekly summary email (opt-out anytime)`,
-      '',
-      'WHAT WE DO NOT DO:',
-      `  - Sell or share data with third parties`,
-      `  - Train AI on ${kid}'s data`,
-      `  - Show ads`,
-      '',
-      'YOUR RIGHTS:',
-      `  - Request all data anytime (reply to this email)`,
-      `  - Delete instantly at /parent/delete-data`,
-      `  - Stop further collection anytime`,
-      '',
-      `Click this link to confirm you are ${kid}'s parent/guardian and activate the account:`,
+      `Click to confirm you are ${kid}'s parent/guardian and activate the account:`,
       link,
       '',
-      'Link expires in 7 days. Ignore if you did not sign up — nothing happens until you click.',
+      `Delete data anytime: ${deleteLink}`,
+      'Link expires in 7 days.',
     ].join('\n'),
   };
 }
 
 // ============================================================
-// Standard email verification (ages 13-16)
+// 2) Email verification (ages 13-16)
 // ============================================================
 export function renderVerifyEmail(user, link) {
   const kid = escapeHTML(user.kid_first_name);
+  const deleteLink = appUrl('/parent/delete-data');
   const subject = `Confirm your email — ${BRAND.name}`;
   const preheader = `One click to activate ${kid}'s daily digest.`;
 
@@ -209,33 +197,22 @@ export function renderVerifyEmail(user, link) {
       Thanks for signing up <strong>${kid}</strong> for <strong>Market Buzz Kids</strong>!
       One click and the daily digest will start arriving tomorrow at 7 AM EST.
     </p>
-
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
       <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
-        <a href="${escapeHTML(link)}"
-           style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
+        <a href="${escapeHTML(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
           ✅ Confirm my email
         </a>
       </td></tr>
     </table>
-
-    <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">
-      Or paste this link into your browser:
+    <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">Or paste this link into your browser:</p>
+    <p style="margin:0 0 22px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</p>
+    <p style="margin:0;font-size:14px;color:#454a5b;">
+      What we collect: ${kid}'s first name, age, and engagement data (XP, streak, quiz answers).
+      No selling, no sharing. Delete anytime at
+      <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a>.
     </p>
-    <p style="margin:0 0 22px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">
-      ${escapeHTML(link)}
-    </p>
-
-    <p style="margin:0 0 0 0;font-size:14px;color:#454a5b;">
-      A quick note on what we'll collect: ${kid}'s first name, age, and the engagement data
-      from playing the daily games (XP, streak, quiz answers).
-      We don't sell or share it with anyone, and you can delete it all at
-      <a href="https://example.com/parent/delete-data" style="color:${BRAND.blue};">/parent/delete-data</a>
-      anytime.
-    </p>
-
     <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
-      This link expires in 7 days. If you didn't sign up, ignore this email — nothing happens until you click.
+      Link expires in 7 days. If you didn't sign up, ignore this email.
     </p>
   `;
 
@@ -246,34 +223,225 @@ export function renderVerifyEmail(user, link) {
       `Confirm your email — ${BRAND.name}`,
       '',
       `Thanks for signing up ${kid} for Market Buzz Kids!`,
-      `One click and the daily digest starts tomorrow at 7am EST.`,
-      '',
       'Click to confirm:',
       link,
       '',
-      `What we collect: ${kid}'s first name, age, and engagement data (XP, streak, quiz answers).`,
-      `No selling, no sharing. Delete anytime at /parent/delete-data.`,
-      '',
-      'Link expires in 7 days. Ignore if you did not sign up.',
+      `Delete anytime: ${deleteLink}`,
+      'Link expires in 7 days.',
     ].join('\n'),
   };
 }
 
-/**
- * Phase 5 "send" implementation: log the email payload to console so the
- * developer can copy the link out and click it. Phase 6 replaces this with
- * an actual Resend API call (same function signature so the call sites
- * don't change).
- */
-export async function sendEmail({ to, subject, html, text }) {
-  console.log('');
-  console.log('═══════════════════════════════════════════════════════════════');
-  console.log(`📧 [stub-send] To: ${to}`);
-  console.log(`📧 [stub-send] Subject: ${subject}`);
-  console.log('───────────────────────────────────────────────────────────────');
-  console.log(text); // text version is shorter and clickable
-  console.log('═══════════════════════════════════════════════════════════════');
-  console.log('');
-  // Always succeed in stub mode.
-  return { ok: true, id: 'stub-' + Date.now() };
+// ============================================================
+// 3) Welcome email (fires once on activation)
+// ============================================================
+export function renderWelcomeEmail(user) {
+  const kid = escapeHTML(user.kid_first_name);
+  const digestLink = appUrl('/digest');
+  const subject = `${kid} is in! First digest arrives tomorrow at 7 AM`;
+  const preheader = `Welcome to Market Buzz Kids — here's what to expect.`;
+
+  const body = `
+    <h1 style="font-size:24px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.5px;">
+      🎉 ${kid} is in!
+    </h1>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
+      Welcome to <strong>Market Buzz Kids</strong>. Tomorrow at <strong>7 AM EST</strong>,
+      ${kid} will get the first daily digest: real market headlines, today's biggest mover,
+      and 3 short games that teach real investing principles.
+    </p>
+    <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
+      Want to peek before tomorrow's digest lands?
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
+          See the digest →
+        </a>
+      </td></tr>
+    </table>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background:#f7f4ff;border:1px solid #e8defc;border-left:4px solid ${BRAND.accent};border-radius:8px;margin:0 0 8px 0;">
+      <tr><td style="padding:14px 18px;color:#454a5b;font-size:14px;line-height:1.7;">
+        <strong>Quick tip:</strong> on iPhone, tap the share button in Safari and pick
+        "Add to Home Screen" so the digest opens like an app each morning.
+      </td></tr>
+    </table>
+    <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
+      Reply to this email any time. We read every message.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      `${kid} is in! First digest arrives tomorrow at 7 AM EST.`,
+      '',
+      `Want to peek? ${digestLink}`,
+      '',
+      'On iPhone: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
+      '',
+      'Reply to this email any time. We read every message.',
+    ].join('\n'),
+  };
+}
+
+// ============================================================
+// 4) Deletion acknowledgement
+// ============================================================
+// Sent for every /api/delete-data submission regardless of whether a match
+// existed — same body either way so we never leak existence.
+export function renderDeletionAckEmail({ parent_email }) {
+  const email = escapeHTML(parent_email);
+  const subject = `Your Market Buzz Kids deletion request`;
+  const preheader = `We received your deletion request.`;
+
+  const body = `
+    <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.3px;">
+      Deletion request received
+    </h1>
+    <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
+      We received a request to delete the Market Buzz Kids account associated with
+      <strong>${email}</strong>.
+    </p>
+    <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
+      If an account existed at that address, it has been removed along with all
+      associated data. If no account existed, no further action is needed — we
+      logged the request anyway for compliance.
+    </p>
+    <p style="margin:0;font-size:14px;color:#454a5b;">
+      Didn't request this? Reply to this email and we'll look into it.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      'Deletion request received',
+      '',
+      `We received a request to delete the Market Buzz Kids account associated with ${parent_email}.`,
+      'If an account existed at that address, it has been removed.',
+      'If no account existed, no further action is needed.',
+      '',
+      "Didn't request this? Reply and we'll look into it.",
+    ].join('\n'),
+  };
+}
+
+// ============================================================
+// 5) Daily teaser (7 AM EST)
+// ============================================================
+// Takes today's digest content (the same shape generateContent() produces in
+// src/ai.js + src/generate.js) and renders a short, click-bait-y teaser.
+// The teaser is intentionally minimal — its only job is to get the kid into
+// the web digest.
+export function renderDailyTeaserEmail(user, content) {
+  const kid = escapeHTML(user.kid_first_name);
+  const digestLink = appUrl('/digest');
+
+  const vibe = content?.marketVibe || 'mixed'; // 'green' | 'red' | 'mixed'
+  const vibeEmoji = vibe === 'green' ? '🟢' : vibe === 'red' ? '🔴' : '🟡';
+  const vibeWord = vibe === 'green' ? 'green' : vibe === 'red' ? 'red' : 'mixed';
+  const vibeColor = vibe === 'green' ? BRAND.green : vibe === 'red' ? BRAND.red : '#8a6a00';
+  const vibeBg = vibe === 'green' ? BRAND.greenBg : vibe === 'red' ? BRAND.redBg : '#fff7d6';
+
+  const topMover = content?.scoreboard?.topMover;
+  const topMoverLine = topMover
+    ? `${escapeHTML(topMover.name)} (${escapeHTML(topMover.ticker)}) — ${escapeHTML(topMover.change)}`
+    : null;
+
+  const headline = content?.stories?.[0]?.title || 'Today\'s biggest market story';
+  const dateLabel = escapeHTML(content?.date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
+
+  const subject = `${vibeEmoji} Today's Buzz: ${dateLabel}`;
+  const preheader = topMoverLine
+    ? `Today's mover: ${topMoverLine}. Tap to read.`
+    : `Today's digest is live — tap to read.`;
+
+  const body = `
+    <div style="display:inline-block;background:${vibeBg};color:${vibeColor};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 12px;border-radius:999px;margin-bottom:14px;">
+      ${vibeEmoji}&nbsp; Market vibe: ${vibeWord}
+    </div>
+    <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 10px 0;letter-spacing:-0.3px;">
+      ${escapeHTML(headline)}
+    </h1>
+    ${topMoverLine ? `
+      <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;">
+        ⭐ <strong>Today's mover:</strong> ${topMoverLine}
+      </p>` : ''}
+    <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
+      Hey ${kid} — your daily buzz is ready. 3 minutes, 3 games, real markets.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
+          Read today's Buzz →
+        </a>
+      </td></tr>
+    </table>
+    <p style="margin:14px 0 0 0;font-size:12px;color:#8b91a3;">
+      A new digest every weekday at 7 AM EST. Keep that streak alive.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      `Today's Market Buzz — ${dateLabel}`,
+      '',
+      `Market vibe: ${vibeWord}`,
+      headline,
+      topMoverLine ? `Today's mover: ${topMoverLine}` : '',
+      '',
+      `Read it: ${digestLink}`,
+    ].filter(Boolean).join('\n'),
+  };
+}
+
+// ============================================================
+// sendEmail — the only function that talks to Resend.
+// ============================================================
+// Same signature as the Phase 5 stub. Resolves `{ ok, id }` on success or
+// `{ ok: false, error }` on failure. Never throws — caller treats this as
+// fire-and-forget so a transient send failure doesn't break the request.
+export async function sendEmail({ to, subject, html, text, from }) {
+  const sender = from || FROM_EMAIL;
+
+  // Stub mode — no API key. Log to console so dev can copy URLs out (matches
+  // the Phase 5 behavior exactly).
+  if (!resend) {
+    console.log('');
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log(`📧 [stub-send] To: ${to}`);
+    console.log(`📧 [stub-send] From: ${sender}`);
+    console.log(`📧 [stub-send] Subject: ${subject}`);
+    console.log('───────────────────────────────────────────────────────────────');
+    console.log(text);
+    console.log('═══════════════════════════════════════════════════════════════');
+    console.log('');
+    return { ok: true, id: 'stub-' + Date.now(), stub: true };
+  }
+
+  try {
+    const result = await resend.emails.send({
+      from: sender,
+      to,
+      subject,
+      html,
+      text,
+    });
+    if (result?.error) {
+      console.error(`[emails] Resend rejected: ${result.error.message || result.error}`);
+      return { ok: false, error: result.error.message || String(result.error) };
+    }
+    const id = result?.data?.id || result?.id;
+    console.log(`[emails] sent → ${to} (${subject}) id=${id}`);
+    return { ok: true, id };
+  } catch (err) {
+    console.error(`[emails] send failed → ${to}: ${err.message}`);
+    return { ok: false, error: err.message };
+  }
 }

@@ -1,0 +1,17 @@
+node_modules
+npm-debug.log
+.env
+.env.local
+.env.*.local
+.git
+.gitignore
+.DS_Store
+*.md
+HANDOFF.md
+CONTEXT.md
+README.md
+scripts/
+state/
+public/index.html
+public/digest-data.json
+/tmp
