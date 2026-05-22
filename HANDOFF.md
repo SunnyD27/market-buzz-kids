@@ -11,25 +11,37 @@
 their parents. Delivered as an email teaser to the parent at 7 AM EST, which
 links to a full interactive web digest the kid plays through in ~3 minutes
 a day. Real investing principles, taught through games, streaks, and
-progressive ranks. Free. No ads.
+progressive ranks. **100% free.** Ad language is hedged for the future
+(see `public/privacy.html` §3).
 
 - **Repo:** https://github.com/SunnyD27/market-buzz-kids (public, `main`)
 - **Local path:** `/Users/sunnysheth/market-buzz-kids`
+- **Production:** **https://market-buzz-kids-production.up.railway.app**
+  - Deployed via Railway → GitHub integration. Push to `main` → auto-build → auto-deploy in ~60s.
+  - Env vars set in the Railway dashboard (see "Production env vars" below).
 - **Original spec:** `~/Downloads/market-buzz-kids-phase1-scope-final.md` (Sunny's machine)
 
 ---
 
-## Status: Phase 5 of 6 complete
+## Status: Phase 6 shipped (everything except 6.3 push notifications)
 
-| Phase | Status | Latest commit |
+| Phase | Status | Notes |
 |---|---|---|
-| 1. Core digest refactor (VOO removed, Today's Mover, 8 principles, Did You Know) | ✅ | `3a2a031` |
-| 2. Engagement systems (XP, ranks, streaks, shields, Perfect Day) | ✅ | `a7584ac` |
-| 3. The 6 games + Daily Challenge picker + 3 verified datasets | ✅ | `69cf1e8` |
-| 4. PWA setup (manifest, service worker, push scaffolding) | ✅ | `73925a1` |
-| 5. Landing page + signup + COPPA + privacy + deletion | ✅ | `4a8d8e6` |
-| 6. **Backend** (Neon, Resend, push send, daily generator wiring) | 🔲 **NEXT** | — |
-| Beyond | Deploy, polish, real-data verification | 🔲 | — |
+| 1. Core digest refactor (VOO removed, Today's Mover, 8 principles, Did You Know) | ✅ | commit `3a2a031` |
+| 2. Engagement systems (XP, ranks, streaks, shields, Perfect Day) | ✅ | commit `a7584ac` |
+| 3. The 6 games + Daily Challenge picker + 3 verified datasets | ✅ | commit `69cf1e8` |
+| 4. PWA setup (manifest, service worker, push scaffolding) | ✅ | commit `73925a1` |
+| 5. Landing page + signup + COPPA + privacy + deletion | ✅ | commit `4a8d8e6` |
+| **6.1.** Neon Postgres | ✅ | Today |
+| **6.2.** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | Today |
+| **6.3.** Push notifications | 🔲 **NEXT** | Email-only MVP shipped without this |
+| **6.4.** Daily Challenge wired into digest template | ✅ | Today |
+| **6.5.** Per-game daily content generation (reframers + game hydration) | ✅ | Today |
+| **6.6.** Real-data verification | ✅ | Today |
+| **6.7.** Immutable daily digest (`daily_digests` table) | ✅ | Today — **the digest no longer regenerates on redeploy** |
+| Deploy | ✅ | Railway, live |
+
+**One commit covers all of Phase 6:** `7b4b322` (the big drop), then incremental: `0bdec78` (ad copy), `e3164c8` (sample), `bef1787` (digest fallback), `99816b7` (Phase 6.7 immutable digest).
 
 ---
 
@@ -47,35 +59,57 @@ PORT=3199 npm start
 | URL | What |
 |---|---|
 | `http://localhost:3199/` | Landing page (parent-facing signup) |
-| `http://localhost:3199/digest` | Daily digest (kid-facing — shows brewing-page placeholder until a digest is generated) |
+| `http://localhost:3199/digest` | Daily digest (kid-facing — PWA start_url) |
+| `http://localhost:3199/sample` | Public evergreen sample digest (linked from landing CTA) |
 | `http://localhost:3199/privacy` | Privacy policy |
 | `http://localhost:3199/parent/delete-data` | Deletion request form |
-| `http://localhost:3199/games-preview.html` | **Best place to see all games end-to-end** — has a "🚀 Today's Challenge" tab that demos the full daily experience |
-| `http://localhost:3199/games-preview.html?game=compound` | Individual game previews (`compound`, `match`, `time-machine`, `bull-bear`, `price-is-right`, `today`) |
+| `http://localhost:3199/api/health` | DB connectivity check |
+| `http://localhost:3199/games-preview.html` | Game previews end-to-end |
+
+### Env vars (local `.env`, gitignored)
+
+Copy `.env.example` to `.env` and fill in:
+
+| Var | Required for | Notes |
+|---|---|---|
+| `DATABASE_URL` | All DB-backed routes | Neon connection string with `?sslmode=require` |
+| `RESEND_API_KEY` | Real email sending | Falls back to console-log stub if missing |
+| `FROM_EMAIL` | Resend `from` field | Default `onboarding@resend.dev` works for testing |
+| `CRON_SECRET` | `POST /api/cron/send-digest` header auth | Generate with `openssl rand -hex 32` |
+| `APP_BASE_URL` | Absolute URLs in outgoing emails | Local: `http://localhost:3199`. Prod: the Railway URL. |
+| `FMP_API_KEY` | `generateDigest()` market data | Free tier 250 req/day is fine |
+| `ANTHROPIC_API_KEY` | `generateDigest()` Claude content | |
+| `ADMIN_KEY` | `GET /generate?key=…` admin route | Any random string |
+| `PORT` | Local override | Production: Railway sets this |
 
 ### Useful one-off commands
 
 ```bash
-# Kill a stale server on 3199 (I sometimes leave one running during smoke tests)
+# Kill a stale server on 3199
 lsof -ti tcp:3199 | xargs kill
 
-# Trigger digest generation manually (requires FMP_API_KEY + ANTHROPIC_API_KEY env)
-curl 'http://localhost:3199/generate?key=YOUR_ADMIN_KEY'
+# Apply the schema to Neon (idempotent — uses IF NOT EXISTS)
+node scripts/run-schema.js
 
-# Tail the server log when testing signup flow — the stub-send email is logged here, INCLUDING the clickable verify/consent URL
+# Inspect current DB state (recent rows across all tables)
+node scripts/inspect-db.js
+
+# Hydrate today's daily-challenge games without running the full digest pipeline
+node scripts/test-games.js              # dry, no AI / no FMP
+node scripts/test-games.js --ai --fmp   # full live hydration
+
+# Trigger digest generation manually (uses FMP + Anthropic keys from .env)
+node src/generate.js
+
+# Tail the server log during signup flow tests
 tail -f /tmp/mb-server.log
-
-# Check git status / log
-git log --oneline -15
 ```
 
-### Testing the signup flow without email infrastructure
+### Production env vars (Railway dashboard)
 
-1. Fill out the landing form with a fake email + kid age 11
-2. Submit → see "Almost done — one more step" success state
-3. **Check the server console** — `sendEmail()` is a Phase 5 stub that logs the full email contents to stdout, including a clickable `http://localhost:3199/api/consent?token=...` URL
-4. Copy that URL into your browser → "🎉 Consent confirmed!" page
-5. Test age 15 → same flow but `/api/verify?token=...` instead
+Same set as local minus `PORT` (auto-injected) and `NODE_ENV` (in Dockerfile).
+
+**Critical:** `APP_BASE_URL` on Railway must be the **full https URL** of the deployment (no trailing slash), or outgoing emails will link to `localhost`. Currently set to `https://market-buzz-kids-production.up.railway.app`.
 
 ---
 
@@ -84,140 +118,168 @@ git log --oneline -15
 ### Backend (`src/`)
 | File | Role |
 |---|---|
-| `server.js` | Express app. Routes: `/`, `/digest`, `/privacy`, `/parent/delete-data`, `/api/signup`, `/api/verify`, `/api/consent`, `/api/delete-data`, `/generate` (admin), `/health`. Cron at 7 AM EST. |
-| `generate.js` | Orchestrates daily digest generation (data → AI → HTML). |
-| `data.js` | FMP fetching: indices (S&P/NASDAQ/DOW), news, biggest movers, and `fetchTopMover()` against the curated company list. |
-| `ai.js` | Claude API call. Generates digest JSON with web_search. **Updated in Phase 1** to include 8 investing principles + Did You Know + Today's Mover one-liner. Does NOT currently generate per-game content (Phase 6 task). |
-| `template.js` | Builds the digest HTML from the AI content. **Phase 4** wires PWA links + engagement engine. **Note:** still uses bare quiz section; doesn't yet render the Daily Challenge picker (Phase 6 task). |
-| `companies.js` | 75-company curated kid-recognizable list. Used by `fetchTopMover` + games. |
-| `storage.js` | **Phase 5 in-memory user store.** Mirrors `schema.sql` exactly. Swap to Postgres in Phase 6 by replacing these helpers — the API surface stays identical. |
-| `emails.js` | Verification + parental consent email templates. `sendEmail()` is a stub that logs to console; Phase 6 swaps in Resend. |
-| `schema.sql` | **Neon DDL — Phase 6 runs this file against the Neon database.** Tables: `users`, `verification_tokens`, `deletion_requests`, `engagement`. |
+| `server.js` | Express app. Routes, signup/consent flow, cron, bootstrap, daily-teaser fan-out. dotenv loaded with `override:true` so `.env` always wins (macOS launchd gotcha). |
+| `generate.js` | **Idempotent** digest generator. Checks `daily_digests` first; if today's row exists, just writes it to disk. Otherwise full pipeline → INSERT row → disk. |
+| `data.js` | FMP fetching. `fetchTopMover` and `fetchQuotes` use **per-ticker fan-out** because FMP killed multi-ticker `/stable/quote` on free tier. Tolerates `changePercentage` → `changesPercentage` rename. |
+| `ai.js` | Claude API calls. Three exported generators: `generateContent` (main digest), `reframeBullBear`, `reframeTimeMachine`. **Lazy client init** (`new Anthropic()` deferred until first call so dotenv has run). Includes `scrubProfanity()` regex pass on all output. |
+| `games.js` | **Phase 6.5 orchestrator.** Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, parallel). |
+| `template.js` | Builds digest HTML. Renders the Daily Challenge picker (Phase 6.4 replaced the bare quiz section). Handles `isSample` flag → SAMPLE chip + sign-up banner. |
+| `db.js` | pg Pool, **lazy-initialized** (same dotenv timing issue). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
+| `digest-store.js` | **Phase 6.7.** `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row is immutable once written. |
+| `storage.js` | Postgres-backed user/token/deletion helpers (Phase 6.1 rewrite). Same exports as the Phase 5 in-memory version. Async throughout. |
+| `content-history.js` | Word-of-Day + Did-You-Know rotation guard. Generic `getRecent(kind)` / `record(kind)` API backed by `state/content-history.json`. |
+| `emails.js` | Renderers (pure) + `sendEmail` (Resend SDK). Five email types: verify, consent, welcome, deletion-ack, daily teaser. Stub-mode fallback if `RESEND_API_KEY` is missing. |
+| `companies.js` | 75-company curated kid-recognizable list. |
+| `schema.sql` | Neon DDL. Includes `daily_digests` (Phase 6.7). Apply with `scripts/run-schema.js`. |
 
 ### Frontend (`public/`)
 | Path | Role |
 |---|---|
-| `landing.html` / `.css` / `.js` | Marketing landing + signup form. UTM/timezone capture client-side, COPPA-aware. |
-| `privacy.html` | Kid-friendly COPPA-compliant privacy policy. |
+| `landing.html` / `.css` / `.js` | Landing + signup. CTA points to `/sample`, not `/digest`. |
+| `privacy.html` | COPPA-compliant policy. §3 hedged for future sponsored content (30-day notice). |
 | `parent-delete-data.html` | Deletion request UI. |
-| `index.html` | Generated daily digest (gitignored — fresh each day). |
-| `engagement.js` / `engagement.css` | XP/rank/streak/shield/Perfect Day engine. All localStorage, no backend. Public API: `window.MarketBuzz.recordGamePlayed(type, {correct})`. |
-| `games-preview.html` | **Test harness** — load any game with sample data. Best place to demo. |
-| `games/shared.js` | Game helpers — `renderReveal()` (enforces principle tag), `animateNumber`, `buildLinePath`, `shuffle`. |
-| `games/styles.css` | Shared visual language across all games. |
-| `games/compound.js` | Game 4 — slider, 10% annual compound, principle 1. |
-| `games/match.js` | Game 5 — tap-to-match, principle 4. |
-| `games/time-machine.js` | Game 6 — 4 stocks, $1000, principle varies per scenario (mostly 2). |
-| `games/bull-bear.js` | Game 2 — predictive chart, principle varies per scenario. |
-| `games/price-is-right.js` | Game 3 — guess share price, principle per-company. |
-| `games/daily-challenge.js` | The picker UI. 3 cards/day, deterministic 8-day rotation, Perfect Day handling. **Not yet wired into `src/template.js`** (Phase 6 task). |
-| `data/company-models.json` | 37 companies — revenue breakdowns. |
-| `data/time-machine-prices.json` | 7 scenarios — verified historical prices (split-adjusted) + outcome multipliers for bankrupt/acquired. |
-| `data/historical-charts.json` | 10 scenarios — normalized chart shapes ($100 start) + real % outcomes. |
-| `data/README.md` | Documents the two-layer content architecture (static facts + Phase 6 Claude reframing). |
-| `manifest.webmanifest` | PWA manifest. `start_url: /digest` so home-screen icon opens the digest, not the marketing page. |
-| `sw.js` | Service worker — versioned caches, network-first for digest, push notification handler. |
-| `pwa.js` | SW registration, add-to-homescreen banner (iOS Share-button tutorial vs Chromium `beforeinstallprompt`), push subscription (gated on standalone for iOS). |
-| `icons/icon.svg` / `icon-maskable.svg` | Brand chart-line icons. |
+| `index.html` | Generated daily digest (**gitignored** — fresh each day, mirrors `daily_digests` row). |
+| `digest-data.json` | JSON payload that `template.js` consumes (**gitignored** — same lifecycle as above). |
+| `engagement.js` / `engagement.css` | XP/rank/streak engine. Client-side localStorage. |
+| `games-preview.html` | Standalone game test harness. |
+| `games/*.js` | The 6 game modules (quiz lives inline in the template; the other 5 are standalone files). |
+| `games/daily-challenge.js` | Picker UI + 8-day rotation. The rotation is duplicated in `src/games.js` — keep both in sync. |
+| `data/company-models.json` | 37 companies for Match + Price-is-Right. |
+| `data/time-machine-prices.json` | 7 verified Time Machine scenarios. |
+| `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
+| `data/sample-digest.json` | **Static** curated evergreen sample (Phase 6.4 era). Served by `/sample`. Never auto-regenerates. |
+| `manifest.webmanifest` | PWA manifest, `start_url: /digest`. |
+| `sw.js` / `pwa.js` | Service worker + add-to-homescreen UX. |
+
+### Ops (`scripts/`)
+| File | Role |
+|---|---|
+| `run-schema.js` | Apply `src/schema.sql` to Neon. Idempotent. |
+| `inspect-db.js` | Recent rows across all tables. Useful for debugging signup/digest flows. |
+| `test-games.js` | Hydrate today's daily-challenge games standalone (no full pipeline). Flags: `--ai`, `--fmp`, `--date YYYY-MM-DD`. |
+
+### Persisted state (gitignored)
+- `state/content-history.json` — rotation history for word + fact. On Railway this is ephemeral (resets per container restart). Acceptable for MVP; would move to Postgres if rotation needs to survive deploys.
 
 ---
 
 ## Important architecture decisions worth remembering
 
-1. **Two-layer content for verified datasets** (Bull or Bear + Time Machine):
-   - **Layer 1 (static):** JSON files in `public/data/` hold verified facts — prices, splits, bankruptcies, outcomes. Never invented by AI.
-   - **Layer 2 (Phase 6 daily reframing):** Claude picks which scenario today + rewrites `story` / `lessonBody` / `framing` daily. Verified facts stay locked. Documented in `public/data/README.md`.
-   - This is the answer to "won't the same 7-10 scenarios get repetitive?" — they will rotate, but the narrative around them is fresh each day.
+1. **`daily_digests` is the source of truth (Phase 6.7).** One row per NY calendar date, locked via `INSERT … ON CONFLICT DO NOTHING`. The disk files (`public/index.html`, `public/digest-data.json`) are a fast-path cache; if they're missing, `/digest` rebuilds from the DB row. Result: **redeploys never change today's content**. First generation of the day wins; everyone else reads it.
 
-2. **Pricing approach for Time Machine:** **unadjusted historical close** + `splitFactor`. Matches what news from the era reported, and teaches the kid what a stock split is. Game math: `(1000 / priceThen) × splitFactor × currentPrice`.
+2. **Generation is idempotent.** `generateDigest()` checks the DB first. If today's row exists, it just writes it to disk and returns in ~0.35s (zero API calls). Both the boot-time bootstrap AND the 7 AM cron call it. Whichever fires first creates the canonical row; the other is a no-op.
 
-3. **Pricing approach for Bull or Bear:** **normalized shapes** starting at $100, scaled by approximate real returns. Chart is unlabeled — kid never sees a specific dollar value tied to a specific ticker until the reveal. Avoids the "fabricated price" trust problem entirely.
+3. **`/digest` read path (in order):**
+   - `public/index.html` on disk (fast `sendFile`)
+   - `daily_digests` row in Postgres (re-render via `buildHTML`, warm the disk back up)
+   - `/sample` content (last-resort fallback so kids never see "brewing")
 
-4. **Per-company principles in Price is Right** — `data.principle` per company, not hardcoded. Apple → 4 (Services > iPhone), Coke → 1 (dividends since 1920), Nvidia → 6 (AI boom), Roblox/Starbucks → 7 (ownership). Fixes the "always Principle 7" repetition.
+4. **`/sample` is genuinely static.** Reads `public/data/sample-digest.json`, never auto-regenerated. To refresh: edit the JSON, commit, push. Same content forever otherwise.
 
-5. **URL split:** `/` is **parent-facing** (landing). `/digest` is **kid-facing** (the app). PWA `start_url` is `/digest` so the home-screen icon goes straight to the app, not marketing.
+5. **Two AI reframers, not one mega-call.** `src/ai.js` exposes `generateContent` (main digest, has web search), `reframeBullBear` (bull-bear narrative only), `reframeTimeMachine` (time-machine framing only). The reframers run in parallel inside `Promise.all` for any day where those games are picked. Always falls back to canned text in the JSON file on any failure.
 
-6. **COPPA "email-plus" caveat** (flagged in code): true email-plus per FTC requires a delayed follow-up step. Our single-email-confirmation flow is what most low-risk peers do for kid education products. Worth a legal review before going live — Phase 6 can layer a delayed follow-up if needed.
+6. **Per-game daily content rotation is deterministic + stateless.** `(dayIndex + hash(gameType)) % pool.length` picks the scenario for the day. Since `dayIndex` increases monotonically, consecutive days with the same gameType always land on different scenarios. No DB writes for game rotation. Compound framings + match shuffles are similarly deterministic.
 
-7. **Engagement engine is fully client-side** (`public/engagement.js`). All XP/streak/shield state lives in localStorage. The `engagement` table in `schema.sql` is a future placeholder for a parent dashboard (Phase 2 of the broader roadmap, not currently in scope).
+7. **Word/Did-You-Know rotation is stateful** via `state/content-history.json`. 30-day window. Prompt tells Claude "don't pick any of these recent words/facts." Kid never sees déjà-vu within a month.
 
-8. **The 6th game IS the Quiz** — already in the digest template, just wired into `MarketBuzz.recordGamePlayed('quiz', ...)`. The other 5 games are separate JS modules under `public/games/`.
+8. **Kid-safe language: two-layer defense.**
+   - Prompt rule (`PROFANITY_RULE` in `src/ai.js`) telling Claude what to avoid.
+   - `scrubProfanity()` regex pass over all Claude output as a safety net. Whole-word matches only (`hell → heck`, `damn → darn`, etc.). Walks the full output recursively.
 
-9. **`games-preview.html` has a `MBGames.quiz` inline renderer** so the Daily Challenge picker can render quiz cards in preview. The production quiz still lives in `src/template.js` — when Phase 6 wires the picker into the template, this should be unified.
+9. **FMP free-tier reality.** Multi-ticker `/stable/quote?symbol=A,B,C` returns `[]` on free tier (batch endpoint is paid-only). All ticker fetches use **per-ticker fan-out in parallel**. `/api/v3/*` is fully deprecated (legacy users only). Field name renamed from `changesPercentage` → `changePercentage`; code tolerates both.
 
----
+10. **macOS launchd gotcha.** `ANTHROPIC_API_KEY=""` is sometimes set system-wide by launchd, shadowing the `.env` value. Two fixes in place:
+    - `dotenv.config({ override: true })` at every entry point (`server.js`, `generate.js`, all scripts).
+    - **Lazy client init** in `db.js` (Pool) and `ai.js` (Anthropic) so they don't capture env vars at module load time, before dotenv has run.
 
-## Phase 6 — what's next
+11. **`/digest` is publicly accessible.** No auth gate, by design. Signup is for the 7 AM email delivery, not access control. Anyone with the URL can read today's content (good for sharing + SEO). Soft-gate / hard-gate were considered and deferred — see "Open questions" below.
 
-**Backend wiring.** All Phase 5 stubs become real.
+12. **Engagement (XP/ranks/streaks/shields) is fully client-side localStorage.** No server-side identity yet. Kids who clear browser data or switch devices start fresh. This was a deliberate Phase 5 architecture decision; moving to server-side requires identity wiring (which also unlocks per-user content rotation, parent dashboard, push targeting).
 
-### 6.1 — Neon PostgreSQL
-- Provision a free-tier Neon project, get the connection string
-- Add `DATABASE_URL` to env
-- Install `pg` (node-postgres) or Prisma — TBD which one to pick
-- Run `src/schema.sql` against the Neon DB
-- Rewrite `src/storage.js` helpers to use Postgres — **API surface stays identical** so server.js doesn't change
-- Test that the full signup → activate → delete flow works against real Postgres
+13. **`/generate` admin endpoint takes ~60s, hits Railway's 30s proxy timeout.** The browser sees `ERR_CONNECTION_RESET`, but the server completes the work successfully. Known wart; the fix is to refactor it to fire-and-forget with a 202 response. Not done yet — manual-trigger is rarely used now that the boot-bootstrap + cron handle generation reliably.
 
-### 6.2 — Resend email delivery
-- Sign up for Resend, get the API key
-- Add `RESEND_API_KEY` to env
-- Verify a sender domain (or use the dev sandbox for early testing)
-- Replace `sendEmail()` stub in `src/emails.js` with a real `fetch` call to Resend
-- Test that consent + verify emails actually arrive in the parent's inbox
-- Add the **daily digest teaser email** (parent at 7 AM): scoreboard summary, Today's Mover one-liner, top story headline, "Today's games:" preview, big "Read Today's Buzz" button
-
-### 6.3 — Push notification dispatch
-- Generate a VAPID key pair (`web-push generate-vapid-keys`)
-- Add `VAPID_PUBLIC_KEY` and `VAPID_PRIVATE_KEY` to env
-- Replace the placeholder in `public/pwa.js`
-- Add `POST /api/push/subscribe` endpoint that persists the subscription object to the user's `push_subscription` field
-- Add a daily 7 AM job that fans out push notifications to all active subscribers with today's mover one-liner
-
-### 6.4 — Daily Challenge wired into digest template
-- Update `src/template.js` to render the Daily Challenge picker (3 cards) instead of the bare quiz section
-- Include `<script>` tags for all 6 game modules + `daily-challenge.js`
-- Update `src/ai.js` to use `MBGames.dailyChallenge.pickGamesForDate(today)` and generate content for each of today's 3 game types
-- Update the data shape passed to the template to include the `dataBundle` for the picker
-
-### 6.5 — Per-game daily content generation (in `src/ai.js`)
-For each game type the rotation picks today, the AI step needs to produce:
-- **quiz** — already done (question/options/correctIndex/explanation/principle)
-- **bull-bear** — pick a scenario ID from `historical-charts.json` (biased away from recently-used), Claude rewrites story/lessonBody/lessonHeadline
-- **time-machine** — pick a scenario ID from `time-machine-prices.json`, Claude rewrites framing/lessonBody, FMP injects live `priceNow` for active tickers
-- **price-is-right** — pick a ticker from `companies.js`, fetch live FMP quote, generate 2 distractors at ±30%, attach the piece-of-business story + per-company principle
-- **compound** — Claude generates a fresh scenario (amount + framing text)
-- **match** — pick 4 random companies from `company-models.json`
-
-### 6.6 — Real-data verification
-- Run a full end-to-end generation against real FMP + Anthropic
-- Verify Today's Mover picks something interesting from the curated list
-- Verify all game payloads render correctly in the daily digest
-- Verify Bull or Bear chart shapes look right with the Claude-reframed stories
+14. **The cron at 7 AM EST does both generation AND teaser email fan-out.** Single in-process cron in `server.js`. `sendDailyTeasers()` is shared with the `POST /api/cron/send-digest` HTTP endpoint (external scheduler can also trigger it).
 
 ---
 
-## Beyond Phase 6 (rough notes, not in current scope)
+## Today's session log (Phase 6 in one day)
 
-- **Deploy to Railway** with the existing `Dockerfile` + `railway.toml` — environment vars: `DATABASE_URL`, `RESEND_API_KEY`, `VAPID_*`, `FMP_API_KEY`, `ANTHROPIC_API_KEY`, `ADMIN_KEY`
-- Add real **PNG icons** (192 + 512) for older iOS A2HS support (current SVG works for iOS 16+)
-- Expand the static datasets (more scenarios for Time Machine, Bull or Bear, Match)
-- The eight principles already exist in `engagement.js` as `MBGames.shared.PRINCIPLES` — they're the single source of truth
-- Wire `mb_pwa_banner` to **only show on `/digest`**, not on the landing page (currently shows everywhere `pwa.js` loads — minor polish)
-- **Phase 2** of the broader product roadmap (per the original spec): parent dashboard, personalized portfolio, leaderboards, paper trading simulator. None in current scope.
+In rough chronological order:
+
+1. **Phase 6.1 — Neon Postgres.** New `src/db.js` with pg.Pool. Rewrote `src/storage.js` async + Postgres-backed (kept same exports). Added `/api/health` DB check. dotenv override:true. Wrote `scripts/run-schema.js` and `scripts/inspect-db.js`.
+
+2. **Phase 6.2 — Resend email.** Real `sendEmail()` calling Resend, with stub fallback. Added `renderWelcomeEmail`, `renderDeletionAckEmail`, `renderDailyTeaserEmail`. Wired welcome into activation flow; deletion ack into `/api/delete-data`. New `POST /api/cron/send-digest` with `X-Cron-Secret` header. `APP_BASE_URL` env var. `generate.js` now persists `public/digest-data.json` alongside HTML so the teaser email can read it. Live-tested all 4 user-facing emails against Sunny's real inbox.
+
+3. **Phase 6.4 — Daily Challenge in template.** Replaced the bare Pop Quiz section with the 3-card picker. Loads `shared.js`, `daily-challenge.js`, and 5 game modules. Inline `window.MBGames.quiz` renderer (since quiz never had a standalone file). Embeds the daily `dataBundle` as JSON.
+
+4. **Phase 6.5 — Per-game daily content.** New `src/games.js` orchestrator. Added `reframeBullBear` and `reframeTimeMachine` Claude calls (parallel, fail-soft to canned). Added `fetchQuotes` to `data.js`. Lazy Anthropic client (fixed the launchd-empty-var issue mid-session). `scripts/test-games.js` for standalone testing.
+
+5. **Phase 6.6 — Real-data verification.** Converted `fetchTopMover` to per-ticker fan-out (FMP killed multi-ticker batch on free tier). Tolerate `changePercentage` rename. Added dotenv override to `generate.js`. Ran the full live pipeline end-to-end successfully (QCOM +13% top mover, 3 stories with web search, reframed Tesla bull-bear story, live JPM price-is-right).
+
+6. **Polish round 1.**
+   - 3 stories default (was 2). Prompt updated.
+   - Profanity scrub: `PROFANITY_RULE` in all three AI prompts + `scrubProfanity()` regex over all output.
+   - Compound machine framings rewritten to one-time deposits only (the game models a lump sum, not a recurring contribution). Amounts bumped from $5-$100 to $25-$1000.
+   - Price-is-Right `piece` = `shortModel + surprise` (concept teaser, not just trivia).
+
+7. **Rotation guards.**
+   - Word of Day: 30-day rotation via `state/content-history.json`.
+   - Did You Know: same mechanism, same file (after a refactor: `word-history.js` → generic `content-history.js`).
+   - Prompt now includes "Avoid these recent words/facts" list.
+
+8. **Deploy to Railway.** Improved Dockerfile (`npm ci`, `NODE_ENV=production`, pre-create `state/`). Added `.dockerignore`. Committed Phase 6 work to GitHub (`7b4b322`). Sunny linked the repo via Railway GitHub integration. Set all 8 env vars in the dashboard. Bootstrapped the first production digest. Confirmed all routes + assets live.
+
+9. **Ad-language softening (privacy + landing).** Replaced flat "We don't show ads" in privacy §3 with forward-looking copy (sponsored-content hedge + 30-day parent notification). Stripped "No ads" / "tracking pixels" / "third-party sharing" claims from landing — privacy policy covers the details. Landing CTA now: "100% free" only.
+
+10. **`/sample` route.** Curated evergreen `public/data/sample-digest.json` (fictional but plausible market day, NVDA top mover, 3 stories, Netflix-Qwikster bull-bear, Nike price-is-right, Compounding word of day). Static — never auto-regenerates. Landing CTA "See a sample" links here. `template.js` learned an `isSample` flag (renders gold "✨ This is a sample digest" banner + SAMPLE chip in the header).
+
+11. **Digest UX after signup.** Found that fresh Railway containers wiped `public/index.html` on every redeploy → new signups saw "brewing" placeholder. Initial fix (`bef1787`) added boot-time bootstrap + fallback-to-sample. Sunny then flagged a bigger problem:
+
+12. **Phase 6.7 — Immutable daily digest.** Sunny pointed out that even with the bootstrap, **different visitors at different times today were seeing different content** (every redeploy regenerated). Architected the proper fix: new `daily_digests` Postgres table with `digest_date` PK, locked via `ON CONFLICT DO NOTHING`. `generateDigest()` is now idempotent (DB cache check first). `/digest` reads disk → DB → sample. Made `db.js` Pool lazy-init (same dotenv timing pattern as the Anthropic client). After this, redeploys complete in ~0.35s with byte-identical content for the rest of the day.
+
+13. **Discussion: /digest access control.** Sunny noticed `/digest` is publicly accessible. Options discussed: leave-open (Substack-style, good for sharing/SEO), soft-gate (banner for visitors without an activation cookie), hard-gate (requires identity wiring). Decided to leave as-is for now. The code-side prep started but was reverted; tracker in "Open questions" below.
+
+---
+
+## Phase 6.3 (push notifications) — still NOT done
+
+The remaining MVP sub-phase. Email-only works fine; push is a nice-to-have.
+
+- Generate VAPID keys (`web-push generate-vapid-keys`)
+- Add `VAPID_PUBLIC_KEY` / `VAPID_PRIVATE_KEY` env vars
+- Replace `REPLACE_IN_PHASE_6` placeholder in `public/pwa.js`
+- Add `POST /api/push/subscribe` endpoint that persists subscription JSON to `users.push_subscription`
+- Daily fan-out alongside the teaser email — same 7 AM cron, same source data
+
+Half a day of work when you're ready.
 
 ---
 
 ## Open questions / things deferred
 
-1. **VAPID key generation** — Phase 6. The placeholder in `pwa.js` is `'REPLACE_IN_PHASE_6'`.
-2. **PNG icons** — only SVG currently. Modern iOS (16+) and all desktop browsers support SVG icons. Older iOS would need PNG. Deferred.
-3. **Email-plus second step** — single email confirmation. A delayed follow-up email could be layered in Phase 6 if legal counsel wants strict FTC compliance.
-4. **Daily Challenge in digest template** — picker exists in `games-preview.html` but NOT in `src/template.js` yet. Phase 6 task.
-5. **Game datasets repeat** — only ~7-10 verified scenarios per dataset. The Phase 6 Claude reframing layer compensates, but the pools should grow over time.
-6. **Standard-tier vs Pro-tier** — none currently. The product is free per spec; pricing is a Phase 2-of-broader-roadmap question.
-7. **Anti-spam / captcha** — no protection on `/api/signup` or `/api/delete-data`. Cloudflare Turnstile or simple rate-limiting recommended pre-launch.
-8. **Logging / observability** — server logs to console only. No structured logging, no metrics, no error tracking. Phase 6+ polish.
+1. **Per-user content rotation** — requires identity wiring (token in email link → cookie). Same foundation also unlocks push targeting, parent dashboard, server-side engagement, leaderboards. Estimated 1–2 days. Not in current scope.
+
+2. **`/digest` access control (soft-gate / hard-gate).** Currently public. Soft-gate (banner for drive-by visitors) is a ~10-min change. Hard-gate requires identity wiring. Leaving open for now.
+
+3. **`/generate` admin endpoint times out at 30s on Railway's proxy.** Server completes the work, but the browser sees `ERR_CONNECTION_RESET`. Fix: refactor to 202-and-fire-async. Low priority now that the boot bootstrap is reliable.
+
+4. **`/health` doesn't update `lastGenerated` from manual `/generate` calls** — only the 7 AM cron sets it. Cosmetic.
+
+5. **`state/content-history.json` is ephemeral on Railway.** Container restarts wipe it, so the word/fact rotation guard resets across deploys. Not catastrophic — Claude still picks reasonable variety on each fresh start. Move to Postgres if/when rotation needs to survive restarts (e.g., when daily deploys are happening regularly).
+
+6. **VAPID key generation** — placeholder still in `pwa.js`. Phase 6.3.
+
+7. **PNG icons** — SVG-only. Modern iOS (16+) and desktop browsers are fine; older iOS would need PNG. Deferred.
+
+8. **Anti-spam / captcha** — no protection on `/api/signup` or `/api/delete-data`. Cloudflare Turnstile or rate-limit recommended before scaling.
+
+9. **Email-plus second step (COPPA strict mode)** — current single-click consent is what most low-risk kid-education products do. Layer a delayed follow-up email if legal counsel wants strict FTC compliance.
+
+10. **Game datasets repeat over time.** 10 bull-bear + 7 time-machine scenarios. The Claude reframing layer compensates for now, but the pools should grow.
+
+11. **Structured logging / observability.** Console-only. No Sentry, no metrics. Phase 6+.
+
+12. **`generate.js` admin endpoint security.** If `ADMIN_KEY` is unset, both `key !== process.env.ADMIN_KEY` is `undefined !== undefined` = false, so the endpoint runs unauthenticated. Set `ADMIN_KEY` in production. (Currently is set.)
 
 ---
 
@@ -227,21 +289,30 @@ If you're me opening this fresh:
 
 ```bash
 cd ~/market-buzz-kids
-git log --oneline -15                  # see all commits
-PORT=3199 npm start                     # boot
-# Then in another terminal:
-curl http://localhost:3199/health
-open http://localhost:3199/             # landing page
-open http://localhost:3199/games-preview.html  # game previews
+git log --oneline -15                      # see recent commits
+PORT=3199 npm start                         # boot
+curl http://localhost:3199/api/health       # check Neon connection
+open http://localhost:3199/                 # landing
+open http://localhost:3199/sample           # static sample
+open http://localhost:3199/digest           # today's real digest (or sample fallback)
+open http://localhost:3199/games-preview.html
+
+# Production
+open https://market-buzz-kids-production.up.railway.app/
 ```
 
-Phase 5 is the last shipped phase. Phase 6 = backend.
+To regenerate today's digest manually (only if you've intentionally wiped the row):
 
-Recent rabbit holes covered:
-- `public/data/README.md` — two-layer content architecture
-- `src/schema.sql` — Neon DDL design (read top-to-bottom for the full data model)
-- Phase commits are all titled `Phase N (M/X):` for easy filtering — `git log --oneline | grep 'Phase 3'`
+```bash
+# Step 1: delete today's row from Neon
+node -e "import('./src/db.js').then(({query}) => query(\"DELETE FROM daily_digests WHERE digest_date = CURRENT_DATE\")).then(()=>process.exit(0))"
+
+# Step 2: regenerate
+node src/generate.js
+```
+
+Remember: `INSERT ON CONFLICT DO NOTHING` means once today's row exists, you cannot overwrite it without an explicit delete first. That's the immutability guarantee.
 
 ---
 
-*Last updated when Phase 5 completed. Sunny called it for the day after `4a8d8e6`.*
+*Last updated end-of-day, Phase 6.7 deployed. Production live at https://market-buzz-kids-production.up.railway.app. Phase 6.3 push notifications still TODO.*
