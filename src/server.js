@@ -8,6 +8,7 @@ import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateDigest } from './generate.js';
+import { buildHTML } from './template.js';
 import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
 import {
@@ -57,13 +58,33 @@ app.get('/', (req, res) => {
 });
 
 // `/digest` — the daily digest (what `/` used to serve).
-// Kid-facing surface. PWA start_url points here.
+// Kid-facing surface. PWA start_url points here. Only shown to signed-up
+// users (linked from the daily teaser email) — the public landing CTA
+// points to /sample instead, see below.
 app.get('/digest', (req, res) => {
   const digestPath = path.join(__dirname, '..', 'public', 'index.html');
   if (fs.existsSync(digestPath)) {
     res.sendFile(digestPath);
   } else {
     res.status(200).type('html').send(digestBrewingPage());
+  }
+});
+
+// `/sample` — public, static teaser digest. Same template/layout as the
+// real digest but rendered from a curated JSON file (public/data/sample-
+// digest.json). Visible to anyone before signing up; meant to ENTICE the
+// click-through to /#signup, NOT to give away today's actual digest. The
+// content.isSample=true flag in the JSON triggers the sample banner +
+// SAMPLE chip in the header.
+app.get('/sample', (req, res) => {
+  try {
+    const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
+    const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
+    content.isSample = true; // belt-and-suspenders — guarantee the banner shows
+    res.status(200).type('html').send(buildHTML(content));
+  } catch (err) {
+    console.error('[sample] failed to render:', err.message);
+    res.status(500).type('html').send('<p>Sample temporarily unavailable.</p>');
   }
 });
 

@@ -1,0 +1,121 @@
+{
+  "isSample": true,
+  "date": "A sample Monday morning",
+  "tradingDay": "Friday",
+  "marketVibe": "green",
+  "vibeEmoji": "🟢",
+  "vibeSummary": "A bright Monday for markets — earnings season is just getting going and tech is leading the way 🚀",
+  "bigPicture": "It's earnings season, which means every week a handful of huge companies tell us how much money they actually made. When the numbers beat expectations, stocks usually pop. When they miss, stocks drop. This sample day was all about beats — tech companies reported strong AI-related demand, and that pulled the whole market higher. The Fed is also expected to hold rates steady this month, which markets generally like because cheap money helps companies grow. See how it's all connected? Real-world news → real company profits → real stock movements.",
+  "scoreboard": {
+    "sp500":  { "price": "5,847.30", "change": "+0.82%", "direction": "up",   "vibe": "Cruising past 5,800 like it owns the place" },
+    "nasdaq": { "price": "19,210.40", "change": "+1.24%", "direction": "up",   "vibe": "Tech leads the parade today" },
+    "dow":    { "price": "42,180.10", "change": "-0.34%", "direction": "down", "vibe": "Old guard taking a breather" },
+    "topMover": {
+      "ticker": "NVDA",
+      "name": "Nvidia",
+      "price": "$135.40",
+      "change": "+4.6%",
+      "direction": "up",
+      "vibe": "Nvidia popped after announcing their next-gen chips ship 2x faster than last year's. Big customers like Microsoft and Amazon basically said 'we'll take as many as you can make.' That's principle 6 — news genuinely moves markets."
+    }
+  },
+  "stories": [
+    {
+      "badge": "hot",
+      "badgeLabel": "TECH EARNINGS",
+      "title": "Nvidia beats Wall Street by a mile (again)",
+      "body": "Nvidia reported revenue of $35 billion last quarter — 94% more than the same quarter a year ago. Almost all of it came from AI data-center chips. The stock jumped 4.6% on the news.",
+      "whyItMatters": "When a company 'beats expectations,' it means analysts thought they'd make $X and they actually made way more. The stock usually pops because investors update what they think the company is worth. That's the connection between today's news and tomorrow's price — principle 6.",
+      "principle": 6
+    },
+    {
+      "badge": "money",
+      "badgeLabel": "STREAMING WARS",
+      "title": "Disney+ adds a Marvel-themed gaming tier",
+      "body": "Disney announced a new tier of its streaming service that bundles Disney+ with Marvel-branded mobile games. Subscribers tripled their average watch time when games were tested in beta. Disney stock rose 1.8%.",
+      "whyItMatters": "Disney isn't really a movie company — it's a giant 'engagement machine.' Parks, streaming, games, merchandise — they all feed each other. When you buy a Disney share, you own a slice of all of that. Principle 4: understand what you actually own.",
+      "principle": 4
+    },
+    {
+      "badge": "world",
+      "badgeLabel": "MACRO MOVE",
+      "title": "Oil prices drop 3% as global supply ramps up",
+      "body": "Crude oil fell below $75 a barrel as new production came online from several countries. That's good news for airlines (cheaper jet fuel = bigger profits) and slightly bad for energy companies that pump oil.",
+      "whyItMatters": "When oil gets cheaper, shipping costs go down, which means companies spend less moving stuff around, which means they can make more profit, which usually means stock prices can go up. See how it's all connected? That's principle 6 in real time.",
+      "principle": 6
+    }
+  ],
+  "didYouKnow": {
+    "fact": "If you'd invested $1,000 in Amazon when it IPO'd in 1997, that would be worth roughly $2.3 million today.",
+    "category": "compound interest",
+    "connection": "That's the power of starting early. The kids who learn about investing now have decades of compounding ahead of them — way more than most adults. Principle 1: start early, let time work for you.",
+    "principle": 1
+  },
+  "quiz": {
+    "question": "When you buy one share of a company, what do you actually own?",
+    "options": [
+      "Nothing — it's just a piece of paper",
+      "A small piece of the actual business",
+      "A loan you gave the company",
+      "A coupon for the company's products"
+    ],
+    "correctIndex": 1,
+    "explanation": "A share = a small slice of the real business. Its buildings, its workers, its future profits. That's why investors say 'own' instead of 'bet.' Principle 7.",
+    "principle": 7
+  },
+  "wordOfDay": {
+    "word": "Compounding",
+    "type": "noun",
+    "context": "the magic behind 'start early'",
+    "definition": "Earning returns on the returns you already earned. Imagine a snowball rolling down a hill — it picks up more snow, gets bigger, picks up even more snow, gets way bigger. Compounding is exactly like that, but with money. It's why $1,000 invested at age 12 can become much more than $1,000 invested at age 30, even if the older version invests more total money.",
+    "principle": 1
+  },
+  "dailyChallenge": {
+    "date": "sample",
+    "dayIndex": 0,
+    "picked": ["bull-bear", "compound", "price-is-right"],
+    "games": [
+      {
+        "type": "bull-bear",
+        "data": {
+          "id": "netflix-pre-qwikster-2011",
+          "decisionPoint": "July 2011",
+          "contextLabel": "PRIOR 12 MONTHS",
+          "outcomeLabel": "NEXT 4 MONTHS",
+          "contextShape": [100, 110, 122, 138, 158, 182, 210, 245, 285, 325, 365, 400],
+          "outcomeShape": [400, 360, 280, 150, 100],
+          "actualDirection": "down",
+          "actualReturnPct": -0.75,
+          "company": "Netflix",
+          "ticker": "NFLX",
+          "era": "Jul 2011 → Nov 2011",
+          "story": "Netflix had quadrupled in a year. Then in July 2011 they raised prices and announced 'Qwikster' — splitting DVD service from streaming. Customers revolted. 800,000 subscribers quit in one quarter. The stock collapsed 75% in 4 months.",
+          "lessonHeadline": "What goes up sometimes crashes hard — and that's okay.",
+          "lessonBody": "<p>Anyone looking at this chart in July 2011 would have said 'this stock is unstoppable.' It had quadrupled in a year! What could go wrong?</p><p>Then Netflix made one bad business decision — raising prices and splitting their service — and lost three-quarters of their stock value in months.</p><p><strong>But here's the kicker:</strong> from that 2011 low, Netflix went up about 20,000% over the next decade. The people who panic-sold lost a fortune. The ones who understood why the stock dropped (one bad pricing decision, not a broken business) and held on, made one of the great returns in stock market history.</p><p>Markets go up and down. <strong>Volatility is normal.</strong> Don't panic-sell on news — understand what you own first.</p>",
+          "principle": 3
+        }
+      },
+      {
+        "type": "compound",
+        "data": {
+          "amount": 100,
+          "framing": "🎂 You got $100 for your birthday. Instead of spending it, you invested the whole thing."
+        }
+      },
+      {
+        "type": "price-is-right",
+        "data": {
+          "ticker": "NKE",
+          "name": "Nike",
+          "emoji": "👟",
+          "realPrice": 80,
+          "options": [55, 80, 105],
+          "piece": "Makes money designing and selling sneakers, sportswear, and gear — most of it manufactured overseas and sold through stores, websites, and apps worldwide. When you buy one Nike share, you own a tiny piece of every Jordan sneaker, every Nike running shoe, and every World Cup jersey sold globally. The Nike 'swoosh' itself was bought for just $35 in 1971 — and it's now worth hundreds of billions in brand value.",
+          "surprise": "The Nike 'swoosh' itself was bought for just $35 in 1971 — and it's now worth hundreds of billions in brand value.",
+          "principle": 7
+        }
+      }
+    ]
+  },
+  "generated_at": "sample"
+}

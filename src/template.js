@@ -7,7 +7,7 @@ export function buildHTML(content) {
   const {
     date, marketVibe, vibeSummary, bigPicture,
     scoreboard, stories, didYouKnow, wordOfDay,
-    dailyChallenge,
+    dailyChallenge, isSample,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -73,6 +73,19 @@ export function buildHTML(content) {
       </div>
     `;
   }
+
+  // Sample chip + banner — only when content.isSample is true. Extracted
+  // up here as constants so we don't have to nest single-quoted CSS inside
+  // the main backtick-template (the escaping turns into a mess fast).
+  const sampleChipHTML = isSample ? `<span style="font-family:'Space Mono',monospace; font-size:11px; color:var(--yellow); -webkit-text-fill-color:var(--yellow); letter-spacing:2px; vertical-align:middle; padding:3px 8px; border:1px solid var(--yellow); border-radius:6px; margin-left:10px;">SAMPLE</span>` : '';
+
+  const sampleBannerHTML = isSample ? `
+  <div class="sample-banner" role="region" aria-label="Sample digest banner">
+    <div class="sample-copy">
+      ✨ <strong>This is a sample digest.</strong> The real one — with today's actual market moves and fresh stories — drops every weekday at&nbsp;7&nbsp;AM EST.
+    </div>
+    <a class="sample-cta" href="/#signup">Sign up your kid →</a>
+  </div>` : '';
 
   // Today's Mover one-liner gets its own callout row under the scoreboard so
   // the "WHY it moved" explanation has room to breathe — the vibe text is too
@@ -187,6 +200,34 @@ export function buildHTML(content) {
   .big-picture p { font-size: 15px; line-height: 1.65; color: var(--text); }
   .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--card-border); font-size: 13px; color: var(--text-dim); animation: fadeIn 0.5s ease-out both; }
   .footer .rocket { font-size: 20px; }
+  /* Sample banner — only renders when content.isSample is true. Goal is to
+     LOOK like a real digest while making it clear the content is generic
+     and the real version arrives by email. */
+  .sample-banner {
+    background: linear-gradient(135deg, rgba(240,192,64,0.16), rgba(188,140,255,0.10));
+    border: 1px solid rgba(240,192,64,0.40);
+    border-radius: 16px;
+    padding: 14px 18px;
+    margin: 0 0 22px;
+    display: flex; flex-wrap: wrap;
+    align-items: center; gap: 14px; justify-content: center;
+    text-align: center;
+    animation: fadeIn 0.5s ease-out both;
+  }
+  .sample-banner .sample-copy {
+    font-size: 14px; color: var(--text-bright); flex: 1; min-width: 240px;
+    line-height: 1.5;
+  }
+  .sample-banner .sample-cta {
+    background: linear-gradient(135deg, var(--yellow), var(--orange));
+    color: #0d1117;
+    padding: 10px 18px;
+    border-radius: 999px;
+    font-weight: 700; text-decoration: none; font-size: 14px;
+    white-space: nowrap;
+    transition: transform 0.15s;
+  }
+  .sample-banner .sample-cta:hover { transform: translateY(-1px); }
   @media (max-width: 600px) {
     .scoreboard { grid-template-columns: 1fr 1fr; }
     .score-card { padding: 12px 14px; }
@@ -202,8 +243,10 @@ export function buildHTML(content) {
 
 <div class="container">
 
+  ${sampleBannerHTML}
+
   <div class="header">
-    <div class="logo"><span class="logo-emoji">📈</span> Market Buzz Kids</div>
+    <div class="logo"><span class="logo-emoji">📈</span> Market Buzz Kids${sampleChipHTML}</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
     <div class="tagline">The daily stock market cheat code for kids</div>
   </div>
