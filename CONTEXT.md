@@ -1,117 +1,199 @@
-# Market Buzz Daily — Project Context
+# Market Buzz Kids — Project Context
 
-A daily kid-friendly stock market digest for a 12-year-old investor (Sunny) who holds VOO. A cron job fetches market data + news, Claude rewrites it in a fun voice, and the result renders as a dark-themed mobile-friendly HTML page suitable for an iPad home-screen app.
+A daily kid-friendly stock market digest for ages 10–14 and their parents. Delivered as a 7 AM EST email teaser to the parent, linking to a full interactive web digest the kid plays through in ~3 minutes a day. Real investing principles taught through news, games, streaks, and progressive ranks. Free product with future-hedged monetization (privacy policy §3).
 
-- **Repo:** https://github.com/SunnyD27/market-buzz
-- **Local:** `~/market-buzz`
-- **Live:** https://market-buzz-production.up.railway.app/
+- **Repo:** https://github.com/SunnyD27/market-buzz-kids (public, `main`)
+- **Local:** `~/market-buzz-kids`
+- **Production:** https://market-buzz-kids-production.up.railway.app
 - **Deploy:** Railway (Dockerfile, auto-deploys on push to `main`)
+- **Port:** 3199 locally (3101 is the a3l-books project)
+
+> **⚠️ This is the product version.** The original personal digest for Sunny lives at `~/market-buzz` with its own CONTEXT.md and repo (`SunnyD27/market-buzz`). They are completely separate projects. Do NOT read or reference `~/market-buzz/CONTEXT.md` when working on this project — it describes an older, simpler architecture (VOO scoreboard, no games, no database, no signup).
 
 ---
 
 ## Architecture
 
 ```
-┌──────────────┐    7 AM EST     ┌──────────────────┐
-│  node-cron   │ ─────────────── │ generateDigest() │
-└──────────────┘                  └──────────────────┘
-                                          │
-                  ┌───────────────────────┼──────────────────────┐
-                  ▼                       ▼                      ▼
-         ┌────────────────┐      ┌────────────────┐    ┌────────────────┐
-         │  FMP /stable   │      │  Anthropic API │    │   buildHTML()  │
-         │  (quotes, news,│      │  (Sonnet 4 +   │    │   src/template │
-         │   gainers,     │      │   web_search)  │    │      .js       │
-         │   losers)      │      └────────────────┘    └────────────────┘
-         └────────────────┘              ▲                      │
-                  │                      │                      ▼
-                  └──────────────────────┘            public/index.html
-                       raw market data                       │
-                                                             ▼
-                                              Express static serves /
+                          7 AM EST cron
+                              │
+                    ┌─────────▼──────────┐
+                    │  generateDigest()   │  ← src/generate.js (idempotent)
+                    │  checks daily_      │
+                    │  digests DB first   │
+                    └─────────┬──────────┘
+                              │ (only if no row for today)
+          ┌───────────────────┼────────────────────┐
+          ▼                   ▼                     ▼
+  ┌───────────────┐  ┌────────────────┐   ┌────────────────┐
+  │  FMP /stable  │  │ Anthropic API  │   │  src/games.js  │
+  │  (quotes,     │  │ (Sonnet 4 +    │   │  (3 daily      │
+  │   news,       │  │  web_search)   │   │   challenge    │
+  │   gainers,    │  │                │   │   games)       │
+  │   losers)     │  │ generateContent│   │                │
+  │               │  │ reframeBullBear│   │  deterministic │
+  │  per-ticker   │  │ reframeTimeMach│   │  rotation +    │
+  │  fan-out      │  │                │   │  AI reframers  │
+  └───────┬───────┘  └───────┬────────┘   └───────┬────────┘
+          │                  │                     │
+          └──────────────────┼─────────────────────┘
+                             ▼
+                    ┌────────────────┐
+                    │  buildHTML()   │  ← src/template.js (pure function)
+                    └────────┬───────┘
+                             │
+                    ┌────────▼───────┐
+                    │  saveDigest()  │  ← src/digest-store.js
+                    │  INSERT ...    │     (ON CONFLICT DO NOTHING)
+                    │  ON CONFLICT   │
+                    │  DO NOTHING    │
+                    └────────┬───────┘
+                             │
+                ┌────────────┼────────────┐
+                ▼            ▼            ▼
+        public/index   public/digest   Neon Postgres
+          .html        -data.json      daily_digests
+           │                              table
+           ▼
+    Express serves /digest
 ```
 
-Single Node.js process. node-cron triggers `generateDigest()` once a day at 7:00 AM `America/New_York`. The function: pulls market data + news from FMP, sends it to Claude with the web_search tool enabled, parses Claude's JSON response, builds HTML from the JSON, and writes it to `public/index.html`. Express serves that file from `/`.
+Single Node.js process. `node-cron` triggers `generateDigest()` at 7:00 AM `America/New_York`. The function is **idempotent** — it checks `daily_digests` in Postgres first; if today's row exists, it just writes the cached content to disk (~0.35s, zero API calls) and returns. Both the boot-time bootstrap AND the 7 AM cron call `generateDigest()`. First one to create the row wins; the other is a no-op.
 
-Three routes:
+After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
+
+---
+
+## Routes
 
 | Route | Auth | Purpose |
 |---|---|---|
-| `GET /` | none | Serves `public/index.html`. If the file doesn't exist (first boot, post-restart), returns a placeholder "your first digest is brewing" page. |
-| `GET /generate?key=<ADMIN_KEY>` | query param | Manually triggers `generateDigest()`. Used to test changes without waiting for 7 AM. |
-| `GET /health` | none | Returns `{status:"ok",lastGenerated:"..."}`. `lastGenerated` is stored in `process.env.LAST_GENERATED` and is in-memory only (resets on restart). |
+| `GET /` | none | Landing page (`public/landing.html`). Parent-facing signup + CTA to `/sample`. |
+| `GET /digest` | none | Today's digest (kid-facing, PWA `start_url`). Read path: disk → DB → sample fallback. |
+| `GET /sample` | none | Static evergreen sample digest (`public/data/sample-digest.json`). Never auto-regenerates. |
+| `GET /privacy` | none | COPPA-compliant privacy policy. |
+| `GET /parent/delete-data` | none | Parent data deletion request form. |
+| `POST /api/signup` | none | Creates user row, sends verification email. |
+| `GET /api/verify` | token in query | Email verification → triggers consent email to parent. |
+| `GET /api/consent` | token in query | Parental consent → activates account, sends welcome email. |
+| `POST /api/delete-data` | email in body | Soft-delete user data, sends deletion acknowledgment email. |
+| `POST /api/cron/send-digest` | `X-Cron-Secret` header | External trigger for daily teaser fan-out. |
+| `GET /generate?key=<ADMIN_KEY>` | query param | Manually triggers `generateDigest()`. |
+| `GET /api/health` | none | DB connectivity check. |
 
 ---
 
 ## File map
 
-```
-~/market-buzz/
-├── Dockerfile              # node:20-slim, npm install --production, runs src/server.js
-├── railway.toml            # Tells Railway to use the Dockerfile builder + always-restart policy
-├── package.json            # ESM (`"type": "module"`), 3 deps: express, node-cron, @anthropic-ai/sdk
-├── .gitignore              # ignores node_modules/, .env, public/index.html (generated, not committed)
-├── public/
-│   ├── .gitkeep            # so the empty dir is committed (Dockerfile COPYs it)
-│   └── index.html          # generated daily; not in git
-├── src/
-│   ├── server.js           # Express app + cron schedule. Entry point.
-│   ├── generate.js         # The pipeline: fetchAllData → generateContent → buildHTML → write file
-│   ├── data.js             # FMP /stable API client — quotes, news, gainers, losers
-│   ├── ai.js               # Claude API call (with web_search tool) + JSON parsing
-│   └── template.js         # Pure function that turns the JSON digest into the HTML page
-└── CONTEXT.md              # This file.
-```
+### Backend (`src/`)
 
-Each `src/` file has a single responsibility — the pipeline is linear and easy to swap pieces in/out.
+| File | Role |
+|---|---|
+| `server.js` | Express app. Routes, signup/consent flow, cron, boot bootstrap, daily-teaser fan-out. `dotenv` loaded with `override:true` (macOS launchd gotcha). |
+| `generate.js` | **Idempotent** digest generator. Checks `daily_digests` DB first; if today's row exists, writes to disk and returns. Otherwise: full pipeline → INSERT → disk. |
+| `data.js` | FMP `/stable/` API client. `fetchMarketData`, `fetchNews`, `fetchMovers`, `fetchTopMover`, `fetchQuotes`. All ticker fetches use **per-ticker fan-out** (FMP free tier doesn't support multi-ticker batch). Tolerates `changePercentage` ↔ `changesPercentage` field rename. |
+| `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
+| `games.js` | Daily Challenge orchestrator. Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, in parallel). |
+| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip). |
+| `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
+| `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
+| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. Same API surface as the Phase 5 in-memory version. |
+| `content-history.js` | Word-of-Day + Did-You-Know rotation guard. Generic `getRecent(kind)` / `record(kind)` backed by `state/content-history.json`. 30-day window. |
+| `emails.js` | Email renderers (pure) + `sendEmail` (Resend SDK). Five types: verify, consent, welcome, deletion-ack, daily teaser. Stub-mode fallback if `RESEND_API_KEY` is missing. |
+| `companies.js` | 75-company curated kid-recognizable list with `lookupCompany(ticker)` helper. |
+| `schema.sql` | Neon DDL. Apply with `scripts/run-schema.js`. Idempotent (uses `IF NOT EXISTS`). |
+
+### Frontend (`public/`)
+
+| Path | Role |
+|---|---|
+| `landing.html` / `.css` / `.js` | Landing + signup. CTA links to `/sample`, not `/digest`. |
+| `privacy.html` | COPPA-compliant privacy policy. §3 hedged for future sponsored content (30-day notice). |
+| `parent-delete-data.html` | Data deletion request UI. |
+| `index.html` | Generated daily digest (**gitignored** — rebuilt from DB on each boot). |
+| `digest-data.json` | JSON payload consumed by template (**gitignored** — same lifecycle). |
+| `engagement.js` / `engagement.css` | XP/rank/streak/shield engine. Fully client-side localStorage. |
+| `games-preview.html` | Standalone game test harness. |
+| `games/*.js` | 5 game modules (quiz is inline in the template). |
+| `games/daily-challenge.js` | Picker UI + 8-day rotation. **Rotation logic is duplicated in `src/games.js` — keep both in sync.** |
+| `data/company-models.json` | 37 companies for Match + Price-is-Right. |
+| `data/time-machine-prices.json` | 7 verified Time Machine scenarios. |
+| `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
+| `data/sample-digest.json` | Static curated sample. Served by `/sample`. Edit manually to refresh. |
+| `manifest.webmanifest` | PWA manifest, `start_url: /digest`. |
+| `sw.js` / `pwa.js` | Service worker + add-to-homescreen UX. Push notification placeholder in `pwa.js` (Phase 6.3 not done). |
+
+### Scripts (`scripts/`)
+
+| File | Role |
+|---|---|
+| `run-schema.js` | Apply `src/schema.sql` to Neon. Idempotent. |
+| `inspect-db.js` | Print recent rows across all tables. |
+| `test-games.js` | Hydrate daily-challenge games standalone. Flags: `--ai`, `--fmp`, `--date YYYY-MM-DD`. |
+
+### Ephemeral state (gitignored)
+
+- `state/content-history.json` — word/fact rotation history. **Ephemeral on Railway** — wiped on container restart. Acceptable for MVP; should move to Postgres before heavy deploy frequency.
 
 ---
 
 ## Environment variables
 
-Set in the Railway dashboard → Service → Variables tab. **Variable changes require a redeploy** to take effect.
+### Local (`.env`, gitignored)
 
-| Var | Required | What it does |
+Copy `.env.example` to `.env` and fill in:
+
+| Var | Required for | Notes |
 |---|---|---|
-| `FMP_API_KEY` | yes | Financial Modeling Prep API key. Must be a **post-Aug 31 2025 subscription** (uses /stable endpoints, not /api/v3). |
-| `ANTHROPIC_API_KEY` | yes | Anthropic API key. Web search is a billable add-on (~$10 / 1,000 searches). |
-| `ADMIN_KEY` | yes | Secret token gating `GET /generate?key=...`. Pick something URL-safe — avoid `#`, `&`, `+`, `%`, spaces. |
-| `PORT` | optional | Defaults to 3000. Railway auto-injects this, so usually unset. |
-| `TZ` | optional | Set to `America/New_York` to make log timestamps line up with the 7 AM cron. The cron itself uses an explicit `timezone:` option, so it works regardless. |
+| `DATABASE_URL` | All DB-backed routes | Neon connection string with `?sslmode=require` |
+| `RESEND_API_KEY` | Real email sending | Falls back to console-log stub if missing |
+| `FROM_EMAIL` | Resend `from` field | Default `onboarding@resend.dev` for testing |
+| `CRON_SECRET` | `POST /api/cron/send-digest` | Generate with `openssl rand -hex 32` |
+| `APP_BASE_URL` | Absolute URLs in emails | Local: `http://localhost:3199`. Prod: the Railway URL. |
+| `FMP_API_KEY` | `generateDigest()` | Free tier 250 req/day is fine |
+| `ANTHROPIC_API_KEY` | `generateDigest()` | Web search is billable (~$10/1,000 searches) |
+| `ADMIN_KEY` | `GET /generate?key=…` | Any URL-safe random string (no `#`, `&`, `+`, `%`, spaces) |
+| `PORT` | Local override | 3199 locally. Railway auto-injects in prod. |
+
+### Production (Railway dashboard)
+
+Same set minus `PORT` (auto-injected) and `NODE_ENV` (set in Dockerfile).
+
+**Critical:** `APP_BASE_URL` must be the full `https://` URL of the deployment (no trailing slash), or outgoing emails will link to `localhost`.
 
 ---
 
-## How a daily digest is generated (the pipeline)
+## How a daily digest is generated
 
-`src/generate.js#generateDigest()` runs three steps:
+`src/generate.js#generateDigest()` — the full pipeline:
 
-### Step 1 — Fetch raw market data from FMP (`src/data.js`)
+### Step 0 — Idempotency check (`src/digest-store.js`)
 
-Five concurrent HTTP calls to `https://financialmodelingprep.com/stable/...`:
+Check `daily_digests` table for today's date (NY timezone). If a row exists, write its content to disk and return immediately. Zero API calls, ~0.35s. This is why redeploys never change today's content.
 
-| Function | Endpoint | What it returns |
+### Step 1 — Fetch raw market data (`src/data.js`)
+
+Concurrent calls to `https://financialmodelingprep.com/stable/...`:
+
+| Function | Endpoint | Returns |
 |---|---|---|
-| `fetchMarketData` | `/quote?symbol=^GSPC` (and `^IXIC`, `^DJI`, `VOO`) | Latest price, change, %change, day high/low, prev close for the 4 scoreboard symbols. Indexes use `^`-prefix symbols. |
-| `fetchNews` | `/general-news`, `/stock-news?tickers=...` (4 calls), `/fmp-articles` | Pools headlines from 5 sources, dedups by 50-char title prefix, filters out penny-stock / cannabis / ratings noise / titles under 20 chars. Returns up to 15. |
-| `fetchMovers` | `/biggest-gainers`, `/biggest-losers` | Top 3 of each, with price > $5 (filters out penny stocks). |
+| `fetchMarketData` | `/quote?symbol=^GSPC` (+ `^IXIC`, `^DJI`) | Price, change, %change for 3 index scoreboard cards. Per-ticker fan-out. |
+| `fetchNews` | `/general-news`, `/stock-news?tickers=...`, `/fmp-articles` | Pooled headlines from 5 sources, deduped, filtered (no penny stocks, cannabis, short titles). Up to 15. |
+| `fetchMovers` | `/biggest-gainers`, `/biggest-losers` | Top 3 each, price > $5. |
+| `fetchTopMover` | `/quote?symbol=<ticker>` for each of 75 curated companies | Largest absolute % mover from the kid-recognizable list. Per-ticker fan-out. |
 
-All FMP requests go through the `fmpFetch` helper which **surfaces `{"Error Message": ...}` bodies in Railway logs**. Without that, FMP errors got silently dropped (this exact issue masked the v3→/stable migration bug on first deploy).
+All requests go through `fmpFetch` helper which surfaces error bodies in logs.
 
-### Step 2 — Generate kid-friendly content (`src/ai.js#generateContent`)
+### Step 2 — Generate content (`src/ai.js#generateContent`)
 
-One call to Anthropic's API:
+One call to Anthropic:
 
 - **Model:** `claude-sonnet-4-20250514`
-- **max_tokens:** 8000 (web search responses are longer)
-- **tools:** `[{ type: "web_search_20250305", name: "web_search" }]` — server-side tool; Claude runs searches itself and returns results inline. No client-side tool_use loop needed.
-- **Prompt:** instructs Claude to (a) search the web for today's top business news first, (b) write in a 12-year-old-friendly voice with strict tone rules, (c) follow strict story-selection rules (front-page-worthy stories, no penny stocks, no generic "market went up" recaps), (d) return ONLY a JSON object matching a specific schema.
+- **max_tokens:** 8000
+- **tools:** `[{ type: "web_search_20250305", name: "web_search" }]`
+- **Prompt:** STEP 1 tells Claude to web-search for today's top business news. Voice/tone rules enforce kid-friendly language. Story selection rules filter to front-page-worthy stories only. PROFANITY_RULE sets content guardrails. "Avoid these recent words/facts" list from content-history prevents repeats.
 
-The response contains interleaved blocks: `server_tool_use` (search queries Claude ran), `web_search_tool_result` (the search results), and `text` (the final JSON). The code:
-
-1. Logs how many searches ran and their queries (visible in Railway logs as `[AI] web_search ran — ...`).
-2. Concatenates all `text` blocks.
-3. Strips markdown fences and `<cite ...>` / `<cite ...>` citation tags (web_search Claude sometimes wraps cited phrases in these even when told not to).
-4. Parses as JSON. Falls back to extracting the largest `{...}` span if Claude prepended a synthesis paragraph.
+Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` tags, parse JSON (with fallback extraction of largest `{...}` span). Run `scrubProfanity()` on all output.
 
 **Claude returns this JSON schema:**
 
@@ -121,133 +203,184 @@ The response contains interleaved blocks: `server_tool_use` (search queries Clau
   "tradingDay": "yesterday",
   "marketVibe": "green" | "red" | "mixed",
   "vibeEmoji": "🚀",
-  "vibeSummary": "One-sentence summary of the day",
-  "vooNote": "What VOO's move means in $/share for HIS holding",
+  "vibeSummary": "One-sentence summary",
   "bigPicture": "3-4 sentence world-news briefing",
   "scoreboard": {
-    "sp500":  { price, change, direction: "up"|"down", vibe },
+    "sp500":  { "price", "change", "direction": "up"|"down", "vibe" },
     "nasdaq": { ... },
-    "dow":    { ... },
-    "voo":    { ... }
+    "dow":    { ... }
   },
-  "stories":  [3 items: { badge, badgeLabel, title, body, whyItMatters }],
-  "comingUp": [3 items: { day, title, description, emoji }],
-  "quiz":     { question, options: [4], correctIndex, explanation },
-  "wordOfDay":{ word, type, context, definition }
+  "topMover": {
+    "name", "ticker", "price", "change", "direction", "vibe", "reason",
+    "principle": 1-8
+  },
+  "stories": [ 2-3 items: { "badge", "badgeLabel", "title", "body", "whyItMatters", "principle": 1-8 } ],
+  "didYouKnow": { "fact", "category", "principle": 1-8, "principleConnection" },
+  "quiz": { "question", "options": [4], "correctIndex", "explanation", "principle": 1-8 },
+  "wordOfDay": { "word", "type", "context", "definition", "principle": 1-8 }
 }
 ```
 
-### Step 3 — Build the HTML page (`src/template.js#buildHTML`)
+Every content block carries a `principle` field (1-8) tying it to one of the 8 core investing principles:
 
-Pure function. Destructures the JSON, applies `escapeHTML` to every user-facing string, and returns a complete `<!DOCTYPE html>` document. Key sections in order:
+1. Start early, let time work for you
+2. Diversification protects you
+3. Markets go up and down, but mostly up
+4. Understand what you own
+5. Risk and reward are connected
+6. The news moves markets
+7. Think like an owner, not a gambler
+8. Fees and costs matter
+
+### Step 3 — Hydrate daily games (`src/games.js`)
+
+Deterministic rotation picks 3 games from the pool of 6. For bull-bear and time-machine days, parallel AI reframer calls add narrative context. Falls back to canned text on any failure. Game data is embedded into the digest JSON as `dataBundle`.
+
+### Step 4 — Build HTML (`src/template.js#buildHTML`)
+
+Pure function. Destructures the JSON, applies `escapeHTML` to all user-facing strings, returns complete `<!DOCTYPE html>`. Sections in order:
 
 ```
-Header (gradient logo, date, tagline)
+Header (gradient logo, date, tagline, Investor Profile bar)
   ↓
-🏆 Market Scoreboard (4-card grid; VOO gets a gold "YOUR FUND" badge)
+🏆 Market Scoreboard (3 index cards + gold Today's Mover card)
   ↓
-Vibe Bar (green/red/mixed indicator + VOO Watch line)
+Vibe Bar (green/red/mixed indicator + "Why [Company] moved" callout)
   ↓
-🌎 The Big Picture (blue-gradient card with world-news briefing)
+🌎 The Big Picture (blue-gradient world-news briefing)
   ↓
-🔥 Today's Big Stories (3 cards, each with "Why it matters" callout)
+🔥 Today's Big Stories (2-3 cards, each with "Why it matters" + principle tag)
   ↓
-📅 Coming Up (3 upcoming events)
+🎮 Daily Challenge (3-card game picker — quiz + 2 rotating games)
   ↓
-🧠 Pop Quiz (interactive — clicking shows the answer + explanation)
+💡 Did You Know (fact + principle connection)
   ↓
-📖 Word of the Day (yellow-themed card)
+📖 Word of the Day (yellow card)
   ↓
 Footer
 ```
 
-The page is **self-contained** — all CSS is inline, fonts come from Google Fonts (`Fredoka` + `Space Mono`), and the quiz logic + animated starfield are a tiny inline `<script>`. Mobile-first: a 600px media query collapses the scoreboard to 2 columns and the quiz to a single column. Apple PWA meta tags (`apple-mobile-web-app-capable`, etc.) make it work as an iPad home-screen app.
+Self-contained: all CSS inline, Google Fonts (`Fredoka` + `Space Mono`), interactive quiz + games via inline scripts. Mobile-first with 600px media query. Apple PWA meta tags for iPad home-screen.
 
-The function is **pure** — same input always produces same output. Easy to unit-test in isolation (see `node --input-type=module -e "import { buildHTML } ..."` patterns in the commit history).
+### Step 5 — Persist + serve
+
+`saveDigest()` inserts into `daily_digests` with `ON CONFLICT DO NOTHING`. Writes `public/index.html` and `public/digest-data.json` to disk.
+
+`/digest` read path: disk file → DB row (re-render + warm disk) → `/sample` fallback. Kids never see a "brewing" placeholder.
+
+---
+
+## The engagement system
+
+Fully client-side (localStorage). No server-side identity yet.
+
+- **XP** — earned from quiz answers and game participation (25 XP correct, 15 XP participation)
+- **Ranks** — Stock Scout → Trading Cadet → Market Analyst → ... (progressive thresholds)
+- **Streaks** — consecutive days of engagement, displayed with 🔥
+- **Shields** — protect streaks from breaking (earned at milestones)
+- **Perfect Day** — bonus for completing all 3 daily games
+
+Kids who clear browser data or switch devices start fresh. Moving to server-side requires identity wiring (user slugs), which also unlocks parent dashboard, push targeting, cross-device sync, and leaderboards.
+
+---
+
+## Email pipeline
+
+Five email types, all via Resend (`src/emails.js`):
+
+| Email | Trigger | Purpose |
+|---|---|---|
+| Verification | `POST /api/signup` | Confirms parent email is real |
+| Consent | `GET /api/verify` (after click) | COPPA parental consent request |
+| Welcome | `GET /api/consent` (after click) | Account activated, what to expect |
+| Daily teaser | 7 AM cron or `POST /api/cron/send-digest` | Preview of today's digest + link |
+| Deletion ack | `POST /api/delete-data` | Confirms data removal |
+
+Stub-mode fallback: if `RESEND_API_KEY` is missing, emails log to console instead of sending. Useful for local development.
 
 ---
 
 ## Local development
 
 ```bash
-cd ~/market-buzz
-npm install
-export FMP_API_KEY=...
-export ANTHROPIC_API_KEY=...
-export ADMIN_KEY=test
-
-# Run the server with the cron job:
-npm start
-# then open http://localhost:3000
-
-# Or generate the digest once and exit:
-npm run generate
-# this writes public/index.html — open it directly with `open public/index.html`
+cd ~/market-buzz-kids
+PORT=3199 npm start
 ```
 
-Syntax-check without running: `node --check src/<file>.js`.
+```bash
+# Kill stale server
+lsof -ti tcp:3199 | xargs kill
 
-There's no test suite. The HTML generator has been smoke-tested with mock data via inline `node --input-type=module -e` scripts (see the commit messages for examples).
+# Apply schema to Neon (idempotent)
+node scripts/run-schema.js
 
----
+# Inspect DB state
+node scripts/inspect-db.js
 
-## Deployment (Railway)
+# Test game hydration (no full pipeline)
+node scripts/test-games.js              # dry
+node scripts/test-games.js --ai --fmp   # live
 
-Railway is connected to the GitHub repo `SunnyD27/market-buzz`. Every push to `main` triggers an auto-deploy via the `Dockerfile`. The `railway.toml` declares the Dockerfile builder and `restartPolicyType = "always"`.
+# Manual digest generation
+node src/generate.js
 
-To deploy a change: `git push`. That's it. Railway picks it up in 30–60s.
-
-To trigger a fresh digest after deploy: open `https://market-buzz-production.up.railway.app/generate?key=<ADMIN_KEY>` in a browser. Wait 20–40s (web search adds latency). On success returns `{"success":true,"message":"Digest generated!"}`, then refresh the root URL.
+# Regenerate (requires deleting today's immutable row first)
+node -e "import('./src/db.js').then(({query}) => query(\"DELETE FROM daily_digests WHERE digest_date = CURRENT_DATE\")).then(()=>process.exit(0))"
+node src/generate.js
+```
 
 ---
 
 ## Key design decisions & gotchas
 
-### FMP plan: /stable endpoints only
+### FMP: /stable endpoints only
 
-FMP deprecated all `/api/v3/...` and `/api/v4/...` endpoints for subscriptions started **after Aug 31, 2025**. This project's FMP plan is post-deprecation, so everything in `src/data.js` uses `https://financialmodelingprep.com/stable/...`. Going back to v3 paths (e.g. by pasting code from older FMP docs) will fail with `"Legacy Endpoint : Due to Legacy endpoints being no longer supported"`.
+FMP deprecated `/api/v3/` and `/api/v4/` for subscriptions after Aug 31, 2025. This project uses `/stable/` exclusively. Pasting code from older FMP docs will fail with `"Legacy Endpoint"` errors.
 
-Endpoint mapping if you ever migrate something else:
+Multi-ticker batch (`/stable/quote?symbol=A,B,C`) returns `[]` on the free tier. All ticker fetches use per-ticker fan-out in parallel.
 
 | Old | New |
 |---|---|
 | `/api/v3/quote/AAPL` | `/stable/quote?symbol=AAPL` |
-| `/api/v3/quote/^GSPC` | `/stable/quote?symbol=^GSPC` (same endpoint for indexes!) |
 | `/api/v3/stock_news?tickers=...` | `/stable/stock-news?tickers=...` |
 | `/api/v4/general_news` | `/stable/general-news` |
 | `/api/v3/stock_market/gainers` | `/stable/biggest-gainers` |
 | `/api/v3/stock_market/losers` | `/stable/biggest-losers` |
-| `/api/v3/fmp_articles` | `/stable/fmp-articles` (best guess — verify in logs) |
 
-### Ephemeral filesystem
+### Immutable daily digest
 
-Railway containers don't persist disk across restarts. `public/index.html` is wiped on every redeploy. After a deploy, the root URL shows the placeholder until either (a) the 7 AM cron runs, or (b) you hit `/generate?key=...` manually.
+`daily_digests` table uses `INSERT … ON CONFLICT DO NOTHING` keyed on `digest_date`. Once today's row exists, it cannot be overwritten without an explicit `DELETE`. This guarantees every visitor sees identical content all day, even through redeploys.
 
-If this becomes annoying, attach a Railway Volume mounted at `/app/public` and the digest survives restarts.
+To force a regeneration: delete the row, then run `node src/generate.js`.
 
-### Cron only fires while the container is running
+### Lazy client initialization
 
-If Railway's "sleep when idle" setting is on, 7 AM may be skipped on quiet nights (the cron only fires inside a live Node process). Service must be kept always-on. Check Railway → Settings → Sleep/Serverless.
+Both `src/ai.js` (Anthropic client) and `src/db.js` (pg Pool) defer initialization until first use. This is because macOS launchd sometimes sets `ANTHROPIC_API_KEY=""` system-wide, shadowing `.env` values. `dotenv.config({ override: true })` at every entry point + lazy init solves this.
 
-### Web search citation tags leak into JSON
+**Any new module that reads env vars at import time will break on macOS.** Always defer.
 
-When `web_search_20250305` is enabled, Claude sometimes wraps cited phrases in `<cite index="...">...</cite>` tags inside its JSON string values — even when explicitly told not to. The parser in `src/ai.js#parseDigestJSON` strips both `<cite ...>` and `<cite ...>` forms (open and close, any attributes) before `JSON.parse`. If another stray pattern leaks through (`<sup>`, `[1]`, etc.), add another `cleaned = cleaned.replace(...)` line in that function.
+### Web search citation tags
 
-### Web search costs money
+Claude with `web_search_20250305` sometimes leaks `<cite index="...">...</cite>` tags into JSON values. The parser in `ai.js#parseDigestJSON` strips these before `JSON.parse`. If new tag patterns appear (`<sup>`, `[1]`, etc.), add another regex.
 
-Anthropic charges per server-side search (~$10 / 1,000). With ~3–5 searches per digest × 365 days/year, this is ~$11–18/year — fine, but it's a real line item. If you want to cut it, remove the `tools: [...]` parameter and Claude will fall back to using only FMP news.
+### Kid-safe content: two layers
 
-### ADMIN_KEY URL-safety
+1. `PROFANITY_RULE` in every Claude prompt — tells the model what to avoid
+2. `scrubProfanity()` regex pass over all Claude output — whole-word replacements as a safety net
 
-`/generate?key=...` is just string-equal to `process.env.ADMIN_KEY`. If your admin key has `&`, `#`, `+`, `%`, or spaces, the browser URL will mis-parse it and you get `{"error":"Unauthorized"}` even with the right key. Use a URL-safe value (alphanumeric + dashes/underscores).
+Both layers must be present in any new prompt template.
 
-### Empty `public/` dir in git
+### Ephemeral filesystem on Railway
 
-The Dockerfile has `COPY public/ ./public/`. Git doesn't track empty dirs, so `public/.gitkeep` exists solely to ensure the dir is in the repo (otherwise Docker build fails or skips the COPY).
+Container restarts wipe disk. `public/index.html` and `digest-data.json` are rebuilt from the DB row on boot. `state/content-history.json` (word/fact rotation) is also wiped — Claude picks reasonable variety on fresh starts, but repeated deploys can cause short-term repeats.
 
-### Model ID
+### `/digest` is publicly accessible
 
-`claude-sonnet-4-20250514` (Sonnet 4, May 2025). Newer Sonnet 4.x models exist (e.g. `claude-sonnet-4-6`) — they'd likely work as drop-in replacements, but haven't been tested with this prompt. If you bump the model, also re-verify the citation-tag stripping (newer models may use different citation formats).
+No auth gate, by design. Signup is for 7 AM email delivery, not access control. Anyone with the URL can read today's content (good for sharing + SEO). Soft-gate / hard-gate deferred until identity wiring is built.
+
+### Game rotation is duplicated
+
+`public/games/daily-challenge.js` (client) and `src/games.js` (server) both contain the 8-day rotation logic. **Keep them in sync.** The server picks games for content hydration; the client picks for the UI picker.
 
 ---
 
@@ -255,37 +388,72 @@ The Dockerfile has `COPY public/ ./public/`. Git doesn't track empty dirs, so `p
 
 | Want to… | Edit |
 |---|---|
-| Change cron time | `src/server.js`, line ~77, the `'0 7 * * *'` cron expression and `timezone:` option |
-| Change which symbols are on the scoreboard | `src/data.js#fetchMarketData` — the `symbols` array — AND `src/ai.js` JSON schema (the `scoreboard` keys) AND `src/template.js#scoreCard` calls in the HTML output |
+| Change cron time | `src/server.js` — the `cron.schedule('0 7 * * *', ...)` call |
+| Change scoreboard symbols | `src/data.js#fetchMarketData` → `src/ai.js` JSON schema → `src/template.js` scorecard calls |
 | Add/remove a news source | `src/data.js#fetchNews` — the `Promise.all` block |
-| Tighten/loosen news filtering | `src/data.js#fetchNews` — `skipTerms` array + `title.length < 20` guard |
-| Change Claude's voice / story selection | `src/ai.js` — the `prompt` template literal. VOICE & TONE RULES and STORY SELECTION RULES sections. |
-| Add a new section to the digest | 3 places: add a field to the JSON schema in `src/ai.js`; destructure + render it in `src/template.js`; (optionally) add CSS for the new section in `src/template.js` `<style>` block. See commit `bf57c35` ("Add 'The Big Picture' section") for the pattern. |
-| Change the page look (colors, fonts, layout) | `src/template.js` `<style>` block. All CSS is inline. |
+| Tighten/loosen news filter | `src/data.js#fetchNews` — `skipTerms` array + `title.length` guard |
+| Change Claude's voice or story rules | `src/ai.js` — the prompt template. VOICE & TONE RULES and STORY SELECTION RULES sections. |
+| Add a new digest section | 3 places: JSON schema in `src/ai.js`, destructure + render in `src/template.js`, CSS in `template.js` `<style>` block |
+| Change page look (colors, fonts, layout) | `src/template.js` `<style>` block. All CSS is inline. |
+| Add a curated company | `src/companies.js` — the list + `lookupCompany()` |
 | Add a new server route | `src/server.js` — follow the `/generate` or `/health` pattern |
-| Disable web search | `src/ai.js` — remove the `tools: [...]` parameter from the `messages.create` call |
-| Change the model | `src/ai.js` — the `model:` field |
+| Disable web search | `src/ai.js` — remove `tools: [...]` from `messages.create` call |
+| Change the model | `src/ai.js` — the `model:` field. Re-verify citation stripping afterward. |
+| Add game scenarios | `public/data/historical-charts.json` (bull-bear), `public/data/time-machine-prices.json` (time-machine), `public/data/company-models.json` (match + price-is-right) |
+| Refresh the sample digest | Edit `public/data/sample-digest.json` manually and commit |
 
 ---
 
-## Commit history (the journey)
+## Known limitations & things not yet done
 
-| Commit | What it did |
-|---|---|
-| `5eb40fc` | **Initial commit.** Full app: server, cron, FMP v3 client, Claude integration, HTML generator, Dockerfile, railway.toml. |
-| `f7035c0` | **Migrate FMP from v3 → /stable endpoints.** v3 was deprecated for post-Aug-2025 subscriptions, blocking all data fetches. Also added `fmpFetch` helper that logs FMP error bodies (instead of silently dropping them, which had masked this bug). |
-| `67a7dc8` | **Broaden news sources + tighten story-selection prompt.** fetchNews now pulls from 5 FMP endpoints (general news, multi-ticker stock news, FMP articles), dedups, filters low-signal titles. Added STORY SELECTION RULES to the Claude prompt to avoid "market went up" recap stories. |
-| `bf57c35` | **Add "The Big Picture" section.** New `bigPicture` field in the JSON schema, new blue-gradient card in the HTML between the Vibe Bar and the Stories section. 3–4 sentence world-news briefing. |
-| `ebd9622` | **Enable Claude web_search tool.** Server-side `web_search_20250305` tool added so Claude pulls actual top headlines from the open web rather than relying solely on FMP. Prompt now has STEP 1 telling it to search first. max_tokens bumped 4000→8000. Added logging of search queries + stop_reason for Railway visibility. Made JSON extraction defensive against synthesis paragraphs prepended to the JSON. |
-| `e82d9c8` | **Strip web_search citation tags before JSON parse.** Claude was leaking `<cite index="...">...</cite>` tags into JSON string values. Two regex strips in parseDigestJSON handle the open/close forms of both `<cite>` and `<cite>`. Belt-and-suspenders prompt directive also tells Claude not to emit them. |
+### Not yet built
+
+- **Push notifications (Phase 6.3)** — VAPID key placeholder in `pwa.js`. Email-only MVP works fine.
+- **Weekend/holiday editions** — Sunday and Monday digests currently use thin Saturday/Sunday data. A 5+2 edition system (Weekly Wrap on Sunday, Week Ahead on Monday) is spec'd and ready to implement.
+- **Server-side engagement** — XP/streaks/ranks are localStorage only. No cross-device sync, no parent dashboard, no leaderboards. Requires identity wiring (user slugs in URL).
+- **Engagement persistence** — hybrid PostHog (web analytics) + custom `/api/track` endpoint writing to the `engagement` table in Neon. Table placeholder exists in `schema.sql`. Needed before parent dashboard.
+- **Anti-spam on signup** — no rate limiting or captcha on `/api/signup` or `/api/delete-data`. Add Cloudflare Turnstile or rate-limit before scaling.
+- **Custom domain** — currently on `railway.app` subdomain. Need a branded domain before public launch.
+
+### Known warts
+
+- **`/generate` admin endpoint times out.** Takes ~60s, hits Railway's 30s proxy timeout. Browser sees `ERR_CONNECTION_RESET` but server completes. Fix: refactor to 202 + fire-async.
+- **`ADMIN_KEY` unset = open endpoint.** `undefined !== undefined` evaluates to `false`, so the guard passes. Always set `ADMIN_KEY` in production.
+- **No retries.** If FMP or Anthropic is down at 7 AM, the digest skips. Add retry logic (7:00, 7:15, 7:30) before scaling.
+- **Game datasets are small.** 10 bull-bear + 7 time-machine + 37 company-models scenarios. Kids on 2-week streaks see repeats. Expand pools before growth push.
+- **Content rotation ephemeral.** `state/content-history.json` resets on Railway restart. Move to Postgres when deploy frequency increases.
+- **`/health` lastGenerated is in-memory.** Resets on restart. Cosmetic — digest file is still served.
 
 ---
 
-## Known limitations / things to monitor
+## Build history (phases)
 
-- **`/stable/fmp-articles` endpoint is a best guess.** If it 404s, you'll see `[Data] fmp-articles FMP error: ...` in Railway logs and the digest will still build (just without that source). Easy fix when the time comes.
-- **Web search isn't deterministic** — Claude may decide not to call it on a given run. The logs say `[AI] web_search did NOT run` when this happens. Rare in practice with the explicit STEP 1 in the prompt.
-- **No retries.** If FMP or Anthropic is briefly down at 7 AM, the digest skips for the day. The error gets logged; the next 7 AM tries again.
-- **`lastGenerated` in `/health` is in-memory.** Resets to `"never"` on every restart even if a digest file exists on disk. Cosmetic; the actual digest file is still served.
-- **No abuse protection on `/generate`.** It's gated by `ADMIN_KEY` only — anyone with the key can trigger as many generations as they want (each one costs an Anthropic call + ~3–5 web searches). Don't put the key in screenshots or commits.
-- **Cron-only freshness.** If the market does something big at 11 AM you want reflected in the digest, you have to hit `/generate?key=...` manually. The digest is a once-a-day snapshot.
+| Phase | What | Status |
+|---|---|---|
+| 1 | Core digest refactor — removed VOO, added Today's Mover, 8 investing principles, Did You Know | ✅ |
+| 2 | Engagement systems — XP, ranks, streaks, shields, Perfect Day (client-side localStorage) | ✅ |
+| 3 | 6 games + Daily Challenge picker + 3 verified datasets | ✅ |
+| 4 | PWA setup — manifest, service worker, push scaffolding | ✅ |
+| 5 | Landing page + signup + COPPA privacy + deletion flow | ✅ |
+| 6.1 | Neon Postgres — `db.js`, `storage.js` rewrite, `schema.sql` | ✅ |
+| 6.2 | Resend email — 5 email types, daily teaser fan-out | ✅ |
+| 6.3 | Push notifications | 🔲 |
+| 6.4 | Daily Challenge wired into digest template | ✅ |
+| 6.5 | Per-game content generation — reframers + hydration | ✅ |
+| 6.6 | Real-data verification — end-to-end live pipeline | ✅ |
+| 6.7 | Immutable daily digest — `daily_digests` table, idempotent generation | ✅ |
+
+---
+
+## Future roadmap (post-Phase 6)
+
+- **5+2 edition system** — Weekly Wrap (Sunday) + Week Ahead (Monday/post-holiday)
+- **User slugs + digest gating** — permanent slug per user, `/digest/k/:slug`, no tokens/cookies
+- **Engagement persistence** — PostHog + `/api/track` + Neon `engagement` table
+- **Parent dashboard** — weekly email with engagement stats
+- **Expanded game datasets** — 30+ bull-bear, 20+ time-machine scenarios
+- **Content-history to Postgres** — survive Railway restarts
+- **Per-user content rotation** — requires identity wiring
+- **Premium tier** — personalized portfolio, paper trading, ad-free deep dives ($5-8/month)
+- **Referral program** — badge/reward unlocks for sharing
+- **School partnerships** — curriculum supplement (26 states mandate financial literacy)
