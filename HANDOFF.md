@@ -313,3 +313,17 @@ process.exit(0);
 ---
 
 *Last updated end-of-Phase-6.8 + market-closed-note session. On `dev`: `3454a9d` (editions) + `632309a` (market-closed note). Awaiting PR `dev → main` to ship both to production. Phase 6.3 push notifications still TODO. Resend domain verification still TODO to unblock signups beyond `sunny27@gmail.com`.*
+
+---
+
+## Session: Principles Expansion (8 → 11)
+
+Expanded the core investing principles from 8 to 11. New principles added:
+- 9: Stay consistent — regular investing beats perfect timing
+- 10: Know the difference between price and value — expensive isn't always valuable
+- 11: Make money while you sleep — own assets, not just stuff
+
+Old principles 1-7 are unchanged. Old principle 8 ("Fees and costs matter") was replaced with "Think like an owner, not a gambler." The entire principle set was reworked based on research from Buffett, Munger, Graham, Housel, Kiyosaki, Naval Ravikant, Corley's millionaire studies, The Richest Man in Babylon, and The Millionaire Next Door.
+
+Changes: src/ai.js (all prompt templates), src/template.js (principle mapping), CONTEXT.md.
+All `principle` fields in JSON output now range 1-11 instead of 1-8.

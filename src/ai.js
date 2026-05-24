@@ -61,18 +61,41 @@ const PROFANITY_RULE = `LANGUAGE RULES (NON-NEGOTIABLE):
 - No slang for body parts, no innuendo, no insults aimed at people or groups.
 - If you're tempted to use a stronger word for emphasis, rewrite the sentence instead.`;
 
-// The 8 core investing principles every piece of generated content should
+// The 11 core investing principles every piece of generated content should
 // reinforce. Surfaced to the model so every "Why It Matters", quiz
 // explanation, Did You Know, and Word of Day traces back to a real lesson.
 const INVESTING_PRINCIPLES = `
-1. Start early, let time work for you — compound interest, long-term thinking.
-2. Diversification protects you — don't put all eggs in one basket, index funds vs single stocks.
-3. Markets go up and down, but mostly up — volatility is normal, don't panic sell.
-4. Understand what you own — know how a company makes money before investing in it.
-5. Risk and reward are connected — higher potential returns mean higher risk.
-6. The news moves markets — events in the real world affect stock prices.
-7. Think like an owner, not a gambler — buying stock = owning a piece of a business.
-8. Fees and costs matter — small percentages compound into big differences over time.
+1. Pay yourself first — save before you spend.
+2. Make your money work for you — compound growth is a superpower.
+3. Spend less than you earn — wealth is the gap.
+4. Understand what you own — invest in what you know.
+5. Don't put all your eggs in one basket — diversify.
+6. Be patient — think in years, not days.
+7. Control your emotions — don't follow the crowd.
+8. Think like an owner, not a gambler — stocks are real businesses.
+9. Stay consistent — regular investing beats perfect timing.
+10. Know the difference between price and value — expensive isn't always valuable.
+11. Make money while you sleep — own assets, not just stuff.
+`.trim();
+
+// Guidance for Claude on how to map content to principles. Surfaced in
+// every prompt so a day's content lands on 4-6 different principles
+// instead of defaulting to the same handful.
+const PRINCIPLE_APPLICATION_GUIDE = `
+PRINCIPLE APPLICATION GUIDE — When generating content, smartly associate each story, quiz, game, and teaching moment to the most relevant principle:
+- Stories about earnings, company performance → Principle 4 (understand what you own) or 8 (think like an owner)
+- Stories about market drops, crashes, recovery → Principle 6 (be patient) or 7 (control your emotions)
+- Stories about index funds, ETFs, portfolio mix → Principle 5 (diversify)
+- Stories about savings rates, frugality, billionaire habits → Principle 1 (pay yourself first) or 3 (spend less than you earn)
+- Stories about compound growth, long-term returns, Buffett's wealth → Principle 2 (compound growth)
+- Stories about bubbles, meme stocks, hype cycles → Principle 7 (control emotions) or 10 (price vs value)
+- Stories about dividends, rental income, passive income → Principle 11 (make money while you sleep)
+- Stories about dollar-cost averaging, regular contributions → Principle 9 (stay consistent)
+- Stories about IPOs, stock splits, valuations → Principle 10 (price vs value)
+- Stories about real estate, business ownership, equity → Principle 8 (think like an owner) or 11 (own assets)
+- Quiz/game explanations should explicitly name the principle: "This is Principle 6 in action — patience pays off!"
+- "Why It Matters" boxes should end with a one-sentence principle connection: "This teaches us Principle 7: don't follow the crowd just because everyone else is panicking."
+- Aim for variety across the day's content — don't assign the same principle to every block. A single digest should ideally touch 4-6 different principles.
 `.trim();
 
 /**
@@ -91,9 +114,11 @@ function buildStandardPrompt(marketData, news, movers, topMover, recentWords, re
 
 ${PROFANITY_RULE}
 
-CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
+CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
 
 ${INVESTING_PRINCIPLES}
+
+${PRINCIPLE_APPLICATION_GUIDE}
 
 STEP 1: Before writing anything, use web_search to search for today's top stock market and business news headlines. Search for:
 - 'stock market news today'
@@ -107,7 +132,7 @@ VOICE & TONE RULES:
 - Use analogies a 10-14 year-old gets (video games, sports, pizza, school, allowance, YouTube).
 - Short sentences. Punchy. Not textbook-y.
 - Sprinkle in emojis naturally but don't overdo it.
-- The "Why It Matters" sections should genuinely connect dots — show cause and effect chains AND tie back to one of the 8 principles.
+- The "Why It Matters" sections should genuinely connect dots — show cause and effect chains AND tie back to one of the 11 principles.
 - NEVER include anything inappropriate, scary, or overly complex.
 - Skip any news about violence, war casualties, or disturbing events. Focus on business/tech/market stories.
 - If there's geopolitical news that affects markets, keep it very high-level (e.g. "tensions eased" not graphic details).
@@ -124,7 +149,7 @@ STORY SELECTION RULES (CRITICAL):
 TODAY'S MOVER RULES:
 - The TOP MOVER below is the biggest absolute-% mover today from a curated list of kid-recognizable companies. Use IT — do not substitute a different stock.
 - Write a one-liner connecting the move to WHY it happened (search the news if needed). "Nike dropped 4% because they said fewer people are buying running shoes this quarter" — concrete, business-driven, never random.
-- Connect that move to one of the 8 principles in the vibe field — usually principle 6 (news moves markets) or principle 4 (understand what you own).
+- Connect that move to one of the 11 principles in the vibe field — usually principle 4 (understand what you own), principle 7 (control your emotions), or principle 8 (think like an owner).
 
 THE BIG PICTURE:
 - 3-4 sentences giving a casual overview of what's affecting markets right now. Catching up a friend who missed the news.
@@ -132,19 +157,19 @@ THE BIG PICTURE:
 
 DID YOU KNOW (one mind-blowing fact per day):
 - One eye-popping money/investing/business fact. Categories to rotate across days: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
-- The fact MUST tie back to one of the 8 principles. Pick the most relevant principle and reference it in the connection field.
+- The fact MUST tie back to one of the 11 principles. Pick the most relevant principle and reference it in the connection field.
 - DO NOT pick any fact substantially similar to the following — these have been used in the last 30 days. A "near-restatement" of one of these (same anchor company, same number, same lesson, just reworded) also counts as a repeat. Pick something genuinely different:
 ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
 - Examples of the variety to aim for:
-  - "If you invested $1,000 in Amazon in 1997, it'd be worth ~$2.3 million today" → principle 1 (start early)
-  - "The stock market has crashed more than 20% about once every 5-7 years — and recovered every single time" → principle 3 (volatility is normal)
-  - "Warren Buffett bought his first stock at age 11 and says he started too late" → principle 1
-  - "Nintendo was founded in 1889. They made playing cards for 80 years before video games" → principle 4 (companies evolve)
+  - "If you invested $1,000 in Amazon in 1997, it'd be worth ~$2.3 million today" → principle 2 (make your money work for you / compound growth)
+  - "The stock market has crashed more than 20% about once every 5-7 years — and recovered every single time" → principle 6 (be patient)
+  - "Warren Buffett bought his first stock at age 11 and says he started too late" → principle 9 (stay consistent) or 2 (compound growth)
+  - "Nintendo was founded in 1889. They made playing cards for 80 years before video games" → principle 4 (understand what you own)
 - Rotate across CATEGORIES too — if recent picks have all been compound-interest math, surprise us with a company-origin or market-history fact today.
 
 QUIZ:
 - Classic multiple choice tied to today's news or an investing concept.
-- The explanation must teach the concept, not just confirm the answer. End the explanation with a sentence that ties to one of the 8 principles.
+- The explanation must teach the concept, not just confirm the answer. End the explanation with a sentence that ties to one of the 11 principles.
 
 WORD OF THE DAY:
 - One investing/financial term with a kid-friendly analogy. Tied to today's news when possible.
@@ -187,7 +212,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "price": "$XX.XX",
       "change": "+X.XX%",
       "direction": "up/down",
-      "vibe": "One concrete sentence connecting today's move to a real business reason (use web search to find the cause). End with a tiny nod to one of the 8 principles."
+      "vibe": "One concrete sentence connecting today's move to a real business reason (use web search to find the cause). End with a tiny nod to one of the 11 principles."
     }
   },
   "stories": [
@@ -196,21 +221,21 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "badgeLabel": "SHORT LABEL",
       "title": "Catchy headline a kid would click on",
       "body": "2-4 sentences explaining the story simply",
-      "whyItMatters": "2-3 sentences connecting this to one of the 8 investing principles. Show the cause-and-effect chain.",
+      "whyItMatters": "2-3 sentences connecting this to one of the 11 investing principles. Show the cause-and-effect chain.",
       "principle": 1
     }
   ],
   "didYouKnow": {
     "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
     "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
-    "connection": "1-2 sentences explicitly tying the fact back to one of the 8 investing principles.",
+    "connection": "1-2 sentences explicitly tying the fact back to one of the 11 investing principles.",
     "principle": 1
   },
   "quiz": {
     "question": "A fun question related to today's news or a basic investing concept",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctIndex": 0,
-    "explanation": "2-3 sentences explaining the answer, teaching the concept, and ending with a sentence that ties to one of the 8 principles.",
+    "explanation": "2-3 sentences explaining the answer, teaching the concept, and ending with a sentence that ties to one of the 11 principles.",
     "principle": 1
   },
   "wordOfDay": {
@@ -224,7 +249,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
 
 RULES ON OUTPUT:
 - "stories" array length: 3 by default. Only drop to 2 if the news genuinely doesn't support a third. Never 1, never 4+.
-- "principle" fields are integers 1-8 matching the numbered list at the top of this prompt.
+- "principle" fields are integers 1-11 matching the numbered list at the top of this prompt.
 - Stories should be from the provided news + web search — don't invent them.
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
 }
@@ -243,9 +268,11 @@ function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, e
 
 ${PROFANITY_RULE}
 
-CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
+CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
 
 ${INVESTING_PRINCIPLES}
+
+${PRINCIPLE_APPLICATION_GUIDE}
 
 STEP 1: Before writing anything, use web_search to RECAP THE WEEK. Search for:
 - 'stock market weekly recap'
@@ -269,11 +296,11 @@ WEEKLY WRAP STORY RULES (CRITICAL — different from a daily digest):
 - First story badge label MUST be "WEEK'S BIGGEST" — the single most important market story of the past 5 trading days.
 - Second story badge label MUST be "ALSO THIS WEEK" — a secondary theme worth noting.
 - Stories should reference the week's arc (e.g. "Nvidia kicked off the week at $135 and ended at $148 — here's why...") — not a single day in isolation.
-- Every "Why It Matters" connects the week's theme to one of the 8 principles.
+- Every "Why It Matters" connects the week's theme to one of the 11 principles.
 
 TODAY'S MOVER (weekly edition):
 - Identify the WEEK'S BIGGEST mover from the curated kid-recognizable list using web search. The FMP data below shows Friday's single-day winner — that MAY or may not match the week's biggest mover. Use the week's winner.
-- Write a one-liner connecting the WEEK'S move to WHY it happened. End with a tiny nod to one of the 8 principles.
+- Write a one-liner connecting the WEEK'S move to WHY it happened. End with a tiny nod to one of the 11 principles.
 - "change" should describe weekly change ("+8.4% on the week"), not Friday's single-day change.
 
 THE BIG PICTURE — WEEKLY EDITION:
@@ -282,14 +309,14 @@ THE BIG PICTURE — WEEKLY EDITION:
 
 DID YOU KNOW (one mind-blowing fact per day):
 - One eye-popping money/investing/business fact. Categories to rotate across days: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
-- The fact MUST tie back to one of the 8 principles.
+- The fact MUST tie back to one of the 11 principles.
 - DO NOT pick any fact substantially similar to the following — these have been used in the last 30 days. A "near-restatement" (same anchor company, same number, same lesson, reworded) counts as a repeat:
 ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
 - Sunday is a good day for a slightly deeper / more memorable fact.
 
 QUIZ — WEEKLY REVIEW:
 - A multiple-choice question that draws on something from THIS WEEK's headlines. Example: "On Tuesday, [Company] reported earnings that crushed expectations. What does it mean when a stock is 'priced in'?"
-- The explanation teaches the concept and ends with a tie to one of the 8 principles.
+- The explanation teaches the concept and ends with a tie to one of the 11 principles.
 
 WORD OF THE DAY — WEEKLY EDITION:
 - Pick a slightly more advanced investing term than a typical weekday — examples: "yield curve", "P/E ratio", "guidance", "free cash flow", "moat", "market cap", "consensus estimate".
@@ -342,7 +369,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "badgeLabel": "WEEK'S BIGGEST",
       "title": "Catchy headline summarizing the #1 story of the past week",
       "body": "2-4 sentences explaining the week's arc, not a single moment",
-      "whyItMatters": "2-3 sentences connecting the theme to one of the 8 principles. Show cause-and-effect.",
+      "whyItMatters": "2-3 sentences connecting the theme to one of the 11 principles. Show cause-and-effect.",
       "principle": 1
     },
     {
@@ -384,7 +411,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
 RULES ON OUTPUT:
 - "stories" array length: EXACTLY 2. Never 3, never 4.
 - editionType MUST be exactly "weekly-wrap"; editionLabel MUST be exactly "The Weekly Wrap 📋".
-- "principle" fields are integers 1-8.
+- "principle" fields are integers 1-11.
 - Stories should reference the WEEK's arc, not a single day.
 - Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
 }
@@ -409,9 +436,11 @@ function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, ed
 
 ${PROFANITY_RULE}
 
-CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles:
+CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles:
 
 ${INVESTING_PRINCIPLES}
+
+${PRINCIPLE_APPLICATION_GUIDE}
 
 STEP 1: Before writing anything, use web_search to PREVIEW THE WEEK AHEAD. Search for:
 - 'stock market week ahead preview'
@@ -445,7 +474,7 @@ THE BIG PICTURE — WEEK AHEAD EDITION:
 
 DID YOU KNOW:
 - One mind-blowing money/investing/business fact, 1-2 sentences. Categories to rotate: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
-- MUST tie back to one of the 8 principles.
+- MUST tie back to one of the 11 principles.
 - DO NOT pick any fact substantially similar to the following — used in the last 30 days:
 ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
 
@@ -539,7 +568,7 @@ RULES ON OUTPUT:
 - "stories" array length: EXACTLY 2 forward-looking entries. Never 3, never 4.
 - editionType MUST be exactly "week-ahead"; editionLabel MUST be exactly "The Week Ahead 🔮".
 - DO NOT include a "weeklyChallenge" field — that's Sunday-only.
-- "principle" fields are integers 1-8.
+- "principle" fields are integers 1-11.
 - Stories must look FORWARD, not backward.
 - Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
 }
@@ -688,7 +717,7 @@ export async function reframeBullBear(scenario) {
 
 ${PROFANITY_RULE}
 
-The 8 core investing principles you reinforce:
+The 11 core investing principles you reinforce:
 
 ${principleHint}
 
@@ -737,7 +766,7 @@ export async function reframeTimeMachine(scenario) {
 
 ${PROFANITY_RULE}
 
-The 8 core investing principles you reinforce:
+The 11 core investing principles you reinforce:
 
 ${principleHint}
 
