@@ -188,7 +188,7 @@ All requests go through `fmpFetch` helper which surfaces error bodies in logs.
 
 One call to Anthropic:
 
-- **Model:** `claude-sonnet-4-20250514`
+- **Model:** `claude-sonnet-4-6`
 - **max_tokens:** 8000
 - **tools:** `[{ type: "web_search_20250305", name: "web_search" }]`
 - **Prompt:** STEP 1 tells Claude to web-search for today's top business news. Voice/tone rules enforce kid-friendly language. Story selection rules filter to front-page-worthy stories only. PROFANITY_RULE sets content guardrails. "Avoid these recent words/facts" list from content-history prevents repeats.

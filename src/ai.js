@@ -240,7 +240,7 @@ RULES ON OUTPUT:
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
 
   const response = await client().messages.create({
-    model: 'claude-sonnet-4-20250514',
+    model: 'claude-sonnet-4-6',
     max_tokens: 8000,
     tools: [
       {
@@ -288,7 +288,7 @@ RULES ON OUTPUT:
 // Both reframers share the same envelope: pass in the full scenario, get
 // back ONLY the fields that should be rewritten today.
 
-const REFRAMER_MODEL = 'claude-sonnet-4-20250514';
+const REFRAMER_MODEL = 'claude-sonnet-4-6';
 
 async function callReframer({ system, user, expectedKeys, label }) {
   try {
