@@ -75,30 +75,19 @@ const INVESTING_PRINCIPLES = `
 8. Fees and costs matter — small percentages compound into big differences over time.
 `.trim();
 
-export async function generateContent(marketData, news, movers, topMover, opts = {}) {
-  // Anti-repeat lists loaded by generate.js from state/content-history.json
-  // so the prompt can tell Claude what to avoid today.
-  //   opts.recentWords (string[]) — Word of the Day picks from last N days
-  //   opts.recentFacts (string[]) — Did You Know facts from last N days
-  const recentWords = Array.isArray(opts.recentWords) ? opts.recentWords : [];
-  const recentFacts = Array.isArray(opts.recentFacts) ? opts.recentFacts : [];
-  const today = new Date();
-  const dateStr = today.toLocaleDateString('en-US', {
-    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-    timeZone: 'America/New_York',
-  });
-
-  const dayOfWeek = today.getDay();
-  let tradingDayLabel = "yesterday";
-  if (dayOfWeek === 0) tradingDayLabel = "Friday";
-  if (dayOfWeek === 1) tradingDayLabel = "Friday";
-  if (dayOfWeek === 6) tradingDayLabel = "Friday";
-
+/**
+ * Build the STANDARD weekday prompt (Tuesday–Saturday, no holiday yesterday).
+ *
+ * Extracted verbatim from the original generateContent body — the prompt
+ * text itself is unchanged from the battle-tested version. Only the
+ * surrounding plumbing (function wrapper + parameter list) is new.
+ */
+function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
 
-  const prompt = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14 and their parents. This is a financial education product disguised as a daily habit — every game, story, and fun fact teaches a real investing principle.
+  return `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14 and their parents. This is a financial education product disguised as a daily habit — every game, story, and fun fact teaches a real investing principle.
 
 ${PROFANITY_RULE}
 
@@ -238,6 +227,367 @@ RULES ON OUTPUT:
 - "principle" fields are integers 1-8 matching the numbered list at the top of this prompt.
 - Stories should be from the provided news + web search — don't invent them.
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
+}
+
+/**
+ * Build the WEEKLY WRAP prompt (Sunday). Recaps the past week instead of
+ * a single trading day; uses different search queries, story badges, and
+ * adds a `weeklyChallenge` field unique to Sunday editions.
+ */
+function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr) {
+  const topMoverBlock = topMover
+    ? JSON.stringify(topMover, null, 2)
+    : 'null  // no curated mover available — use web_search to identify the week\'s biggest mover from a kid-recognizable name.';
+
+  return `You are the writer for "Market Buzz Kids," and today is Sunday — THE WEEKLY WRAP. This is a RECAP of the past week's biggest market stories for kids 10-14 and their parents. NOT a daily report.
+
+${PROFANITY_RULE}
+
+CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
+
+${INVESTING_PRINCIPLES}
+
+STEP 1: Before writing anything, use web_search to RECAP THE WEEK. Search for:
+- 'stock market weekly recap'
+- 'biggest stock market movers this week'
+- 'biggest business news this week'
+The web search results should be your PRIMARY source. The raw FMP data below shows Friday's close, but you are recapping the FULL WEEK arc.
+
+VOICE & TONE RULES:
+- Write like a cool older sibling explaining the markets — casual, fun, never boring.
+- Use simple language. If you must use a financial term, explain it right there in parentheses.
+- Use analogies a 10-14 year-old gets (video games, sports, pizza, school, allowance, YouTube).
+- Short sentences. Punchy. Not textbook-y.
+- Sprinkle in emojis naturally but don't overdo it.
+- NEVER include anything inappropriate, scary, or overly complex.
+- Skip any news about violence, war casualties, or disturbing events. Focus on business/tech/market stories.
+- If there's geopolitical news that affects markets, keep it very high-level (e.g. "tensions eased" not graphic details).
+
+WEEKLY WRAP STORY RULES (CRITICAL — different from a daily digest):
+- Return EXACTLY 2 stories. Not 3, not 4. This is a focused weekly wrap.
+- Each story is a WEEK-DEFINING theme, not a single news item: the biggest earnings of the week, the biggest macro move, the biggest IPO buzz.
+- First story badge label MUST be "WEEK'S BIGGEST" — the single most important market story of the past 5 trading days.
+- Second story badge label MUST be "ALSO THIS WEEK" — a secondary theme worth noting.
+- Stories should reference the week's arc (e.g. "Nvidia kicked off the week at $135 and ended at $148 — here's why...") — not a single day in isolation.
+- Every "Why It Matters" connects the week's theme to one of the 8 principles.
+
+TODAY'S MOVER (weekly edition):
+- Identify the WEEK'S BIGGEST mover from the curated kid-recognizable list using web search. The FMP data below shows Friday's single-day winner — that MAY or may not match the week's biggest mover. Use the week's winner.
+- Write a one-liner connecting the WEEK'S move to WHY it happened. End with a tiny nod to one of the 8 principles.
+- "change" should describe weekly change ("+8.4% on the week"), not Friday's single-day change.
+
+THE BIG PICTURE — WEEKLY EDITION:
+- 3-4 sentences recapping the week's biggest themes: how did markets do overall? What drove the move? What's the takeaway for next week?
+- Show cause-and-effect chains spanning the full 5 trading days — earnings → expectations → price action → narrative.
+
+DID YOU KNOW (one mind-blowing fact per day):
+- One eye-popping money/investing/business fact. Categories to rotate across days: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
+- The fact MUST tie back to one of the 8 principles.
+- DO NOT pick any fact substantially similar to the following — these have been used in the last 30 days. A "near-restatement" (same anchor company, same number, same lesson, reworded) counts as a repeat:
+${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
+- Sunday is a good day for a slightly deeper / more memorable fact.
+
+QUIZ — WEEKLY REVIEW:
+- A multiple-choice question that draws on something from THIS WEEK's headlines. Example: "On Tuesday, [Company] reported earnings that crushed expectations. What does it mean when a stock is 'priced in'?"
+- The explanation teaches the concept and ends with a tie to one of the 8 principles.
+
+WORD OF THE DAY — WEEKLY EDITION:
+- Pick a slightly more advanced investing term than a typical weekday — examples: "yield curve", "P/E ratio", "guidance", "free cash flow", "moat", "market cap", "consensus estimate".
+- DO NOT pick any of the following words — used in the last 30 days. Pick something genuinely different (not a near-synonym, not a singular/plural variant):
+${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
+- Use a kid-friendly analogy. End with a sentence showing how to use the concept, tied to a principle when natural.
+
+WEEKLY CHALLENGE (Sunday-only field):
+- A fun, optional challenge for the upcoming week tied to a principle. Light, encouraging, never a homework assignment.
+- Example: "This week, pick one company you use every day — Spotify, Roblox, McDonald's, whatever — and look up its stock price right now. Check it again next Sunday. Did it go up or down? Now you're thinking like an investor. 🧠"
+- The "headline" is short and snappy. The "body" is 1-2 sentences with concrete instructions.
+
+TODAY'S DATE: ${dateStr}
+PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${edition.previousTradingDayName})
+
+RAW MARKET DATA (Friday's close — use for scoreboard prices; the recap is the WEEK):
+${JSON.stringify(marketData, null, 2)}
+
+TODAY'S FMP MOVER (Friday's curated winner — MAY differ from the week's biggest mover; use web search to confirm):
+${topMoverBlock}
+
+Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
+
+{
+  "date": "${dateStr}",
+  "editionType": "weekly-wrap",
+  "editionLabel": "The Weekly Wrap 📋",
+  "tradingDay": "this week",
+  "marketVibe": "green" or "red" or "mixed",
+  "vibeEmoji": "appropriate emoji",
+  "vibeSummary": "One fun sentence summarizing how the WEEK went and the headline reason (Fed, earnings, oil, jobs, etc.).",
+  "bigPicture": "3-4 sentences recapping the week's biggest themes with cause-and-effect.",
+  "scoreboard": {
+    "sp500":  { "price": "Friday's close", "change": "+X.XX% on the week", "direction": "up/down", "vibe": "week-narrative comment" },
+    "nasdaq": { "price": "Friday's close", "change": "+X.XX% on the week", "direction": "up/down", "vibe": "week-narrative comment" },
+    "dow":    { "price": "Friday's close", "change": "+X.XX% on the week", "direction": "up/down", "vibe": "week-narrative comment" },
+    "topMover": {
+      "ticker": "TICKER",
+      "name": "The WEEK's biggest mover (display name)",
+      "price": "Friday close $XX.XX",
+      "change": "+X.XX% on the week",
+      "direction": "up/down",
+      "vibe": "One concrete sentence on why this was the week's biggest mover. End with a nod to a principle."
+    }
+  },
+  "stories": [
+    {
+      "badge": "hot/new/money/world/brain",
+      "badgeLabel": "WEEK'S BIGGEST",
+      "title": "Catchy headline summarizing the #1 story of the past week",
+      "body": "2-4 sentences explaining the week's arc, not a single moment",
+      "whyItMatters": "2-3 sentences connecting the theme to one of the 8 principles. Show cause-and-effect.",
+      "principle": 1
+    },
+    {
+      "badge": "hot/new/money/world/brain",
+      "badgeLabel": "ALSO THIS WEEK",
+      "title": "Secondary headline",
+      "body": "2-4 sentences",
+      "whyItMatters": "2-3 sentences tied to a principle",
+      "principle": 2
+    }
+  ],
+  "didYouKnow": {
+    "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
+    "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
+    "connection": "1-2 sentences tying the fact back to a principle.",
+    "principle": 1
+  },
+  "quiz": {
+    "question": "A weekly review question referencing something from THIS WEEK's news",
+    "options": ["A", "B", "C", "D"],
+    "correctIndex": 0,
+    "explanation": "2-3 sentences teaching the concept, ending with a tie to a principle.",
+    "principle": 1
+  },
+  "wordOfDay": {
+    "word": "A slightly more advanced financial term",
+    "type": "noun/verb/etc",
+    "context": "what this term relates to from THIS WEEK",
+    "definition": "Fun kid-friendly explanation with an analogy. End with how to use it, tied to a principle when natural.",
+    "principle": 1
+  },
+  "weeklyChallenge": {
+    "headline": "Short snappy challenge headline",
+    "body": "1-2 sentence challenge for the upcoming week",
+    "principle": 1
+  }
+}
+
+RULES ON OUTPUT:
+- "stories" array length: EXACTLY 2. Never 3, never 4.
+- editionType MUST be exactly "weekly-wrap"; editionLabel MUST be exactly "The Weekly Wrap 📋".
+- "principle" fields are integers 1-8.
+- Stories should reference the WEEK's arc, not a single day.
+- Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
+}
+
+/**
+ * Build the WEEK AHEAD prompt (Monday + post-holiday Tuesday-Saturday).
+ * Forward-looking preview instead of a recap; stories highlight upcoming
+ * earnings/events; word-of-day picks a forward-looking term.
+ */
+function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr) {
+  const topMoverBlock = topMover
+    ? JSON.stringify(topMover, null, 2)
+    : 'null  // no curated mover from Friday — use the broader movers list or web search to pick a kid-recognizable name.';
+
+  const postHolidayLine = edition.reason === 'post-holiday' && edition.holidayName
+    ? `\nPOST-HOLIDAY NOTE: Yesterday was ${edition.holidayName} (a market holiday). Open vibeSummary with: "Hope you had a great ${edition.holidayName}!" then transition into the week-ahead preview.\n`
+    : '';
+
+  const prevDayName = edition.previousTradingDayName || 'Friday';
+
+  return `You are the writer for "Market Buzz Kids," and today is THE WEEK AHEAD — a forward-looking preview of what's coming this week in markets. For kids 10-14 and their parents.
+
+${PROFANITY_RULE}
+
+CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 8 core investing principles:
+
+${INVESTING_PRINCIPLES}
+
+STEP 1: Before writing anything, use web_search to PREVIEW THE WEEK AHEAD. Search for:
+- 'stock market week ahead preview'
+- 'earnings reports this week'
+- 'economic calendar this week'
+The web search results are your PRIMARY source — the raw FMP data below is ${prevDayName}'s close, included for the scoreboard only.
+
+VOICE & TONE RULES:
+- Write like a cool older sibling explaining the markets — casual, fun, never boring.
+- Use simple language. If you must use a financial term, explain it right there in parentheses.
+- Use analogies a 10-14 year-old gets.
+- Short sentences. Punchy.
+- Sprinkle in emojis naturally but don't overdo it.
+- NEVER include anything inappropriate, scary, or overly complex. Skip violence, war casualties, disturbing events.
+${postHolidayLine}
+WEEK-AHEAD STORY RULES (CRITICAL — different from a daily digest):
+- Return EXACTLY 2 stories. Not 3, not 4.
+- Both stories are FORWARD-LOOKING. What's COMING this week.
+- Reference specific upcoming days when you can: "Nvidia reports earnings Wednesday" or "the Fed decision drops Thursday".
+- First story badge label MUST be "WATCH THIS WEEK" — the single biggest event / earnings report / economic-data release.
+- Second story badge label MUST be "ALSO COMING UP" — a secondary watch-item.
+- Every "Why It Matters" explains how the upcoming event could move markets and ties to a principle.
+
+TODAY'S MOVER (week-ahead edition):
+- Use the curated FMP mover (${prevDayName}'s biggest curated mover) — it gives the scoreboard's gold card something concrete.
+- "change" is ${prevDayName}'s single-day change. "vibe" should reference "where we left off" — what to watch into the new week.
+
+THE BIG PICTURE — WEEK AHEAD EDITION:
+- 3-4 sentences previewing the week's biggest themes: which earnings reports matter, what economic data is dropping, any Fed meetings, IPO calendar.
+- ${edition.reason === 'post-holiday' ? `Open by acknowledging ${edition.holidayName} briefly, then pivot to "here's what's ahead." ` : ''}Cause-and-effect connections welcome.
+
+DID YOU KNOW:
+- One mind-blowing money/investing/business fact, 1-2 sentences. Categories to rotate: compound interest, famous investors, company origins, market history, global economy, mind-blowing numbers.
+- MUST tie back to one of the 8 principles.
+- DO NOT pick any fact substantially similar to the following — used in the last 30 days:
+${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none yet — this is the first generation)'}
+
+QUIZ:
+- Test general investing knowledge OR reference something from last week. Multiple choice, four options.
+- The explanation teaches the concept, ends with a tie to a principle.
+
+WORD OF THE DAY — FORWARD-LOOKING:
+- Pick a forward-looking investing/business term. Strong fits: "earnings report", "forecast", "guidance", "consensus estimate", "economic indicator", "interest rate", "Fed", "FOMC", "yield", "outlook".
+- DO NOT pick any of the following words — used in the last 30 days. Pick something genuinely different (not a near-synonym, not a singular/plural variant):
+${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
+- Definition uses a kid-friendly analogy. The "context" field should reference the week ahead.
+
+(NO weeklyChallenge field — that's Sunday-only.)
+
+TODAY'S DATE: ${dateStr}
+PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${prevDayName})${edition.reason === 'post-holiday' ? `\nYESTERDAY: ${edition.holidayName} (market holiday)` : ''}
+
+RAW MARKET DATA (${prevDayName}'s close — for the scoreboard):
+${JSON.stringify(marketData, null, 2)}
+
+TODAY'S MOVER (${prevDayName}'s curated mover):
+${topMoverBlock}
+
+Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
+
+{
+  "date": "${dateStr}",
+  "editionType": "week-ahead",
+  "editionLabel": "The Week Ahead 🔮",
+  "tradingDay": "last ${prevDayName}",
+  "marketVibe": "green" or "red" or "mixed" (based on ${prevDayName}'s close),
+  "vibeEmoji": "appropriate emoji",
+  "vibeSummary": "${edition.reason === 'post-holiday' ? `Open with "Hope you had a great ${edition.holidayName}!" then ` : ''}One fun sentence setting the mood for the week ahead.",
+  "bigPicture": "3-4 sentences previewing the week's biggest themes (earnings, Fed, data, IPOs).",
+  "scoreboard": {
+    "sp500":  { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
+    "nasdaq": { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
+    "dow":    { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
+    "topMover": {
+      "ticker": "TICKER",
+      "name": "Company Name (from the curated entry)",
+      "price": "$XX.XX",
+      "change": "+X.XX%",
+      "direction": "up/down",
+      "vibe": "One sentence on ${prevDayName}'s move + how to watch it next week. Tie to a principle."
+    }
+  },
+  "stories": [
+    {
+      "badge": "hot/new/money/world/brain",
+      "badgeLabel": "WATCH THIS WEEK",
+      "title": "Forward-looking headline — what's coming",
+      "body": "2-4 sentences on the upcoming event/earnings/data, including the day it drops",
+      "whyItMatters": "2-3 sentences on potential market impact, tied to a principle",
+      "principle": 1
+    },
+    {
+      "badge": "hot/new/money/world/brain",
+      "badgeLabel": "ALSO COMING UP",
+      "title": "Secondary watch-item headline",
+      "body": "2-4 sentences",
+      "whyItMatters": "2-3 sentences tied to a principle",
+      "principle": 2
+    }
+  ],
+  "didYouKnow": {
+    "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
+    "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
+    "connection": "1-2 sentences tying the fact back to a principle.",
+    "principle": 1
+  },
+  "quiz": {
+    "question": "A general investing question or a callback to last week",
+    "options": ["A", "B", "C", "D"],
+    "correctIndex": 0,
+    "explanation": "2-3 sentences teaching the concept, ending with a tie to a principle.",
+    "principle": 1
+  },
+  "wordOfDay": {
+    "word": "A forward-looking financial term",
+    "type": "noun/verb/etc",
+    "context": "what this term relates to from the week ahead",
+    "definition": "Fun kid-friendly explanation with an analogy. End with how to use it, tied to a principle when natural.",
+    "principle": 1
+  }
+}
+
+RULES ON OUTPUT:
+- "stories" array length: EXACTLY 2 forward-looking entries. Never 3, never 4.
+- editionType MUST be exactly "week-ahead"; editionLabel MUST be exactly "The Week Ahead 🔮".
+- DO NOT include a "weeklyChallenge" field — that's Sunday-only.
+- "principle" fields are integers 1-8.
+- Stories must look FORWARD, not backward.
+- Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
+}
+
+export async function generateContent(marketData, news, movers, topMover, opts = {}) {
+  // Anti-repeat lists loaded by generate.js from state/content-history.json
+  // so the prompt can tell Claude what to avoid today.
+  //   opts.recentWords (string[]) — Word of the Day picks from last N days
+  //   opts.recentFacts (string[]) — Did You Know facts from last N days
+  //   opts.edition     — { editionType, label, previousTradingDay, reason, ... }
+  //                      from src/calendar.js; defaults to 'standard'.
+  const recentWords = Array.isArray(opts.recentWords) ? opts.recentWords : [];
+  const recentFacts = Array.isArray(opts.recentFacts) ? opts.recentFacts : [];
+  const edition = opts.edition || { editionType: 'standard', reason: 'weekday' };
+
+  // The dateStr is generated from real-now for production, or from the
+  // edition's dateStr (which honors DATE_OVERRIDE) so tests show the
+  // right date in the rendered output.
+  const todayDate = edition.dateStr
+    ? new Date(edition.dateStr + 'T12:00:00Z')
+    : new Date();
+  const dateStr = todayDate.toLocaleDateString('en-US', {
+    weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    timeZone: 'America/New_York',
+  });
+
+  // tradingDayLabel for the STANDARD prompt only. Weekly Wrap and Week
+  // Ahead prompts use edition.previousTradingDayName directly.
+  // We derive tradingDayLabel from the edition's day-of-week so it stays
+  // correct under DATE_OVERRIDE.
+  const editionDay = edition.dayName || '';
+  let tradingDayLabel = 'yesterday';
+  if (editionDay === 'Sunday' || editionDay === 'Monday' || editionDay === 'Saturday') {
+    tradingDayLabel = 'Friday';
+  }
+
+  // Pick the right prompt for today's edition.
+  let prompt;
+  switch (edition.editionType) {
+    case 'weekly-wrap':
+      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr);
+      break;
+    case 'week-ahead':
+      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr);
+      break;
+    default:
+      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel);
+  }
+
+  console.log(`[AI] Building ${edition.editionType} prompt (reason=${edition.reason})`);
 
   const response = await client().messages.create({
     model: 'claude-sonnet-4-6',

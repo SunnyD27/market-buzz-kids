@@ -2,6 +2,8 @@
 
 A daily kid-friendly stock market digest for ages 10–14 and their parents. Delivered as a 7 AM EST email teaser to the parent, linking to a full interactive web digest the kid plays through in ~3 minutes a day. Real investing principles taught through news, games, streaks, and progressive ranks. Free product with future-hedged monetization (privacy policy §3).
 
+**5+2 edition system:** Tuesday–Saturday digests follow the standard format (previous trading day recap). Sunday is **The Weekly Wrap** (full-week recap + Weekly Challenge card). Monday and the day after any NYSE market holiday is **The Week Ahead** (forward-looking preview of upcoming earnings + economic data). See `src/calendar.js` for the resolver.
+
 - **Repo:** https://github.com/SunnyD27/market-buzz-kids (public, `main`)
 - **Local:** `~/market-buzz-kids`
 - **Production:** https://market-buzz-kids-production.up.railway.app
@@ -92,9 +94,10 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `server.js` | Express app. Routes, signup/consent flow, cron, boot bootstrap, daily-teaser fan-out. `dotenv` loaded with `override:true` (macOS launchd gotcha). |
 | `generate.js` | **Idempotent** digest generator. Checks `daily_digests` DB first; if today's row exists, writes to disk and returns. Otherwise: full pipeline → INSERT → disk. |
 | `data.js` | FMP `/stable/` API client. `fetchMarketData`, `fetchNews`, `fetchMovers`, `fetchTopMover`, `fetchQuotes`. All ticker fetches use **per-ticker fan-out** (FMP free tier doesn't support multi-ticker batch). Tolerates `changePercentage` ↔ `changesPercentage` field rename. |
-| `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
+| `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). `generateContent` routes between three internal prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) based on `opts.edition.editionType` from calendar.js. **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
+| `calendar.js` | Edition type resolver. NYSE holiday calendar, day-of-week detection, `DATE_OVERRIDE` env-var support for testing. Exports `getEditionType()`, `getEditionDate()`, `isMarketHoliday()`, `getLastTradingDay()`, `getHolidayName()`, plus `MARKET_HOLIDAYS` for 2026–2027. |
 | `games.js` | Daily Challenge orchestrator. Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, in parallel). |
-| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip). |
+| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions, renders Weekly Challenge card when `weeklyChallenge` is present (Sunday-only). |
 | `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
 | `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
 | `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. Same API surface as the Phase 5 in-memory version. |
@@ -171,6 +174,10 @@ Same set minus `PORT` (auto-injected) and `NODE_ENV` (set in Dockerfile).
 
 Check `daily_digests` table for today's date (NY timezone). If a row exists, write its content to disk and return immediately. Zero API calls, ~0.35s. This is why redeploys never change today's content.
 
+### Step 0.5 — Edition detection (`src/calendar.js`)
+
+Only runs when Step 0 misses (today's row doesn't exist yet). `getEditionType()` resolves the day-of-week + NYSE holiday calendar to one of three edition types — `standard`, `weekly-wrap`, or `week-ahead` — and threads that through to the AI prompt builder. The edition is baked into the row that Step 5 inserts, so once today's digest is locked in, its edition stays locked too.
+
 ### Step 1 — Fetch raw market data (`src/data.js`)
 
 Concurrent calls to `https://financialmodelingprep.com/stable/...`:
@@ -200,7 +207,9 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
 ```json
 {
   "date": "Wednesday, May 20, 2026",
-  "tradingDay": "yesterday",
+  "tradingDay": "yesterday" | "this week" | "last Friday",
+  "editionType": "standard" | "weekly-wrap" | "week-ahead",   // Phase 6.8 — present on all editions
+  "editionLabel": "The Weekly Wrap 📋" | "The Week Ahead 🔮",  // present on non-standard editions
   "marketVibe": "green" | "red" | "mixed",
   "vibeEmoji": "🚀",
   "vibeSummary": "One-sentence summary",
@@ -217,9 +226,18 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
   "stories": [ 2-3 items: { "badge", "badgeLabel", "title", "body", "whyItMatters", "principle": 1-8 } ],
   "didYouKnow": { "fact", "category", "principle": 1-8, "principleConnection" },
   "quiz": { "question", "options": [4], "correctIndex", "explanation", "principle": 1-8 },
-  "wordOfDay": { "word", "type", "context", "definition", "principle": 1-8 }
+  "wordOfDay": { "word", "type", "context", "definition", "principle": 1-8 },
+  "weeklyChallenge": { "headline", "body", "principle": 1-8 }   // Sunday weekly-wrap ONLY
 }
 ```
+
+**Edition variants:**
+
+| editionType | Days | stories count | Story badges | Special fields |
+|---|---|---|---|---|
+| `standard` | Tue–Sat (normal weekdays) | 3 (sometimes 2) | mixed | — |
+| `weekly-wrap` | Sun | exactly 2 | `WEEK'S BIGGEST`, `ALSO THIS WEEK` | `weeklyChallenge` |
+| `week-ahead` | Mon, post-holiday | exactly 2 | `WATCH THIS WEEK`, `ALSO COMING UP` | — |
 
 Every content block carries a `principle` field (1-8) tying it to one of the 8 core investing principles:
 
@@ -392,7 +410,11 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | Change scoreboard symbols | `src/data.js#fetchMarketData` → `src/ai.js` JSON schema → `src/template.js` scorecard calls |
 | Add/remove a news source | `src/data.js#fetchNews` — the `Promise.all` block |
 | Tighten/loosen news filter | `src/data.js#fetchNews` — `skipTerms` array + `title.length` guard |
-| Change Claude's voice or story rules | `src/ai.js` — the prompt template. VOICE & TONE RULES and STORY SELECTION RULES sections. |
+| Change Claude's voice or story rules | `src/ai.js` — the three prompt builders. Each edition (standard, weekly-wrap, week-ahead) has its own VOICE & TONE + STORY SELECTION sections. |
+| Change edition logic for weekends/holidays | `src/calendar.js` — the `MARKET_HOLIDAYS` map and `getEditionType()` switch |
+| Add a market holiday | `src/calendar.js` — add the date string to that year's array in `MARKET_HOLIDAYS` AND add the display name to `HOLIDAY_NAMES` |
+| Tweak Weekly Wrap or Week Ahead prompt | `src/ai.js#buildWeeklyWrapPrompt` or `buildWeekAheadPrompt`. The standard prompt is in `buildStandardPrompt`. |
+| Test edition logic on a specific date | `DATE_OVERRIDE=YYYY-MM-DD node src/generate.js`. Delete the test row after with `DELETE FROM daily_digests WHERE digest_date = 'YYYY-MM-DD'` |
 | Add a new digest section | 3 places: JSON schema in `src/ai.js`, destructure + render in `src/template.js`, CSS in `template.js` `<style>` block |
 | Change page look (colors, fonts, layout) | `src/template.js` `<style>` block. All CSS is inline. |
 | Add a curated company | `src/companies.js` — the list + `lookupCompany()` |
@@ -409,7 +431,6 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 ### Not yet built
 
 - **Push notifications (Phase 6.3)** — VAPID key placeholder in `pwa.js`. Email-only MVP works fine.
-- **Weekend/holiday editions** — Sunday and Monday digests currently use thin Saturday/Sunday data. A 5+2 edition system (Weekly Wrap on Sunday, Week Ahead on Monday) is spec'd and ready to implement.
 - **Server-side engagement** — XP/streaks/ranks are localStorage only. No cross-device sync, no parent dashboard, no leaderboards. Requires identity wiring (user slugs in URL).
 - **Engagement persistence** — hybrid PostHog (web analytics) + custom `/api/track` endpoint writing to the `engagement` table in Neon. Table placeholder exists in `schema.sql`. Needed before parent dashboard.
 - **Anti-spam on signup** — no rate limiting or captcha on `/api/signup` or `/api/delete-data`. Add Cloudflare Turnstile or rate-limit before scaling.
@@ -442,12 +463,12 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 6.5 | Per-game content generation — reframers + hydration | ✅ |
 | 6.6 | Real-data verification — end-to-end live pipeline | ✅ |
 | 6.7 | Immutable daily digest — `daily_digests` table, idempotent generation | ✅ |
+| 6.8 | 5+2 edition system — Weekly Wrap (Sun) + Week Ahead (Mon/post-holiday), `src/calendar.js` resolver, DATE_OVERRIDE support | ✅ |
 
 ---
 
 ## Future roadmap (post-Phase 6)
 
-- **5+2 edition system** — Weekly Wrap (Sunday) + Week Ahead (Monday/post-holiday)
 - **User slugs + digest gating** — permanent slug per user, `/digest/k/:slug`, no tokens/cookies
 - **Engagement persistence** — PostHog + `/api/track` + Neon `engagement` table
 - **Parent dashboard** — weekly email with engagement stats
