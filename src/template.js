@@ -8,6 +8,10 @@ export function buildHTML(content) {
     date, marketVibe, vibeSummary, bigPicture,
     scoreboard, stories, didYouKnow, wordOfDay,
     dailyChallenge, isSample,
+    // Phase 6.8 (5+2 editions): the AI now stamps each digest with its
+    // edition type. `editionLabel` renders as a subtitle under the date.
+    // `weeklyChallenge` is Sunday-only — a fun optional task for the week.
+    editionType, editionLabel, weeklyChallenge,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -25,6 +29,31 @@ export function buildHTML(content) {
       </div>
     </div>
   `).join('');
+
+  // Edition label — subtitle under the date for Weekly Wrap (Sunday) and
+  // Week Ahead (Monday/post-holiday) editions. Standard weekday digests
+  // omit this line entirely so the header looks identical to before.
+  const editionLabelHTML = editionLabel
+    ? `<div class="edition-label">${escapeHTML(editionLabel)}</div>`
+    : '';
+
+  // Weekly Challenge card — Sunday-only field. Rendered AFTER the Did You
+  // Know section, BEFORE the Daily Challenge games. Distinct purple/blue
+  // gradient to set it apart from the dyk-card without inventing a new
+  // section header style.
+  const weeklyChallengeHTML = weeklyChallenge?.headline && weeklyChallenge?.body
+    ? `
+  <div class="section-header">
+    <span class="emoji">🎯</span>
+    <h2>Weekly Challenge</h2>
+    <div class="line"></div>
+  </div>
+  <div class="wc-card">
+    <div class="wc-label">⭐ ONE FUN TASK FOR THE WEEK</div>
+    <div class="wc-headline">${escapeHTML(weeklyChallenge.headline)}</div>
+    <div class="wc-body">${escapeHTML(weeklyChallenge.body)}</div>
+  </div>`
+    : '';
 
   // Phase 6.4: the bare quiz section was replaced by the Daily Challenge
   // picker. The picker decides today's 3 games (rotation in
@@ -200,6 +229,40 @@ export function buildHTML(content) {
   .big-picture p { font-size: 15px; line-height: 1.65; color: var(--text); }
   .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--card-border); font-size: 13px; color: var(--text-dim); animation: fadeIn 0.5s ease-out both; }
   .footer .rocket { font-size: 20px; }
+  /* Edition label — renders under .date-line for Weekly Wrap and Week Ahead. */
+  .edition-label {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 15px; font-weight: 600;
+    margin-top: 4px;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    -webkit-background-clip: text; background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: 0.2px;
+  }
+  /* Weekly Challenge card — Sunday-only. Distinct blue/purple gradient
+     so it doesn't visually compete with the purple dyk-card next to it. */
+  .wc-card {
+    background: linear-gradient(135deg, rgba(88,166,255,0.14), rgba(188,140,255,0.08));
+    border: 1px solid rgba(88,166,255,0.30);
+    border-radius: 16px;
+    padding: 20px 22px;
+    animation: fadeIn 0.5s ease-out both;
+  }
+  .wc-card .wc-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 2px;
+    text-transform: uppercase; color: var(--blue);
+    margin-bottom: 10px;
+  }
+  .wc-card .wc-headline {
+    font-size: 19px; font-weight: 600;
+    color: var(--text-bright); line-height: 1.4;
+    margin-bottom: 10px;
+  }
+  .wc-card .wc-body {
+    font-size: 15px; color: var(--text);
+    line-height: 1.6;
+  }
   /* Sample banner — only renders when content.isSample is true. Goal is to
      LOOK like a real digest while making it clear the content is generic
      and the real version arrives by email. */
@@ -248,6 +311,7 @@ export function buildHTML(content) {
   <div class="header">
     <div class="logo"><span class="logo-emoji">📈</span> Market Buzz Kids${sampleChipHTML}</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
+    ${editionLabelHTML}
     <div class="tagline">The daily stock market cheat code for kids</div>
   </div>
 
@@ -301,6 +365,8 @@ export function buildHTML(content) {
     <div class="dyk-fact">${escapeHTML(didYouKnow?.fact || '')}</div>
     ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
   </div>
+
+  ${weeklyChallengeHTML}
 
   ${dailyChallengeSectionHTML}
 

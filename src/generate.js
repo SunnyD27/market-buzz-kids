@@ -12,7 +12,8 @@ import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
-import { todayNY, getTodaysDigest, saveDigest } from './digest-store.js';
+import { getDigestForDate, saveDigest } from './digest-store.js';
+import { getEditionDate, getEditionType } from './calendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -46,11 +47,19 @@ export async function generateDigest(opts = {}) {
   const publicDir = path.join(__dirname, '..', 'public');
   const htmlPath = path.join(publicDir, 'index.html');
   const dataPath = path.join(publicDir, 'digest-data.json');
-  const today = todayNY();
+
+  // `today` honors DATE_OVERRIDE (via calendar.getEditionDate) so tests
+  // can pretend it's a different day without monkey-patching globals.
+  // In production with no override, this is identical to digest-store's
+  // todayNY().
+  const today = getEditionDate();
 
   // ── Cache check: today's row already in Postgres? ────────────────
+  // The idempotency check MUST come before edition detection — if today's
+  // row exists, we serve cached content regardless of what kind of edition
+  // it was. The edition was decided when the row was first generated.
   if (!opts.force) {
-    const existing = await getTodaysDigest();
+    const existing = await getDigestForDate(today);
     if (existing) {
       console.log(`[Generate] Today's digest (${today}) already exists in DB — using cached copy. No API calls.`);
       mkdirSync(publicDir, { recursive: true });
@@ -67,6 +76,14 @@ export async function generateDigest(opts = {}) {
   const anthropicKey = process.env.ANTHROPIC_API_KEY;
   if (!fmpKey) throw new Error('FMP_API_KEY not set');
   if (!anthropicKey) throw new Error('ANTHROPIC_API_KEY not set');
+
+  // ── Edition detection ──────────────────────────────────────────────
+  // Resolve what KIND of digest to generate for this date (standard,
+  // weekly-wrap, or week-ahead). The result is passed through to the
+  // AI prompt builder so the routing happens inside ai.js. See
+  // src/calendar.js for the day-of-week + holiday logic.
+  const edition = getEditionType();
+  console.log(`[Generate] Edition type: ${edition.editionType} (${edition.reason})${edition.holidayName ? ` — yesterday was ${edition.holidayName}` : ''}`);
 
   console.log(`[Generate] Generating fresh digest for ${today}...`);
   console.log('[Generate] Step 1/3: Fetching market data from FMP...');
@@ -101,6 +118,7 @@ export async function generateDigest(opts = {}) {
   const content = await generateContent(marketData, news, movers, topMover, {
     recentWords,
     recentFacts,
+    edition,
   });
 
   const dailyChallenge = await hydrateDailyGames({
