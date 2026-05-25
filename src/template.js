@@ -63,7 +63,7 @@ export function buildHTML(content) {
   const marketClosedNote = marketClosed
     ? (editionType === 'weekly-wrap'
         ? "📊 Markets were closed this weekend — here's how the week went"
-        : "📊 Markets are closed today — here's where things stand heading into the week")
+        : "📊 Markets were closed yesterday — here's where things stand heading into the week")
     : null;
   const marketClosedHTML = marketClosedNote
     ? `<div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.45); font-style: italic; margin: 0 16px 10px; padding: 8px 0;">${escapeHTML(marketClosedNote)}</div>`
