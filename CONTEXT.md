@@ -471,6 +471,7 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 6.6 | Real-data verification — end-to-end live pipeline | ✅ |
 | 6.7 | Immutable daily digest — `daily_digests` table, idempotent generation | ✅ |
 | 6.8 | 5+2 edition system — Weekly Wrap (Sun) + Week Ahead (Mon/post-holiday), `src/calendar.js` resolver, DATE_OVERRIDE support | ✅ |
+| 6.9 | Sunday Challenge — AI-generated weekly game, 4 rotating types (Trading Floor, CEO for a Day, Invest-a-Thon, Investor's Dilemma), `public/games/sunday-challenge.js` renderer, 4-week rotation derived from `edition.dateStr` | ✅ |
 
 ---
 
