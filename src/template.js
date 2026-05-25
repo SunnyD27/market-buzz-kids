@@ -11,7 +11,11 @@ export function buildHTML(content) {
     // Phase 6.8 (5+2 editions): the AI now stamps each digest with its
     // edition type. `editionLabel` renders as a subtitle under the date.
     // `weeklyChallenge` is Sunday-only — a fun optional task for the week.
-    editionType, editionLabel, weeklyChallenge,
+    // `marketClosed` is a static flag from the prompt schema — always true
+    // on weekly-wrap + week-ahead, absent on standard. Used to render a
+    // muted "markets closed" note above the scoreboard so kids understand
+    // why the numbers haven't changed since Friday.
+    editionType, editionLabel, weeklyChallenge, marketClosed,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -35,6 +39,20 @@ export function buildHTML(content) {
   // omit this line entirely so the header looks identical to before.
   const editionLabelHTML = editionLabel
     ? `<div class="edition-label">${escapeHTML(editionLabel)}</div>`
+    : '';
+
+  // "Markets closed" note — muted single line right above the scoreboard.
+  // Only renders for weekend/holiday editions where the scoreboard is
+  // showing Friday's frozen numbers, so kids understand why the values
+  // aren't moving. Copy varies by edition: a recap framing for Sunday,
+  // a forward-looking framing for Monday/post-holiday.
+  const marketClosedNote = marketClosed
+    ? (editionType === 'weekly-wrap'
+        ? "📊 Markets were closed this weekend — here's how the week went"
+        : "📊 Markets are closed today — here's where things stand heading into the week")
+    : null;
+  const marketClosedHTML = marketClosedNote
+    ? `<div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.45); font-style: italic; margin: 0 16px 10px; padding: 8px 0;">${escapeHTML(marketClosedNote)}</div>`
     : '';
 
   // Weekly Challenge card — Sunday-only field. Rendered AFTER the Did You
@@ -317,6 +335,8 @@ export function buildHTML(content) {
 
   <!-- Investor Profile Bar — rendered by /engagement.js from localStorage -->
   <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
+
+  ${marketClosedHTML}
 
   <div class="section-header">
     <span class="emoji">🏆</span>

@@ -13,14 +13,17 @@
   window.MBGames = window.MBGames || {};
 
   const PRINCIPLES = {
-    1: 'Principle 1 · Start early, let time work for you',
-    2: 'Principle 2 · Diversification protects you',
-    3: 'Principle 3 · Markets go up and down, but mostly up',
-    4: 'Principle 4 · Understand what you own',
-    5: 'Principle 5 · Risk and reward are connected',
-    6: 'Principle 6 · The news moves markets',
-    7: 'Principle 7 · Think like an owner, not a gambler',
-    8: 'Principle 8 · Fees and costs matter',
+    1: 'Principle 1 · Pay Yourself First',
+    2: 'Principle 2 · Compound Growth',
+    3: 'Principle 3 · Wealth Is the Gap',
+    4: 'Principle 4 · Know What You Own',
+    5: 'Principle 5 · Diversify',
+    6: 'Principle 6 · Be Patient',
+    7: 'Principle 7 · Control Your Emotions',
+    8: 'Principle 8 · Think Like an Owner',
+    9: 'Principle 9 · Stay Consistent',
+    10: 'Principle 10 · Price vs Value',
+    11: 'Principle 11 · Own Assets',
   };
 
   function escapeHTML(s) {

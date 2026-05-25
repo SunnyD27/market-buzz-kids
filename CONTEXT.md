@@ -221,13 +221,13 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
   },
   "topMover": {
     "name", "ticker", "price", "change", "direction", "vibe", "reason",
-    "principle": 1-8
+    "principle": 1-11
   },
-  "stories": [ 2-3 items: { "badge", "badgeLabel", "title", "body", "whyItMatters", "principle": 1-8 } ],
-  "didYouKnow": { "fact", "category", "principle": 1-8, "principleConnection" },
-  "quiz": { "question", "options": [4], "correctIndex", "explanation", "principle": 1-8 },
-  "wordOfDay": { "word", "type", "context", "definition", "principle": 1-8 },
-  "weeklyChallenge": { "headline", "body", "principle": 1-8 }   // Sunday weekly-wrap ONLY
+  "stories": [ 2-3 items: { "badge", "badgeLabel", "title", "body", "whyItMatters", "principle": 1-11 } ],
+  "didYouKnow": { "fact", "category", "principle": 1-11, "principleConnection" },
+  "quiz": { "question", "options": [4], "correctIndex", "explanation", "principle": 1-11 },
+  "wordOfDay": { "word", "type", "context", "definition", "principle": 1-11 },
+  "weeklyChallenge": { "headline", "body", "principle": 1-11 }   // Sunday weekly-wrap ONLY
 }
 ```
 
@@ -239,16 +239,19 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
 | `weekly-wrap` | Sun | exactly 2 | `WEEK'S BIGGEST`, `ALSO THIS WEEK` | `weeklyChallenge` |
 | `week-ahead` | Mon, post-holiday | exactly 2 | `WATCH THIS WEEK`, `ALSO COMING UP` | — |
 
-Every content block carries a `principle` field (1-8) tying it to one of the 8 core investing principles:
+Every content block carries a `principle` field (1-11) tying it to one of the 11 core investing principles:
 
-1. Start early, let time work for you
-2. Diversification protects you
-3. Markets go up and down, but mostly up
-4. Understand what you own
-5. Risk and reward are connected
-6. The news moves markets
-7. Think like an owner, not a gambler
-8. Fees and costs matter
+1. Pay yourself first — save before you spend
+2. Make your money work for you — compound growth is a superpower
+3. Spend less than you earn — wealth is the gap
+4. Understand what you own — invest in what you know
+5. Don't put all your eggs in one basket — diversify
+6. Be patient — think in years, not days
+7. Control your emotions — don't follow the crowd
+8. Think like an owner, not a gambler — stocks are real businesses
+9. Stay consistent — regular investing beats perfect timing
+10. Know the difference between price and value — expensive isn't always valuable
+11. Make money while you sleep — own assets, not just stuff
 
 ### Step 3 — Hydrate daily games (`src/games.js`)
 
@@ -451,7 +454,7 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 
 | Phase | What | Status |
 |---|---|---|
-| 1 | Core digest refactor — removed VOO, added Today's Mover, 8 investing principles, Did You Know | ✅ |
+| 1 | Core digest refactor — removed VOO, added Today's Mover, the investing-principles framework (originally 8, now 11), Did You Know | ✅ |
 | 2 | Engagement systems — XP, ranks, streaks, shields, Perfect Day (client-side localStorage) | ✅ |
 | 3 | 6 games + Daily Challenge picker + 3 verified datasets | ✅ |
 | 4 | PWA setup — manifest, service worker, push scaffolding | ✅ |

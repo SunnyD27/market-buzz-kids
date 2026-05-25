@@ -156,7 +156,7 @@
         resultLabel: '✨ See the curve?',
         headline: 'The Compound Interest Lesson',
         body,
-        principle: 1, // Start early, let time work for you
+        principle: 2, // Make your money work for you — compound growth is a superpower
       });
     }
 
