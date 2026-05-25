@@ -257,12 +257,105 @@ RULES ON OUTPUT:
 /**
  * Build the WEEKLY WRAP prompt (Sunday). Recaps the past week instead of
  * a single trading day; uses different search queries, story badges, and
- * adds a `weeklyChallenge` field unique to Sunday editions.
+ * adds a `sundayChallenge` field unique to Sunday editions. The Sunday
+ * Challenge is a longer interactive game that rotates between 4 formats
+ * on a 4-week cycle (week-of-year % 4). Client-side renderer lives in
+ * public/games/sunday-challenge.js — it reads `sundayChallenge.type` and
+ * dispatches to the right sub-renderer.
  */
 function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — use web_search to identify the week\'s biggest mover from a kid-recognizable name.';
+
+  // ── Sunday Challenge rotation ────────────────────────────────────────
+  // 4-week cycle. We derive the week number from edition.dateStr (NOT
+  // new Date()) so DATE_OVERRIDE testing stays deterministic. Simple
+  // ordinal-week formula: days-since-Jan-1 + Jan-1's day-of-week, divided
+  // by 7, ceiling. Good enough for a stable 0-3 cycle across the year.
+  const challengeTypes = ['trading-floor', 'ceo', 'investathon', 'dilemma'];
+  const editionDate = new Date((edition.dateStr || dateStr.slice(0, 10)) + 'T12:00:00Z');
+  const startOfYear = new Date(editionDate.getUTCFullYear() + '-01-01T12:00:00Z');
+  const dayOfYear = Math.floor((editionDate - startOfYear) / 86400000);
+  const weekNum = Math.ceil((dayOfYear + startOfYear.getUTCDay() + 1) / 7);
+  const sundayChallengeType = challengeTypes[weekNum % 4];
+
+  // Inline only the JSON schema that matches this week's challenge type
+  // into the "Return ONLY a JSON object…" example below. The full set of
+  // schemas + content rules for all 4 types is in SUNDAY_CHALLENGE_RULES
+  // (Claude sees the rules block + only this week's schema in the JSON
+  // example).
+  const sundayChallengeSchemaSnippet = {
+    'trading-floor': `"sundayChallenge": {
+    "type": "trading-floor",
+    "rounds": [
+      {
+        "year": "Month YYYY",
+        "headline": "2-4 sentence kid-friendly scene-setter, present tense.",
+        "stocks": [
+          { "ticker": "TICKER", "name": "Company", "price": 12.36, "endPrice": 182.01, "period": "YYYY-YYYY" }
+        ],
+        "sp500Return": "+312%",
+        "principle": 1,
+        "lessonText": "1-2 sentences with the investing lesson from this round."
+      }
+    ]
+  }`,
+    'ceo': `"sundayChallenge": {
+    "type": "ceo",
+    "rounds": [
+      {
+        "company": "Company Name",
+        "year": "YYYY",
+        "scenario": "3-5 sentences in second person ('You are running…') with real numbers.",
+        "options": ["Option A", "Option B", "Option C"],
+        "correctIndex": 1,
+        "actualOutcome": "3-5 sentences with what actually happened + specific numbers.",
+        "lesson": "1-2 sentences extracting the general principle.",
+        "principle": 1
+      }
+    ]
+  }`,
+    'investathon': `"sundayChallenge": {
+    "type": "investathon",
+    "questions": [
+      {
+        "question": "Question text",
+        "options": ["A", "B"],
+        "correctIndex": 0,
+        "explain": "2-3 sentences with surprising fact / math.",
+        "principle": 1
+      }
+    ]
+  }`,
+    'dilemma': `"sundayChallenge": {
+    "type": "dilemma",
+    "rounds": [
+      {
+        "scenario": "3-5 sentences describing a realistic financial decision a teenager faces.",
+        "options": ["Option A — description", "Option B — description"],
+        "analysis": [
+          {
+            "title": "Short title for Option A's analysis",
+            "metrics": [
+              { "label": "Your investment", "value": "$500" },
+              { "label": "Annual return", "value": "4.5%" },
+              { "label": "After 10 years", "value": "$776" }
+            ],
+            "takeaway": "3-5 sentences with REAL MATH explaining pros/cons, ending with the key tradeoff."
+          },
+          {
+            "title": "Short title for Option B's analysis",
+            "metrics": [ { "label": "metric", "value": "value" } ],
+            "takeaway": "Same depth as Option A — both sides get equal treatment."
+          }
+        ],
+        "bottomLine": "2-3 sentences summarizing the tradeoff and naming the principle this teaches. Do NOT declare a winner.",
+        "principle": 1
+      }
+    ]
+  }`,
+  }[sundayChallengeType];
 
   return `You are the writer for "Market Buzz Kids," and today is Sunday — THE WEEKLY WRAP. This is a RECAP of the past week's biggest market stories for kids 10-14 and their parents. NOT a daily report.
 
@@ -324,10 +417,222 @@ WORD OF THE DAY — WEEKLY EDITION:
 ${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
 - Use a kid-friendly analogy. End with a sentence showing how to use the concept, tied to a principle when natural.
 
-WEEKLY CHALLENGE (Sunday-only field):
-- A fun, optional challenge for the upcoming week tied to a principle. Light, encouraging, never a homework assignment.
-- Example: "This week, pick one company you use every day — Spotify, Roblox, McDonald's, whatever — and look up its stock price right now. Check it again next Sunday. Did it go up or down? Now you're thinking like an investor. 🧠"
-- The "headline" is short and snappy. The "body" is 1-2 sentences with concrete instructions.
+SUNDAY CHALLENGE — THE WEEKLY GAME
+
+This week's game type: ${sundayChallengeType}
+
+Every Sunday, kids play a longer, more engaging game as part of the Weekly Wrap. The game type rotates on a 4-week cycle so the format never repeats two weeks in a row. You are generating the CONTENT for this week's game — the client-side interactive components are already built and will render your JSON output.
+
+Your job is to generate FRESH, SURPRISING, NON-OBVIOUS content every single week. The quality bar is high. Follow the specific rules for this week's type below.
+
+=== GAME TYPE: "trading-floor" ===
+(Generate this ONLY when this week's type is "trading-floor")
+
+The kid gets $10,000 and plays through 3 rounds. Each round is a real moment in stock market history where they allocate money across 4 stocks, then see what actually happened.
+
+JSON schema:
+"sundayChallenge": {
+  "type": "trading-floor",
+  "rounds": [
+    {
+      "year": "Month YYYY",
+      "headline": "2-4 sentence kid-friendly description of what was happening in the economy/markets at this moment. Set the scene vividly. Use present tense as if the kid is there.",
+      "stocks": [
+        {
+          "ticker": "AAPL",
+          "name": "Apple",
+          "price": 12.36,
+          "endPrice": 182.01,
+          "period": "2007-2024"
+        }
+      ],
+      "sp500Return": "+312%",
+      "principle": 1-11,
+      "lessonText": "1-2 sentences explaining the investing lesson from this round"
+    }
+  ]
+}
+
+TRADING FLOOR CONTENT RULES:
+1. PICK OBSCURE MOMENTS. Do NOT use: the 2008 financial crisis, COVID crash (March 2020), dot-com bubble (1999-2000), or any event that a typical adult would immediately know the outcome of. Instead, use moments like:
+   - A random week in 2013 when Tesla was $8 and RadioShack was $3
+   - January 2005 when Google had just IPO'd at $85 and Blockbuster was still at $9
+   - March 2016 when Netflix was $97 and GoPro was $11
+   - July 1999 when Yahoo was $170 and Amazon was $55
+   - A week in 2011 when LinkedIn just IPO'd and Groupon was the hottest company alive
+2. Each round MUST include at least one stock that performed OPPOSITE of what seemed obvious at the time. The "sure bet" should sometimes lose. The "boring" pick should sometimes win big.
+3. Use REAL historical stock prices. Web-search to verify prices if unsure. Do NOT fabricate numbers.
+4. All 3 rounds should be from DIFFERENT decades or eras. Do not cluster them.
+5. Include at least one company that no longer exists or is irrelevant today (e.g., BlackBerry, Sears, Groupon, MySpace parent company, Nokia, Yahoo, AOL).
+6. Headlines should be written as if the kid is living in that moment — they do NOT know the future. "Everyone thinks BlackBerry is unbeatable" not "BlackBerry is about to collapse."
+7. The 4 stocks in each round should represent genuinely different investment theses: one "obvious winner," one "safe boring pick," one "risky underdog," one "fading giant."
+8. NEVER repeat a ticker across rounds in the same game.
+9. Each round ties to a DIFFERENT principle from the 11.
+10. The S&P 500 return for the same period must be included so kids can compare.
+
+=== GAME TYPE: "ceo" ===
+(Generate this ONLY when this week's type is "ceo")
+
+The kid takes over a real company at a critical decision point. They get 3 options — each is a genuinely defensible strategic choice. After choosing, they see what actually happened.
+
+JSON schema:
+"sundayChallenge": {
+  "type": "ceo",
+  "rounds": [
+    {
+      "company": "Company Name",
+      "year": "YYYY",
+      "scenario": "3-5 sentences setting up the decision. Include real dollar amounts, employee counts, or market data to make it concrete. Write in second person: 'You are running...'",
+      "options": [
+        "Option A — a genuinely reasonable choice",
+        "Option B — a genuinely reasonable choice",
+        "Option C — a genuinely reasonable choice"
+      ],
+      "correctIndex": 1,
+      "actualOutcome": "3-5 sentences explaining what the company actually did and what happened as a result. Include specific numbers — revenue, stock price, market cap, users — to make the outcome tangible.",
+      "lesson": "1-2 sentences extracting the general investing/business principle",
+      "principle": 1-11
+    }
+  ]
+}
+
+CEO CONTENT RULES:
+1. DO NOT USE companies where the outcome is common knowledge. BANNED: Netflix switching to streaming, Apple bringing back Steve Jobs, Blockbuster rejecting Netflix, Kodak ignoring digital cameras, Nokia ignoring smartphones. These are all too well-known — kids or their parents will know the answer immediately.
+2. Instead, pick from scenarios like:
+   - Lego nearly going bankrupt in 2003 and the decision to cut 80% of their product line
+   - Marvel selling its movie rights to Sony/Fox in the 1990s for cash when it was broke
+   - Nintendo choosing NOT to partner with Sony (which led Sony to create PlayStation)
+   - Slack turning down a $10B Microsoft acquisition offer, then Microsoft building Teams
+   - Shopify choosing to compete with Amazon instead of partnering with them
+   - Domino's Pizza admitting their pizza was terrible in 2009 and completely reformulating
+   - LEGO licensing Star Wars in 1999 when toy executives said "movie toys don't sell"
+   - Under Armour choosing to challenge Nike head-on in basketball
+   - Snapchat rejecting Facebook's $3 billion acquisition offer
+   - Instagram having 13 employees when Facebook bought them for $1 billion
+   - Dyson spending 15 years and 5,127 prototypes before making a single sale
+   - Airbnb selling cereal boxes during the 2008 recession to stay alive
+   - Red Bull spending years giving away free cans before becoming profitable
+3. ALL THREE OPTIONS must be genuinely defensible. A kid should be torn about which to pick. If one option is obviously stupid, the question is bad — rewrite it.
+4. The "wrong" answers should have been reasonable choices at the time. Include a brief note in actualOutcome about why the other options COULD have worked or what would have happened.
+5. Each round should be a DIFFERENT type of decision: one about product strategy, one about money/acquisition, one about competitive positioning.
+6. Include SPECIFIC NUMBERS in the scenario (revenue, employees, market share) so the decision feels real, not abstract.
+7. Each round ties to a DIFFERENT principle from the 11.
+8. NEVER frame the scenario in a way that reveals the answer. "Your company is about to fail unless you..." gives away that the bold option is correct.
+9. Use companies and industries that kids 10-14 actually know or can relate to: gaming, food/restaurants, social media, sports, toys, entertainment, phones, sneakers.
+
+=== GAME TYPE: "investathon" ===
+(Generate this ONLY when this week's type is "investathon")
+
+10 rapid-fire questions. Mix of formats: true/false, multiple choice (3 options), and "which is more/higher/first" comparisons. Each answer reveals a surprising fact.
+
+JSON schema:
+"sundayChallenge": {
+  "type": "investathon",
+  "questions": [
+    {
+      "question": "The question text",
+      "options": ["Option A", "Option B"] or ["Option A", "Option B", "Option C"],
+      "correctIndex": 0,
+      "explain": "2-3 sentences explaining the answer with a surprising fact or real number that makes kids say 'no way!' Include the math or data that proves it.",
+      "principle": 1-11
+    }
+  ]
+}
+
+INVEST-A-THON CONTENT RULES:
+1. EVERY answer should be surprising. If a kid can guess the answer without knowing anything about investing, the question is too easy. The "no way!" reaction on the reveal is the whole point.
+2. Mix these question categories (aim for at least 6 of the 8 in each game):
+   a) COMPOUND MATH SHOCKERS: "If you invested $1 per day starting at age 15..." / "How many years would it take $1,000 to become $1 million at 10%?"
+   b) SIZE COMPARISONS: "Which is worth more: all the Bitcoin in the world or just Apple?" / "Which country has a bigger stock market: Japan or the UK?"
+   c) HISTORICAL SURPRISES: "Which came first: the stock market or the United States?" / "What was Amazon's stock price at its IPO?"
+   d) COMPANY SECRETS: "How many years did it take Amazon to make a profit?" / "What percentage of Google's revenue comes from ads?"
+   e) SPEED & TIME: "What's the fastest a stock has ever doubled?" / "How long has the average S&P 500 company existed?"
+   f) PSYCHOLOGY & BEHAVIOR: "What percentage of day traders lose money?" / "What's the #1 reason people sell stocks?"
+   g) REAL-WORLD CONNECTIONS: "How many iPhones does Apple sell per MINUTE?" / "If you bought one share of Disney at its IPO, how many shares would you have today?"
+   h) MONEY SCALE: "How long would it take to count to one billion if you counted one number per second?"
+3. VERIFY ALL FACTS. Use web search if needed. Do NOT fabricate statistics. If you're unsure of a number, search for it.
+4. Do NOT ask the same type of question twice in a row. Alternate between categories.
+5. Do NOT include questions whose answers can be deduced purely from the question wording (e.g., "True or false: compound interest earns interest on interest" — the answer is in the name).
+6. Include at least 2 questions that connect to things kids already know: Roblox, YouTube, Nike, McDonald's, Disney, Fortnite, iPhone, TikTok, Minecraft.
+7. Spread across at least 6 different principles from the 11.
+8. Questions should NOT be googleable in 2 seconds. "What is the stock market?" is bad. "If the entire stock market crashed 50% tomorrow, how many times has that actually happened in the last 100 years?" is good.
+9. For true/false questions, the answer should be FALSE at least half the time — kids default to "true."
+10. For multiple choice, the wrong answers should be plausible, not absurd. Don't include joke answers.
+
+=== GAME TYPE: "dilemma" ===
+(Generate this ONLY when this week's type is "dilemma")
+
+3 investing scenarios with no objectively correct answer. The kid picks an option, then sees a detailed mathematical and factual breakdown of BOTH sides.
+
+JSON schema:
+"sundayChallenge": {
+  "type": "dilemma",
+  "rounds": [
+    {
+      "scenario": "3-5 sentences describing a realistic financial decision a teenager or young person might face. Use specific dollar amounts, timeframes, and real-world context. Make the kid feel like this could actually happen to them.",
+      "options": [
+        "Option A — clear, concise description of this choice",
+        "Option B — clear, concise description of this choice"
+      ],
+      "analysis": [
+        {
+          "title": "Short title for Option A's analysis",
+          "metrics": [
+            { "label": "Your investment", "value": "$500" },
+            { "label": "Annual return", "value": "4.5%" },
+            { "label": "After 10 years", "value": "$776" }
+          ],
+          "takeaway": "3-5 sentences with REAL MATH explaining this option's pros and cons. Include specific dollar amounts showing what happens over time. Reference real historical data where possible (e.g., 'The S&P 500 has returned 10% annually on average since 1926'). End with the key tradeoff."
+        },
+        {
+          "title": "Short title for Option B's analysis",
+          "metrics": [
+            { "label": "metric", "value": "value" }
+          ],
+          "takeaway": "Same depth as Option A's analysis. Both sides get equal treatment."
+        }
+      ],
+      "bottomLine": "2-3 sentences summarizing the core tradeoff and explicitly naming which principle this dilemma teaches. Do NOT declare one option the winner — explain what each choice prioritizes.",
+      "principle": 1-11
+    }
+  ]
+}
+
+DILEMMA CONTENT RULES:
+1. BOTH OPTIONS MUST BE GENUINELY DEFENSIBLE. If one option is obviously better, the dilemma is broken. A financial advisor should be able to argue for either side.
+2. The analysis for EACH option must include:
+   - At least 3 specific metrics with real numbers
+   - Real math (compound growth calculations, percentage comparisons, dollar amounts over time)
+   - Historical precedent or data where applicable
+   - A clear explanation of what you GAIN and what you GIVE UP
+3. Use scenarios that 10-14 year olds can relate to:
+   - Birthday money decisions ($500-$2,000 range)
+   - Summer job earnings allocation
+   - Saving for something expensive (car, college, gaming PC) vs investing
+   - Choosing between a guaranteed small return vs a risky bigger one
+   - Lump sum vs spreading investments over time (dollar-cost averaging)
+   - Individual stocks vs index funds with their own money
+   - Spending on an experience vs investing the same amount
+   - Keeping money in a savings account vs the stock market when scared
+4. NEVER frame one option as the "smart" choice and the other as the "dumb" choice through tone or word choice. Both analyses should be written with equal respect.
+5. Each round should teach a DIFFERENT principle from the 11.
+6. The metrics should be DIFFERENT between the two options — don't just show the same 3 rows with different numbers. Each option has different relevant data points.
+7. Include at least one dilemma where the "boring" option is actually mathematically competitive with the "exciting" option — kids need to see that safe choices aren't always inferior.
+8. ALL MATH MUST BE CORRECT. Double-check compound interest calculations. If $500 at 10% for 30 years = X, verify X is right. Wrong math destroys credibility.
+9. Use real product/experience prices kids would know: PlayStation ($499), concert tickets ($150), used car ($5,000), MacBook ($1,299).
+10. Do NOT use fake polling data ("48% of kids chose Option A"). We have no polling data. The analysis stands on math and facts alone.
+
+=== END OF GAME TYPE INSTRUCTIONS ===
+
+UNIVERSAL SUNDAY CHALLENGE RULES (apply to ALL game types):
+- Generate ONLY the game type specified for this week: "${sundayChallengeType}"
+- NEVER generate content that reveals well-known outcomes where the answer is obvious in hindsight
+- Use web_search to verify any historical stock prices, company facts, or financial statistics you're unsure about
+- Every round/question must tie to one of the 11 investing principles
+- Spread principle coverage — don't assign the same principle to every round
+- Content must be appropriate for ages 10-14: no references to alcohol, drugs, gambling, adult themes
+- Use companies and examples kids actually encounter: fast food, gaming, social media, streaming, sports, sneakers, phones
+- SURPRISE is the #1 quality metric. If the content doesn't make a kid say "whoa, really?" or "I had no idea," it's not good enough
 
 TODAY'S DATE: ${dateStr}
 PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${edition.previousTradingDayName})
@@ -401,11 +706,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
     "definition": "Fun kid-friendly explanation with an analogy. End with how to use it, tied to a principle when natural.",
     "principle": 1
   },
-  "weeklyChallenge": {
-    "headline": "Short snappy challenge headline",
-    "body": "1-2 sentence challenge for the upcoming week",
-    "principle": 1
-  }
+  ${sundayChallengeSchemaSnippet}
 }
 
 RULES ON OUTPUT:
@@ -413,6 +714,9 @@ RULES ON OUTPUT:
 - editionType MUST be exactly "weekly-wrap"; editionLabel MUST be exactly "The Weekly Wrap 📋".
 - "principle" fields are integers 1-11.
 - Stories should reference the WEEK's arc, not a single day.
+- "sundayChallenge.type" MUST be exactly "${sundayChallengeType}" for this week.
+- Match the JSON schema for "${sundayChallengeType}" exactly as documented in the SUNDAY CHALLENGE section above (correct field names, correct array structure).
+- Do NOT include a "weeklyChallenge" field — that field is deprecated, only sundayChallenge is used now.
 - Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
 }
 
@@ -488,7 +792,7 @@ WORD OF THE DAY — FORWARD-LOOKING:
 ${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
 - Definition uses a kid-friendly analogy. The "context" field should reference the week ahead.
 
-(NO weeklyChallenge field — that's Sunday-only.)
+(NO sundayChallenge field — that's Sunday-only.)
 
 TODAY'S DATE: ${dateStr}
 PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${prevDayName})${edition.reason === 'post-holiday' ? `\nYESTERDAY: ${edition.holidayName} (market holiday)` : ''}
@@ -567,7 +871,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
 RULES ON OUTPUT:
 - "stories" array length: EXACTLY 2 forward-looking entries. Never 3, never 4.
 - editionType MUST be exactly "week-ahead"; editionLabel MUST be exactly "The Week Ahead 🔮".
-- DO NOT include a "weeklyChallenge" field — that's Sunday-only.
+- DO NOT include a "sundayChallenge" field — that's Sunday-only.
 - "principle" fields are integers 1-11.
 - Stories must look FORWARD, not backward.
 - Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
