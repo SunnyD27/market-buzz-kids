@@ -97,7 +97,7 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). `generateContent` routes between three internal prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) based on `opts.edition.editionType` from calendar.js. **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
 | `calendar.js` | Edition type resolver. NYSE holiday calendar, day-of-week detection, `DATE_OVERRIDE` env-var support for testing. Exports `getEditionType()`, `getEditionDate()`, `isMarketHoliday()`, `getLastTradingDay()`, `getHolidayName()`, plus `MARKET_HOLIDAYS` for 2026–2027. |
 | `games.js` | Daily Challenge orchestrator. Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, in parallel). |
-| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions, renders Weekly Challenge card when `weeklyChallenge` is present (Sunday-only). |
+| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
 | `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
 | `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
 | `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. Same API surface as the Phase 5 in-memory version. |
@@ -119,6 +119,7 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `games-preview.html` | Standalone game test harness. |
 | `games/*.js` | 5 game modules (quiz is inline in the template). |
 | `games/daily-challenge.js` | Picker UI + 8-day rotation. **Rotation logic is duplicated in `src/games.js` — keep both in sync.** |
+| `games/sunday-challenge.js` | Sunday Challenge renderer. Single entry point (`window.MBGames.sundayChallenge.render`) dispatches to 4 sub-renderers (trading-floor, ceo, investathon, dilemma) based on `data.type`. Reads `sundayChallenge` from the digest JSON, calls `MarketBuzz.recordGamePlayed('sunday-challenge', {fullXP:50 or 75})` on completion. Replay-safe via `mb-sunday-challenge-<date>` localStorage flag. |
 | `data/company-models.json` | 37 companies for Match + Price-is-Right. |
 | `data/time-machine-prices.json` | 7 verified Time Machine scenarios. |
 | `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
@@ -227,7 +228,10 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
   "didYouKnow": { "fact", "category", "principle": 1-11, "principleConnection" },
   "quiz": { "question", "options": [4], "correctIndex", "explanation", "principle": 1-11 },
   "wordOfDay": { "word", "type", "context", "definition", "principle": 1-11 },
-  "weeklyChallenge": { "headline", "body", "principle": 1-11 }   // Sunday weekly-wrap ONLY
+  "sundayChallenge": { "type", ...type-specific fields, "principle": 1-11 }   // Sunday weekly-wrap ONLY
+                                                                              // type ∈ trading-floor | ceo | investathon | dilemma
+                                                                              // Rotates weekly (week-of-year % 4). See src/ai.js#buildWeeklyWrapPrompt
+                                                                              // and public/games/sunday-challenge.js for schemas/rendering.
 }
 ```
 
@@ -236,7 +240,7 @@ Response parsing: concatenate `text` blocks, strip markdown fences + `<cite>` ta
 | editionType | Days | stories count | Story badges | Special fields |
 |---|---|---|---|---|
 | `standard` | Tue–Sat (normal weekdays) | 3 (sometimes 2) | mixed | — |
-| `weekly-wrap` | Sun | exactly 2 | `WEEK'S BIGGEST`, `ALSO THIS WEEK` | `weeklyChallenge` |
+| `weekly-wrap` | Sun | exactly 2 | `WEEK'S BIGGEST`, `ALSO THIS WEEK` | `sundayChallenge` (4-type rotation) |
 | `week-ahead` | Mon, post-holiday | exactly 2 | `WATCH THIS WEEK`, `ALSO COMING UP` | — |
 
 Every content block carries a `principle` field (1-11) tying it to one of the 11 core investing principles:

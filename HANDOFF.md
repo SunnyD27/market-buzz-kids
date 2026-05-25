@@ -327,3 +327,23 @@ Old principles 1-7 are unchanged. Old principle 8 ("Fees and costs matter") was 
 
 Changes: src/ai.js (all prompt templates), src/template.js (principle mapping), CONTEXT.md.
 All `principle` fields in JSON output now range 1-11 instead of 1-8.
+
+---
+
+## Session: Sunday Challenge Game System
+
+Replaced the simple `weeklyChallenge` text field with a full interactive `sundayChallenge` game system:
+- 4 game types rotate on a 4-week cycle (ISO week % 4)
+- The Trading Floor: 3-round portfolio sim with real historical stock prices
+- CEO for a Day: 3 real business decision scenarios from lesser-known company history
+- Invest-a-Thon: 10 rapid-fire trivia questions with 8-second timer
+- The Investor's Dilemma: 3 tradeoff scenarios with real math breakdowns on both sides
+- All content generated fresh by Claude each Sunday as part of the Weekly Wrap prompt
+- Client component: public/games/sunday-challenge.js handles all 4 types
+- XP: 50 base + 25 bonus (higher than weekday games)
+- Key prompt rules: no obvious/well-known outcomes, real verified data, surprise factor is #1 quality metric
+
+Backward compat: template still renders the old weeklyChallenge card if a cached digest row predates the Sunday Challenge launch, so old DB rows don't suddenly show a blank section.
+
+Changes: src/ai.js (Weekly Wrap prompt), src/template.js (Sunday Challenge section + CSS + script tag),
+new public/games/sunday-challenge.js, CONTEXT.md.

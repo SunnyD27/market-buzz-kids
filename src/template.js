@@ -10,12 +10,17 @@ export function buildHTML(content) {
     dailyChallenge, isSample,
     // Phase 6.8 (5+2 editions): the AI now stamps each digest with its
     // edition type. `editionLabel` renders as a subtitle under the date.
-    // `weeklyChallenge` is Sunday-only — a fun optional task for the week.
+    // `sundayChallenge` is Sunday-only — a longer interactive game that
+    // rotates between 4 formats on a 4-week cycle (trading-floor, ceo,
+    // investathon, dilemma). Renderer in public/games/sunday-challenge.js.
+    // `weeklyChallenge` is the deprecated predecessor — kept here so older
+    // cached DB rows from before the Sunday Challenge launch still render
+    // a card instead of an empty hole.
     // `marketClosed` is a static flag from the prompt schema — always true
     // on weekly-wrap + week-ahead, absent on standard. Used to render a
     // muted "markets closed" note above the scoreboard so kids understand
     // why the numbers haven't changed since Friday.
-    editionType, editionLabel, weeklyChallenge, marketClosed,
+    editionType, editionLabel, sundayChallenge, weeklyChallenge, marketClosed,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -64,12 +69,35 @@ export function buildHTML(content) {
     ? `<div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.45); font-style: italic; margin: 0 16px 10px; padding: 8px 0;">${escapeHTML(marketClosedNote)}</div>`
     : '';
 
-  // Weekly Challenge card — Sunday-only field. Rendered AFTER the Did You
-  // Know section, BEFORE the Daily Challenge games. Distinct purple/blue
-  // gradient to set it apart from the dyk-card without inventing a new
-  // section header style.
-  const weeklyChallengeHTML = weeklyChallenge?.headline && weeklyChallenge?.body
-    ? `
+  // Sunday Challenge — Sunday-only interactive game (4 rotating types).
+  // The AI generates the content; public/games/sunday-challenge.js does
+  // the rendering. Section header + container div; the inline script at
+  // the bottom of the page calls window.MBGames.sundayChallenge.render.
+  //
+  // Backward compat: if a digest row is from before the Sunday Challenge
+  // launch it'll have `weeklyChallenge` instead — render the old card so
+  // we don't leave a hole on those days.
+  const SUNDAY_CHALLENGE_META = {
+    'trading-floor': { icon: '📈', name: 'The Trading Floor',     subtitle: 'Invest $10,000 across 3 eras of stock market history' },
+    'ceo':           { icon: '💼', name: 'CEO for a Day',         subtitle: '3 real business decisions — what would you do?' },
+    'investathon':   { icon: '⚡', name: 'Invest-a-Thon',         subtitle: '10 rapid-fire questions — 8 seconds each' },
+    'dilemma':       { icon: '⚖️', name: "The Investor's Dilemma", subtitle: 'Real math, real tradeoffs, no easy answers' },
+  };
+  const hasSundayChallenge = !!(sundayChallenge && sundayChallenge.type && SUNDAY_CHALLENGE_META[sundayChallenge.type]);
+  const sundayChallengeHTML = hasSundayChallenge
+    ? (() => {
+        const meta = SUNDAY_CHALLENGE_META[sundayChallenge.type];
+        return `
+  <div class="section-header">
+    <span class="emoji">${meta.icon}</span>
+    <h2>Sunday Challenge: ${escapeHTML(meta.name)}</h2>
+    <div class="line"></div>
+  </div>
+  <div class="sc-subtitle">${escapeHTML(meta.subtitle)}</div>
+  <div id="sunday-challenge-host"></div>`;
+      })()
+    : (weeklyChallenge?.headline && weeklyChallenge?.body
+        ? `
   <div class="section-header">
     <span class="emoji">🎯</span>
     <h2>Weekly Challenge</h2>
@@ -80,7 +108,7 @@ export function buildHTML(content) {
     <div class="wc-headline">${escapeHTML(weeklyChallenge.headline)}</div>
     <div class="wc-body">${escapeHTML(weeklyChallenge.body)}</div>
   </div>`
-    : '';
+        : '');
 
   // Phase 6.4: the bare quiz section was replaced by the Daily Challenge
   // picker. The picker decides today's 3 games (rotation in
@@ -290,6 +318,312 @@ export function buildHTML(content) {
     font-size: 15px; color: var(--text);
     line-height: 1.6;
   }
+  /* ── Sunday Challenge ────────────────────────────────────────────────
+     A longer interactive game on Sundays. All 4 game types (trading-floor,
+     ceo, investathon, dilemma) share these .sc-* classes — the renderer
+     in public/games/sunday-challenge.js picks which structural pieces to
+     compose. Distinct gold/blue gradient border so it reads as "special"
+     vs the regular daily cards. */
+  .sc-subtitle {
+    font-size: 13px;
+    color: var(--text-dim);
+    text-align: center;
+    margin: -6px 16px 14px;
+    font-style: italic;
+  }
+  .sc-card {
+    background: linear-gradient(135deg, rgba(240,192,64,0.10), rgba(88,166,255,0.10));
+    border: 1px solid rgba(240,192,64,0.35);
+    border-radius: 16px;
+    padding: 20px 22px;
+    animation: fadeIn 0.5s ease-out both;
+  }
+  .sc-round-meta {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase; color: var(--yellow);
+    margin-bottom: 12px;
+  }
+  .sc-headline {
+    background: rgba(13,17,23,0.55);
+    border-radius: 12px;
+    padding: 14px 16px;
+    margin-bottom: 14px;
+  }
+  .sc-headline p {
+    font-size: 15px;
+    color: var(--text-bright);
+    line-height: 1.55;
+    margin: 0;
+  }
+  .sc-year {
+    font-family: 'Space Mono', monospace;
+    font-size: 12px; letter-spacing: 2px;
+    text-transform: uppercase;
+    color: var(--yellow);
+    margin-bottom: 8px;
+  }
+  .sc-allocation {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+  }
+  .sc-stocks {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .sc-stock {
+    background: rgba(26,34,53,0.85);
+    border: 1px solid rgba(255,255,255,0.10);
+    border-radius: 12px;
+    padding: 12px;
+    text-align: left;
+    cursor: pointer;
+    color: var(--text);
+    font-family: inherit;
+    transition: transform 0.1s, border-color 0.15s, background 0.15s;
+  }
+  .sc-stock:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(240,192,64,0.4); }
+  .sc-stock:disabled { opacity: 0.7; cursor: default; }
+  .sc-stock.sc-selected { border-color: var(--yellow); background: rgba(240,192,64,0.10); }
+  .sc-stock-ticker { font-weight: 700; font-size: 14px; color: var(--text-bright); }
+  .sc-stock-name { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .sc-stock-price { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text); }
+  .sc-stock-alloc {
+    margin-top: 6px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+    color: var(--yellow);
+    font-weight: 700;
+  }
+  .sc-total-row {
+    display: flex; align-items: center; justify-content: space-between;
+    margin-bottom: 12px; font-size: 14px; color: var(--text);
+  }
+  .sc-total { color: var(--yellow); }
+  .sc-options {
+    display: flex; flex-direction: column; gap: 10px;
+    margin-bottom: 12px;
+  }
+  .sc-option {
+    background: rgba(26,34,53,0.85);
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px;
+    padding: 12px 14px;
+    text-align: left;
+    color: var(--text);
+    cursor: pointer;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.4;
+    display: flex; align-items: flex-start; gap: 12px;
+    transition: transform 0.1s, border-color 0.15s, background 0.15s;
+  }
+  .sc-option:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(88,166,255,0.45); }
+  .sc-option:disabled { cursor: default; }
+  .sc-option-letter {
+    flex-shrink: 0;
+    width: 24px; height: 24px; border-radius: 50%;
+    background: rgba(88,166,255,0.18);
+    color: var(--blue);
+    font-family: 'Space Mono', monospace; font-size: 12px;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-weight: 700;
+  }
+  .sc-option-text { flex: 1; }
+  .sc-option.sc-correct { border-color: rgba(72,187,120,0.7); background: rgba(72,187,120,0.10); }
+  .sc-option.sc-wrong   { border-color: rgba(245,101,101,0.7); background: rgba(245,101,101,0.10); }
+  .sc-option.sc-selected { border-color: var(--blue); background: rgba(88,166,255,0.10); }
+  .sc-result-area { margin-top: 14px; }
+  .sc-result-head {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    margin-bottom: 10px;
+    color: var(--yellow);
+  }
+  .sc-result-head.win  { color: #6bd687; }
+  .sc-result-head.miss { color: #f0808a; }
+  .sc-result-body, .sc-result-lesson, .sc-bottom-line {
+    font-size: 14px; line-height: 1.6;
+    color: var(--text); margin-bottom: 10px;
+  }
+  .sc-result-summary {
+    background: rgba(13,17,23,0.55);
+    border-radius: 10px;
+    padding: 10px 12px;
+    margin: 10px 0;
+    font-size: 14px;
+    display: grid; gap: 4px;
+  }
+  .sc-result-bars { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .sc-result-bar-row {
+    display: grid;
+    grid-template-columns: 90px 1fr 60px;
+    align-items: center; gap: 8px;
+    font-family: 'Space Mono', monospace;
+    font-size: 12px;
+  }
+  .sc-result-bar-label { color: var(--text-dim); }
+  .sc-result-bar {
+    background: rgba(255,255,255,0.06);
+    height: 8px; border-radius: 4px;
+    overflow: hidden;
+  }
+  .sc-result-bar-fill {
+    height: 100%; border-radius: 4px;
+    transition: width 0.4s ease-out;
+  }
+  .sc-result-bar-fill.up   { background: linear-gradient(90deg, #4ade80, #6bd687); }
+  .sc-result-bar-fill.down { background: linear-gradient(90deg, #f56565, #fc8181); }
+  .sc-result-bar-pct.up   { color: #6bd687; text-align: right; }
+  .sc-result-bar-pct.down { color: #f0808a; text-align: right; }
+  .sc-next-btn, .sc-reveal-btn {
+    background: linear-gradient(135deg, var(--yellow), #b08a4a);
+    border: none; border-radius: 10px;
+    padding: 10px 16px; font-family: inherit;
+    font-size: 14px; font-weight: 600; color: #0d1117;
+    cursor: pointer; margin-top: 8px;
+    transition: transform 0.1s, opacity 0.15s;
+  }
+  .sc-next-btn:hover, .sc-reveal-btn:hover { transform: translateY(-1px); }
+  .sc-reveal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .sc-dots { display: flex; gap: 6px; margin-bottom: 10px; }
+  .sc-dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: rgba(255,255,255,0.15);
+  }
+  .sc-dot.active { background: var(--yellow); }
+  .sc-dot.done   { background: rgba(88,166,255,0.55); }
+  .sc-timer-row {
+    display: flex; flex-direction: column; gap: 6px;
+    margin-bottom: 14px;
+  }
+  .sc-q-counter {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 1.5px;
+    color: var(--text-dim);
+  }
+  .sc-timer-bar {
+    height: 6px; background: rgba(255,255,255,0.06);
+    border-radius: 3px; overflow: hidden;
+  }
+  .sc-timer-fill {
+    height: 100%; width: 100%;
+    background: linear-gradient(90deg, var(--yellow), #f56565);
+    border-radius: 3px;
+  }
+  .sc-vs-grid {
+    display: grid; gap: 10px;
+    grid-template-columns: 1fr;
+    margin: 10px 0;
+  }
+  @media (min-width: 600px) {
+    .sc-vs-grid { grid-template-columns: 1fr 1fr; }
+  }
+  .sc-analysis-card {
+    background: rgba(13,17,23,0.55);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px;
+    padding: 14px;
+  }
+  .sc-analysis-card.sc-your-choice {
+    border-color: rgba(88,166,255,0.55);
+    background: rgba(88,166,255,0.06);
+  }
+  .sc-analysis-tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--blue);
+    margin-bottom: 6px;
+  }
+  .sc-analysis-card:not(.sc-your-choice) .sc-analysis-tag { color: var(--text-dim); }
+  .sc-analysis-title {
+    font-size: 15px; font-weight: 700;
+    color: var(--text-bright); margin-bottom: 8px;
+  }
+  .sc-metrics {
+    background: rgba(255,255,255,0.03);
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 10px;
+  }
+  .sc-metric-row {
+    display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px;
+    padding: 4px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .sc-metric-row:last-child { border-bottom: none; }
+  .sc-metric-label { color: var(--text-dim); }
+  .sc-metric-value {
+    font-family: 'Space Mono', monospace;
+    color: var(--text-bright); font-weight: 600;
+  }
+  .sc-analysis-takeaway { font-size: 13px; line-height: 1.55; color: var(--text); }
+  .sc-principle-tag {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px; letter-spacing: 1px;
+    color: var(--yellow);
+    background: rgba(240,192,64,0.10);
+    border: 1px solid rgba(240,192,64,0.25);
+    border-radius: 999px;
+    padding: 5px 12px;
+    display: inline-block;
+    margin: 10px 0;
+  }
+  .sc-xp-badge {
+    margin-top: 14px;
+    background: linear-gradient(135deg, rgba(240,192,64,0.18), rgba(88,166,255,0.10));
+    border: 1px solid rgba(240,192,64,0.45);
+    border-radius: 12px;
+    padding: 12px 14px;
+    display: flex; align-items: center; gap: 12px;
+  }
+  .sc-xp-amount {
+    font-family: 'Space Mono', monospace;
+    font-size: 18px; font-weight: 700;
+    color: var(--yellow);
+  }
+  .sc-xp-label { font-size: 13px; color: var(--text); }
+  .sc-final {
+    text-align: center;
+    padding: 12px 6px 4px;
+  }
+  .sc-final-headline {
+    font-size: 20px; font-weight: 700;
+    color: var(--text-bright); margin-bottom: 12px;
+  }
+  .sc-final-grid {
+    display: grid; gap: 12px;
+    grid-template-columns: 1fr;
+    margin-bottom: 14px;
+  }
+  @media (min-width: 480px) {
+    .sc-final-grid:has(> :nth-child(2)) { grid-template-columns: 1fr 1fr; }
+  }
+  .sc-final-label {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; letter-spacing: 1.5px;
+    text-transform: uppercase;
+    color: var(--text-dim);
+    margin-bottom: 4px;
+  }
+  .sc-final-value {
+    font-size: 22px; font-weight: 700;
+    color: var(--text-bright);
+  }
+  .sc-final-pct { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--yellow); }
+  .sc-final-lesson { font-size: 14px; line-height: 1.55; color: var(--text); }
+  .sc-done {
+    text-align: center;
+    padding: 18px 14px;
+  }
+  .sc-done-headline { font-size: 16px; font-weight: 700; color: var(--text-bright); margin-bottom: 6px; }
+  .sc-done-body { font-size: 13px; color: var(--text-dim); margin-bottom: 10px; }
   /* Sample banner — only renders when content.isSample is true. Goal is to
      LOOK like a real digest while making it clear the content is generic
      and the real version arrives by email. */
@@ -395,7 +729,7 @@ export function buildHTML(content) {
     ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
   </div>
 
-  ${weeklyChallengeHTML}
+  ${sundayChallengeHTML}
 
   ${dailyChallengeSectionHTML}
 
@@ -424,9 +758,12 @@ export function buildHTML(content) {
 </div>
 
 <!-- Phase 6.4: game modules. Loaded synchronously and in order before the
-     inline render call below so window.MBGames is fully populated. -->
+     inline render call below so window.MBGames is fully populated.
+     shared.js is required by BOTH the Daily Challenge picker and the
+     Sunday Challenge (it provides MBGames.shared.PRINCIPLES used for
+     reveal-panel principle tags). We load it once when either is present. -->
+${(hasDailyChallenge || hasSundayChallenge) ? `<script src="/games/shared.js"></script>` : ''}
 ${hasDailyChallenge ? `
-<script src="/games/shared.js"></script>
 <script src="/games/daily-challenge.js"></script>
 <script src="/games/compound.js"></script>
 <script src="/games/match.js"></script>
@@ -434,6 +771,7 @@ ${hasDailyChallenge ? `
 <script src="/games/bull-bear.js"></script>
 <script src="/games/price-is-right.js"></script>
 ` : ''}
+${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''}
 
 <script>
   // ---- Twinkling starfield ----
@@ -506,6 +844,18 @@ ${hasDailyChallenge ? `
     var host = document.getElementById('daily-challenge-host');
     if (!host || !window.MBGames || !window.MBGames.dailyChallenge) return;
     window.MBGames.dailyChallenge.render(host, __DC_BUNDLE, {});
+  })();
+  ` : ''}
+
+  ${hasSundayChallenge ? `
+  // ---- Sunday Challenge ----------------------------------------------
+  // Same pattern as Daily Challenge: data baked in at render time, the
+  // game module dispatches based on .type to the right sub-renderer.
+  var __SC_DATA = ${JSON.stringify(sundayChallenge)};
+  (function () {
+    var host = document.getElementById('sunday-challenge-host');
+    if (!host || !window.MBGames || !window.MBGames.sundayChallenge) return;
+    window.MBGames.sundayChallenge.render(host, __SC_DATA, {});
   })();
   ` : ''}
 </script>
