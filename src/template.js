@@ -20,6 +20,15 @@ export function buildHTML(content) {
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
 
+  // Story-section heading varies by edition. Weekly Wrap recaps the past
+  // 5 trading days; Week Ahead previews upcoming events; standard editions
+  // cover the previous trading day.
+  const storiesHeading = editionType === 'weekly-wrap'
+    ? "This Week's Big Stories"
+    : editionType === 'week-ahead'
+      ? 'What to Watch This Week'
+      : "Today's Big Stories";
+
   const badgeClasses = { hot: 'hot', new: 'new', money: 'money', world: 'world', brain: 'brain' };
   const badgeEmojis = { hot: '🔥', new: '🆕', money: '💰', world: '🌍', brain: '🧠' };
 
@@ -368,7 +377,7 @@ export function buildHTML(content) {
 
   <div class="section-header">
     <span class="emoji">🔥</span>
-    <h2>Today's Big Stories</h2>
+    <h2>${storiesHeading}</h2>
     <div class="line"></div>
   </div>
 
