@@ -1,4 +1,4 @@
-/* public/pwa.js — Market Buzz Kids PWA client glue.
+/* public/pwa.js — Market Juice PWA client glue.
  *
  * Responsibilities:
  *   1. Register the service worker.
@@ -118,7 +118,7 @@
     if (deferredPrompt) {
       // Chromium / Android — show button that fires the real install prompt.
       buildBanner({
-        message: '📈 Add Market Buzz Kids to your home screen for daily reminders.',
+        message: '📈 Add Market Juice to your home screen for daily reminders.',
         actionLabel: 'Install',
         onAction: async () => {
           if (!deferredPrompt) return;
@@ -131,7 +131,7 @@
     } else if (isIOSSafari()) {
       // iOS — no programmatic install; show share-button tutorial.
       buildBanner({
-        message: '📈 Tap the Share button below, then "Add to Home Screen" — get daily reminders for Market Buzz Kids.',
+        message: '📈 Tap the Share button below, then "Add to Home Screen" — get daily reminders for Market Juice.',
         actionLabel: 'Got it',
         onAction: () => { markDismissed(); hideBanner(); },
         iconHint: '⬆️',

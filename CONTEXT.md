@@ -1,12 +1,12 @@
-# Market Buzz Kids — Project Context
+# Market Juice — Project Context
 
-A daily kid-friendly stock market digest for ages 10–14 and their parents. Delivered as a 7 AM EST email teaser to the parent, linking to a full interactive web digest the kid plays through in ~3 minutes a day. Real investing principles taught through news, games, streaks, and progressive ranks. Free product with future-hedged monetization (privacy policy §3).
+**Market Juice** — your daily squeeze of market smarts. A kid-friendly daily stock-market digest for ages 10–14 and their parents. Delivered as a 7 AM EST email teaser to the parent, linking to a full interactive web digest the kid plays through in ~3 minutes a day. Real investing principles taught through news, games, streaks, and progressive ranks. Free product with future-hedged monetization (privacy policy §3). Branded as "Market Buzz Kids" from launch through May 2026; rebranded to "Market Juice" in late May 2026.
 
 **5+2 edition system:** Tuesday–Saturday digests follow the standard format (previous trading day recap). Sunday is **The Weekly Wrap** (full-week recap + Weekly Challenge card). Monday and the day after any NYSE market holiday is **The Week Ahead** (forward-looking preview of upcoming earnings + economic data). See `src/calendar.js` for the resolver.
 
-- **Repo:** https://github.com/SunnyD27/market-buzz-kids (public, `main`)
-- **Local:** `~/market-buzz-kids`
-- **Production:** https://market-buzz-kids-production.up.railway.app
+- **Repo:** https://github.com/SunnyD27/market-juice (public, `main`)
+- **Local:** `~/market-juice`
+- **Production:** https://themarketjuice.com (Railway service still at the original `market-buzz-kids-production.up.railway.app` subdomain until the service is renamed in the Railway dashboard; DNS for `themarketjuice.com` points to that subdomain)
 - **Deploy:** Railway (Dockerfile, auto-deploys on push to `main`)
 - **Port:** 3199 locally (3101 is the a3l-books project)
 
@@ -81,8 +81,8 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `POST /api/signup` | none | Creates user row (incl. username + bcrypt password_hash), sends verification email. |
 | `GET /api/verify` | token in query | Email verification → triggers consent email to parent. |
 | `GET /api/consent` | token in query | Parental consent → activates account, sends welcome email. |
-| `POST /api/login` | username + password | Validates credentials, sets `mbk_session` cookie, returns `{ success, redirect }`. |
-| `POST /api/logout` | none | Clears `mbk_session` cookie. |
+| `POST /api/login` | username + password | Validates credentials, sets `mj_session` cookie, returns `{ success, redirect }`. |
+| `POST /api/logout` | none | Clears `mj_session` cookie. |
 | `GET /api/check-username?username=…` | none | Real-time availability check for the signup form. Returns `{ available }`. |
 | `POST /api/forgot-password` | parent email in body | Always returns 200. If the email matches a user, emails a 1-hour reset link. |
 | `POST /api/reset-password` | token + password in body | Validates token, bcrypt-hashes password, marks token used. |
@@ -93,7 +93,7 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 
 **Static-leak gate:** the express.static middleware would otherwise serve `public/index.html` and `public/digest-data.json` directly, bypassing the `/digest` auth gate. A small middleware redirects those paths to `/digest` so `requireAuth` always runs.
 
-**Auth model (Phase 7):** signed httpOnly cookie (`mbk_session`) holds the user UUID. 30-day expiry, `sameSite=lax`, `secure` in production. Bcrypt cost-factor 10 for password hashing. No JWT, no Redis — every request does a Postgres lookup against the user id in the cookie. See `src/auth.js`.
+**Auth model (Phase 7):** signed httpOnly cookie (`mj_session`) holds the user UUID. 30-day expiry, `sameSite=lax`, `secure` in production. Bcrypt cost-factor 10 for password hashing. No JWT, no Redis — every request does a Postgres lookup against the user id in the cookie. See `src/auth.js`.
 
 ---
 
@@ -344,7 +344,7 @@ Stub-mode fallback: if `RESEND_API_KEY` is missing, emails log to console instea
 ## Local development
 
 ```bash
-cd ~/market-buzz-kids
+cd ~/market-juice
 PORT=3199 npm start
 ```
 
@@ -488,7 +488,8 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 6.7 | Immutable daily digest — `daily_digests` table, idempotent generation | ✅ |
 | 6.8 | 5+2 edition system — Weekly Wrap (Sun) + Week Ahead (Mon/post-holiday), `src/calendar.js` resolver, DATE_OVERRIDE support | ✅ |
 | 6.9 | Sunday Challenge — AI-generated weekly game, 4 rotating types (Trading Floor, CEO for a Day, Invest-a-Thon, Investor's Dilemma), `public/games/sunday-challenge.js` renderer, 4-week rotation derived from `edition.dateStr` | ✅ |
-| 7   | Kid-facing auth — username/password signup, bcrypt-hashed, `mbk_session` signed httpOnly cookie (30d), `/digest` gated by `requireAuth`, parent-initiated password reset via existing Resend email pipeline. New: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html` + `forgot-password.html` + `reset-password.html` + `auth.css`. | ✅ |
+| 7   | Kid-facing auth — username/password signup, bcrypt-hashed, `mj_session` signed httpOnly cookie (30d), `/digest` gated by `requireAuth`, parent-initiated password reset via existing Resend email pipeline. New: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html` + `forgot-password.html` + `reset-password.html` + `auth.css`. | ✅ |
+| 8   | Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com). New tagline: "Your daily squeeze of market smarts." All HTML pages, email templates, AI prompts, PWA manifest, privacy policy, and meta tags updated. Cookie renamed `mbk_session` → `mj_session`. Service worker cache prefix `mb-` → `mj-` + version bump to v2. No schema changes. | ✅ |
 
 ---
 

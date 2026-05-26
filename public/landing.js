@@ -1,4 +1,4 @@
-/* public/landing.js — Market Buzz Kids landing page client logic.
+/* public/landing.js — Market Juice landing page client logic.
  *
  * Responsibilities:
  *   - Read UTM params from current URL.

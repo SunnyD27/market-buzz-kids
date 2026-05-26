@@ -1,4 +1,4 @@
-# Market Buzz Kids — Session Handoff
+# Market Juice — Session Handoff
 
 > **Pick-up doc.** Read this first when resuming work on the project.
 > For the production architecture reference (file map, design decisions,
@@ -10,16 +10,16 @@
 
 ## What this project is
 
-**Market Buzz Kids** — a daily stock-market digest for kids ages 10–14 and
+**Market Juice** — a daily stock-market digest for kids ages 10–14 and
 their parents. Delivered as an email teaser to the parent at 7 AM EST,
 which links to a full interactive web digest the kid plays through in ~3
 minutes a day. Real investing principles taught through news, games,
 streaks, and progressive ranks. **100% free** (privacy policy §3 hedges
 the door for future sponsored content with a 30-day parent notice).
 
-- **Repo:** https://github.com/SunnyD27/market-buzz-kids (public)
-- **Local path:** `~/market-buzz-kids`
-- **Production:** **https://market-buzz-kids-production.up.railway.app**
+- **Repo:** https://github.com/SunnyD27/market-juice (public)
+- **Local path:** `~/market-juice`
+- **Production:** **https://themarketjuice.com** (Railway service URL is still `market-buzz-kids-production.up.railway.app` until renamed)
 - **Deploy:** Railway → GitHub integration. Push to `main` → auto-build → live in ~60s.
 - **Branches:** `main` is protected (PR-only). All work happens on `dev`.
 
@@ -43,7 +43,8 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.7** Immutable daily digest (`daily_digests` table) | ✅ | Redeploys don't regenerate |
 | **6.8** 5+2 edition system (Weekly Wrap + Week Ahead) | ✅ | Shipped to `main` via PR #3 |
 | **6.9** Sunday Challenge — AI-generated rotating weekly game | ✅ | Shipped via PR #4 |
-| **7** Kid auth — username/password + 30d session + reset | ✅ | On `dev`, see session log below |
+| **7** Kid auth — username/password + 30d session + reset | ✅ | Shipped via PR #5 |
+| **8** Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com) | ✅ | On `dev`, see session log below |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
 | **Polish** Investing principles expanded 8 → 11 | ✅ | Shipped via PR #3 |
@@ -93,7 +94,7 @@ no deletion of `main`.
 ## Local dev cheat sheet
 
 ```bash
-cd ~/market-buzz-kids
+cd ~/market-juice
 PORT=3199 npm start                       # boot (3199 to avoid a3l-books on 3101)
 curl http://localhost:3199/api/health     # Neon connectivity check
 
@@ -243,7 +244,7 @@ When ready: open PR `dev → main` on GitHub, merge, Railway auto-deploys.
 ## Pickup cheat sheet — opening this cold
 
 ```bash
-cd ~/market-buzz-kids
+cd ~/market-juice
 git log --oneline -15
 git branch --show-current               # should be dev or main
 git status
@@ -259,7 +260,7 @@ open http://localhost:3199/sample       # static — always works
 open http://localhost:3199/digest       # today's real digest
 
 # Production
-open https://market-buzz-kids-production.up.railway.app/
+open https://themarketjuice.com/
 ```
 
 ### Force-regenerate today's digest (immutability bypass)
@@ -322,7 +323,7 @@ process.exit(0);
 
 ---
 
-*Last updated end-of-Phase-7 (kid auth) session. On `dev` awaiting PR #5: calendar Monday-holiday fix (`9b8dbef`), doc refresh (`7715d2d`), and Phase 7 auth. Phase 6.3 push notifications still TODO. Resend domain verification still TODO to unblock signups beyond `sunny27@gmail.com`. Server-side engagement persistence is now possible — `req.user` is available wherever `requireAuth` runs.*
+*Last updated end-of-Phase-8 (Market Juice rebrand) session. PR #5 (Phase 7 kid auth + calendar fix + landing 11-principles + doc refresh) already shipped to `main`. On `dev` awaiting PR #6: the rebrand commit. themarketjuice.com Resend domain verified ✅ — emails now deliver to any parent. Phase 6.3 push notifications still TODO. Internal JS namespaces (`window.MBGames`, `window.MarketBuzz`, `mbg-` CSS prefix) still carry the old brand abbreviation — deliberate scope; future refactor.*
 
 ---
 
@@ -364,7 +365,7 @@ new public/games/sunday-challenge.js, CONTEXT.md.
 
 Added kid-facing authentication:
 - Login page at `/login` with username + password
-- 30-day signed httpOnly cookie session (`mbk_session`) via `cookie-parser`
+- 30-day signed httpOnly cookie session (`mj_session`) via `cookie-parser`
 - `/digest` now gated behind `requireAuth` middleware — also re-renders per request to greet the kid by name (was static disk-serve)
 - Signup form collects username + password; debounced availability check fires at `/api/check-username` as the parent types
 - Password hashed with `bcrypt` (cost factor 10)
@@ -384,3 +385,24 @@ Modified: `src/server.js`, `src/storage.js`, `src/schema.sql`, `src/emails.js` (
 Known out-of-scope items flagged during this session (NOT addressed):
 - `public/landing.html` still references "8 investing principles" in its marketing copy (lines 117-129). Should be updated to the 11-principle framework in a follow-up.
 - Server-side engagement (XP/streaks/ranks) is still localStorage-only. Auth provides the identity foundation; persistence is a future task.
+
+---
+
+## Session: Rebrand to Market Juice
+
+Renamed product from "Market Buzz Kids" to "Market Juice."
+- Domain: themarketjuice.com
+- Updated all HTML pages, email templates, AI prompts, PWA manifest, privacy policy, meta tags, cookie names (mbk_session → mj_session)
+- Service worker cache busted (new cache name)
+- Old cookie name will not be recognized — existing test users will need to re-login
+- No database schema changes needed (product name is not stored in DB)
+
+New tagline: **"Your daily squeeze of market smarts"** (replaces "The daily stock market cheat code for kids"). Hero h1 now reads "Your daily squeeze of / market smarts" with the gradient on the second line. Daily-teaser email subject line: "Today's Juice: [date]" (was "Today's Buzz: [date]"). Logo treatment: "Market <em>Juice</em>" with the second word styled gold (mirrors the previous "Market Buzz <em>Kids</em>" pattern).
+
+Service worker cache prefix changed from `mb-` to `mj-` and version bumped to v2; the activate handler reaps any leftover `mb-*` caches so kids with the PWA installed pre-rebrand get fresh assets on next visit.
+
+**Deliberately left for a follow-up:** internal JS namespaces still use the old brand abbreviations — `window.MBGames`, `window.MarketBuzz`, and CSS classes prefixed `mbg-`. None are user-visible (all internal JS/CSS identifiers) and none literally contain `mbk` or `MarketBuzzKids`, so the spec's strict scope didn't catch them. Renaming them touches every game file + inline scripts in template.js and is best done as a separate atomic refactor.
+
+**Domain caveat:** Railway deployment URL is still `market-buzz-kids-production.up.railway.app` until the service is renamed in the Railway dashboard. DNS for themarketjuice.com points there. Updated docs treat themarketjuice.com as canonical.
+
+Changes: 24 files (HTML pages, email templates, AI prompts, server.js, auth.js, template.js, sw.js, manifest.webmanifest, landing.css, landing.js, CONTEXT.md, HANDOFF.md, package.json, package-lock.json). No DB changes.

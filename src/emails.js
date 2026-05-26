@@ -42,7 +42,7 @@ export function appUrl(pathname = '/') {
 }
 
 const BRAND = {
-  name: 'Market Buzz Kids',
+  name: 'Market Juice',
   primary: '#0d1117',
   accent: '#bc8cff',
   gold: '#f0c040',
@@ -83,7 +83,7 @@ function shell({ preheader, body }) {
         <tr><td style="padding:28px 28px 12px 28px;">${body}</td></tr>
 
         <tr><td style="padding:24px 28px 28px 28px;border-top:1px solid #eee;color:#8b91a3;font-size:12px;line-height:1.6;">
-          You received this because someone signed your kid up for Market Buzz Kids.
+          You received this because someone signed your kid up for Market Juice.
           If that wasn't you, you can safely ignore this — no account will be created without your click.
           <br><br>
           Questions or want to delete data? Reply to this email or visit
@@ -102,7 +102,7 @@ function shell({ preheader, body }) {
 export function renderConsentEmail(user, link) {
   const kid = escapeHTML(user.kid_first_name);
   const deleteLink = appUrl('/parent/delete-data');
-  const subject = `Parental consent for ${kid} on Market Buzz Kids`;
+  const subject = `Parental consent for ${kid} on Market Juice`;
   const preheader = `One click to activate ${kid}'s account. We'll explain exactly what we collect and how it's used.`;
 
   const body = `
@@ -111,7 +111,7 @@ export function renderConsentEmail(user, link) {
     </h1>
     <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
       Hi — someone (probably you) just signed up <strong>${kid}</strong>, age ${user.kid_age},
-      for <strong>Market Buzz Kids</strong>. Because ${kid} is under 13, U.S. law (COPPA)
+      for <strong>Market Juice</strong>. Because ${kid} is under 13, U.S. law (COPPA)
       requires us to get your consent before activating their account.
     </p>
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
@@ -125,7 +125,7 @@ export function renderConsentEmail(user, link) {
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>${kid}'s first name and age (you gave us these)</li>
           <li>Engagement data: games played, quiz answers, XP, streak, Perfect Days</li>
-          <li>Push token only if ${kid} adds Market Buzz to home screen and turns on notifications</li>
+          <li>Push token only if ${kid} adds Market Juice to home screen and turns on notifications</li>
         </ul>
         <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">How we use it</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
@@ -167,9 +167,9 @@ export function renderConsentEmail(user, link) {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `Parental consent for ${kid} on Market Buzz Kids`,
+      `Parental consent for ${kid} on Market Juice`,
       '',
-      `Someone signed up ${kid} (age ${user.kid_age}) for Market Buzz Kids.`,
+      `Someone signed up ${kid} (age ${user.kid_age}) for Market Juice.`,
       `Because ${kid} is under 13, U.S. COPPA law requires your consent before we activate their account.`,
       '',
       `Click to confirm you are ${kid}'s parent/guardian and activate the account:`,
@@ -195,7 +195,7 @@ export function renderVerifyEmail(user, link) {
       Confirm your email to activate ${kid}'s account
     </h1>
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
-      Thanks for signing up <strong>${kid}</strong> for <strong>Market Buzz Kids</strong>!
+      Thanks for signing up <strong>${kid}</strong> for <strong>Market Juice</strong>!
       One click and the daily digest will start arriving tomorrow at 7 AM EST.
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
@@ -223,7 +223,7 @@ export function renderVerifyEmail(user, link) {
     text: [
       `Confirm your email — ${BRAND.name}`,
       '',
-      `Thanks for signing up ${kid} for Market Buzz Kids!`,
+      `Thanks for signing up ${kid} for Market Juice!`,
       'Click to confirm:',
       link,
       '',
@@ -242,7 +242,7 @@ export function renderWelcomeEmail(user) {
   const digestLink = appUrl('/digest');
   const loginLink = appUrl('/login');
   const subject = `${kid} is in! First digest arrives tomorrow at 7 AM`;
-  const preheader = `Welcome to Market Buzz Kids — here's what to expect.`;
+  const preheader = `Welcome to Market Juice — here's what to expect.`;
 
   // Phase 7: include kid's login credentials block when a username is on
   // file (every signup after Phase 7 will have one — older accounts won't).
@@ -264,7 +264,7 @@ export function renderWelcomeEmail(user) {
       🎉 ${kid} is in!
     </h1>
     <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
-      Welcome to <strong>Market Buzz Kids</strong>. Tomorrow at <strong>7 AM EST</strong>,
+      Welcome to <strong>Market Juice</strong>. Tomorrow at <strong>7 AM EST</strong>,
       ${kid} will get the first daily digest: real market headlines, today's biggest mover,
       and 3 short games that teach real investing principles.
     </p>
@@ -317,7 +317,7 @@ export function renderWelcomeEmail(user) {
 // existed — same body either way so we never leak existence.
 export function renderDeletionAckEmail({ parent_email }) {
   const email = escapeHTML(parent_email);
-  const subject = `Your Market Buzz Kids deletion request`;
+  const subject = `Your Market Juice deletion request`;
   const preheader = `We received your deletion request.`;
 
   const body = `
@@ -325,7 +325,7 @@ export function renderDeletionAckEmail({ parent_email }) {
       Deletion request received
     </h1>
     <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
-      We received a request to delete the Market Buzz Kids account associated with
+      We received a request to delete the Market Juice account associated with
       <strong>${email}</strong>.
     </p>
     <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
@@ -344,7 +344,7 @@ export function renderDeletionAckEmail({ parent_email }) {
     text: [
       'Deletion request received',
       '',
-      `We received a request to delete the Market Buzz Kids account associated with ${parent_email}.`,
+      `We received a request to delete the Market Juice account associated with ${parent_email}.`,
       'If an account existed at that address, it has been removed.',
       'If no account existed, no further action is needed.',
       '',
@@ -378,7 +378,7 @@ export function renderDailyTeaserEmail(user, content) {
   const headline = content?.stories?.[0]?.title || 'Today\'s biggest market story';
   const dateLabel = escapeHTML(content?.date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
 
-  const subject = `${vibeEmoji} Today's Buzz: ${dateLabel}`;
+  const subject = `${vibeEmoji} Today's Juice: ${dateLabel}`;
   const preheader = topMoverLine
     ? `Today's mover: ${topMoverLine}. Tap to read.`
     : `Today's digest is live — tap to read.`;
@@ -413,7 +413,7 @@ export function renderDailyTeaserEmail(user, content) {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `Today's Market Buzz — ${dateLabel}`,
+      `Today's Market Juice — ${dateLabel}`,
       '',
       `Market vibe: ${vibeWord}`,
       headline,
@@ -433,7 +433,7 @@ export function renderDailyTeaserEmail(user, content) {
 // the parent picks a new password for the kid.
 export function renderPasswordResetEmail(user, link) {
   const kid = escapeHTML(user.kid_first_name || 'your kid');
-  const subject = `Reset password for ${kid}'s Market Buzz Kids account`;
+  const subject = `Reset password for ${kid}'s Market Juice account`;
   const preheader = `Set a new password for ${kid}. Link expires in 1 hour.`;
 
   const body = `
@@ -441,7 +441,7 @@ export function renderPasswordResetEmail(user, link) {
       🔐 Reset password
     </h1>
     <p style="margin:0 0 14px 0;font-size:15px;color:#454a5b;">
-      Hi! Someone requested a password reset for <strong>${kid}</strong>'s Market Buzz Kids account.
+      Hi! Someone requested a password reset for <strong>${kid}</strong>'s Market Juice account.
       Click the button below to set a new password.
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
@@ -464,7 +464,7 @@ export function renderPasswordResetEmail(user, link) {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `Reset password for ${kid}'s Market Buzz Kids account`,
+      `Reset password for ${kid}'s Market Juice account`,
       '',
       `Someone requested a password reset. Click to set a new one:`,
       link,
