@@ -51,6 +51,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- is_active becomes TRUE once email verified AND (consent given OR not required)
   is_active           BOOLEAN      NOT NULL DEFAULT FALSE,
 
+  -- Auth (Phase 7 — kid login)
+  username            VARCHAR(30),
+  password_hash       VARCHAR(255),
+
   -- Push (Phase 4 PWA support; populated when kid subscribes)
   push_subscription   JSONB,
 
@@ -70,6 +74,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS users_parent_email_active
 CREATE INDEX IF NOT EXISTS users_active_idx ON users (is_active) WHERE deleted_at IS NULL;
 CREATE INDEX IF NOT EXISTS users_signup_at_idx ON users (signup_at);
 
+-- Phase 7: case-insensitive uniqueness for kid usernames. Partial so
+-- pre-Phase-7 rows (NULL username) don't collide with each other.
+CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uniq
+  ON users (LOWER(username))
+  WHERE username IS NOT NULL;
+
 -- ============================================================
 -- verification_tokens
 -- ============================================================
@@ -79,7 +89,9 @@ CREATE INDEX IF NOT EXISTS users_signup_at_idx ON users (signup_at);
 CREATE TABLE IF NOT EXISTS verification_tokens (
   token         VARCHAR(64)  PRIMARY KEY,        -- 32-byte hex, generated at signup
   user_id       UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent')),
+  -- Phase 7 added 'password_reset'; older deployments need the migration in
+  -- src/migrations/add-auth-columns.sql to expand this CHECK.
+  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset')),
   expires_at    TIMESTAMPTZ  NOT NULL,
   used_at       TIMESTAMPTZ,
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()

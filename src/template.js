@@ -3,7 +3,21 @@
 // replaces Coming Up. Engagement systems (XP, ranks, streaks, games) come in
 // later phases.
 
-export function buildHTML(content) {
+/**
+ * Build the daily digest HTML.
+ *
+ * @param {object} content  The full digest JSON payload (from the DB row or
+ *                          the sample-digest fallback). Same shape generateContent()
+ *                          produces.
+ * @param {object} [opts]   Per-request rendering hints. Currently:
+ *                            kidName — kid's first name to greet in the header.
+ *                                       Omitted on /sample (which has no logged-in user).
+ *                                       Drives the "Hey, X! 👋" pill + Log out link.
+ *                          The opts argument is the only path through which the
+ *                          template learns *who* is viewing. Everything else
+ *                          (stories, scoreboard, games) is identical across kids.
+ */
+export function buildHTML(content, opts = {}) {
   const {
     date, marketVibe, vibeSummary, bigPicture,
     scoreboard, stories, didYouKnow, wordOfDay,
@@ -53,6 +67,17 @@ export function buildHTML(content) {
   // omit this line entirely so the header looks identical to before.
   const editionLabelHTML = editionLabel
     ? `<div class="edition-label">${escapeHTML(editionLabel)}</div>`
+    : '';
+
+  // Phase 7 — personalized greeting + logout. Only rendered when a kid
+  // name was passed in (i.e. an authenticated /digest request). /sample
+  // never has a kidName and falls through to the un-greeted header.
+  const kidName = opts.kidName;
+  const greetingHTML = kidName
+    ? `<div class="kid-greeting">
+         <span class="kid-greeting-name">Hey, ${escapeHTML(kidName)}! 👋</span>
+         <a href="#" class="logout-link" id="logout-link">Log out</a>
+       </div>`
     : '';
 
   // "Markets closed" note — muted single line right above the scoreboard.
@@ -294,6 +319,26 @@ export function buildHTML(content) {
     -webkit-text-fill-color: transparent;
     letter-spacing: 0.2px;
   }
+  /* Phase 7 — small greeting + logout link in the header. Subtle by
+     design: this is for shared-device hygiene, not a daily-visible CTA. */
+  .kid-greeting {
+    margin-top: 10px;
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 5px 12px;
+    background: rgba(88,166,255,0.08);
+    border: 1px solid rgba(88,166,255,0.25);
+    border-radius: 999px;
+    font-size: 13px;
+  }
+  .kid-greeting-name { color: var(--text-bright); font-weight: 600; }
+  .kid-greeting .logout-link {
+    color: var(--text-dim);
+    text-decoration: none;
+    font-size: 12px;
+    border-left: 1px solid rgba(255,255,255,0.15);
+    padding-left: 12px;
+  }
+  .kid-greeting .logout-link:hover { color: var(--text-bright); }
   /* Weekly Challenge card — Sunday-only. Distinct blue/purple gradient
      so it doesn't visually compete with the purple dyk-card next to it. */
   .wc-card {
@@ -674,6 +719,7 @@ export function buildHTML(content) {
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
     ${editionLabelHTML}
     <div class="tagline">The daily stock market cheat code for kids</div>
+    ${greetingHTML}
   </div>
 
   <!-- Investor Profile Bar — rendered by /engagement.js from localStorage -->
@@ -791,6 +837,21 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
     document.getElementById('word-card').classList.add('word-revealed');
     if (window.MarketBuzz) window.MarketBuzz.recordWordRevealed();
   }
+
+  // ---- Phase 7: logout link ----
+  // Tiny click handler instead of inline onclick="…" so the CSP-friendly
+  // pattern matches the rest of the file. Hits /api/logout (POST → clears
+  // the cookie) and bounces to /login.
+  (function () {
+    var el = document.getElementById('logout-link');
+    if (!el) return;
+    el.addEventListener('click', function (e) {
+      e.preventDefault();
+      fetch('/api/logout', { method: 'POST' })
+        .catch(function () { /* ignore — cookie expiry will handle it */ })
+        .finally(function () { location.href = '/login'; });
+    });
+  })();
 
   ${hasDailyChallenge ? `
   // ---- Daily Challenge (Phase 6.4) -------------------------------------

@@ -193,6 +193,7 @@ export function getEditionType(date = now()) {
   // noon-UTC anchor as the rest of the math so DST is irrelevant.
   const yesterday = new Date(new Date(dateStr + 'T12:00:00Z').getTime() - 86400_000);
   const yesterdayStr = yesterday.toISOString().slice(0, 10);
+  const yesterdayDayOfWeek = yesterday.getUTCDay();
 
   // Sunday → Weekly Wrap
   if (day === 0) {
@@ -222,8 +223,15 @@ export function getEditionType(date = now()) {
     };
   }
 
-  // Tuesday–Saturday: was yesterday a market holiday? → Week Ahead
-  if (isMarketHoliday(yesterdayStr)) {
+  // Tuesday–Saturday: was yesterday a market holiday? → Week Ahead.
+  //
+  // CRITICAL: skip this when yesterday was a Monday holiday. Monday
+  // already produced a Week Ahead (the `day === 1` branch above), so
+  // Tuesday after a Monday holiday should be a STANDARD edition — not
+  // a second back-to-back Week Ahead with the same stale Friday data.
+  // The post-holiday treatment is for Tue-Fri holidays where the
+  // previous trading day wasn't already covered by a Week Ahead.
+  if (isMarketHoliday(yesterdayStr) && yesterdayDayOfWeek !== 1) {
     return {
       editionType: 'week-ahead',
       label: 'The Week Ahead',

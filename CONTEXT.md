@@ -71,17 +71,29 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | Route | Auth | Purpose |
 |---|---|---|
 | `GET /` | none | Landing page (`public/landing.html`). Parent-facing signup + CTA to `/sample`. |
-| `GET /digest` | none | Today's digest (kid-facing, PWA `start_url`). Read path: disk → DB → sample fallback. |
+| `GET /digest` | **session cookie (Phase 7)** | Today's digest (kid-facing, PWA `start_url`). `requireAuth` middleware. Re-renders from the DB row per request with the kid's first name in the greeting. Falls back to `/sample` when no row yet. |
 | `GET /sample` | none | Static evergreen sample digest (`public/data/sample-digest.json`). Never auto-regenerates. |
+| `GET /login` | none | Login page (`public/login.html`). Redirects already-logged-in kids to `/digest`. |
+| `GET /forgot-password` | none | Parent-initiated password reset request page. |
+| `GET /reset-password?token=…` | token in query | Form for picking a new password. Token validated on submit. |
 | `GET /privacy` | none | COPPA-compliant privacy policy. |
 | `GET /parent/delete-data` | none | Parent data deletion request form. |
-| `POST /api/signup` | none | Creates user row, sends verification email. |
+| `POST /api/signup` | none | Creates user row (incl. username + bcrypt password_hash), sends verification email. |
 | `GET /api/verify` | token in query | Email verification → triggers consent email to parent. |
 | `GET /api/consent` | token in query | Parental consent → activates account, sends welcome email. |
+| `POST /api/login` | username + password | Validates credentials, sets `mbk_session` cookie, returns `{ success, redirect }`. |
+| `POST /api/logout` | none | Clears `mbk_session` cookie. |
+| `GET /api/check-username?username=…` | none | Real-time availability check for the signup form. Returns `{ available }`. |
+| `POST /api/forgot-password` | parent email in body | Always returns 200. If the email matches a user, emails a 1-hour reset link. |
+| `POST /api/reset-password` | token + password in body | Validates token, bcrypt-hashes password, marks token used. |
 | `POST /api/delete-data` | email in body | Soft-delete user data, sends deletion acknowledgment email. |
 | `POST /api/cron/send-digest` | `X-Cron-Secret` header | External trigger for daily teaser fan-out. |
 | `GET /generate?key=<ADMIN_KEY>` | query param | Manually triggers `generateDigest()`. |
 | `GET /api/health` | none | DB connectivity check. |
+
+**Static-leak gate:** the express.static middleware would otherwise serve `public/index.html` and `public/digest-data.json` directly, bypassing the `/digest` auth gate. A small middleware redirects those paths to `/digest` so `requireAuth` always runs.
+
+**Auth model (Phase 7):** signed httpOnly cookie (`mbk_session`) holds the user UUID. 30-day expiry, `sameSite=lax`, `secure` in production. Bcrypt cost-factor 10 for password hashing. No JWT, no Redis — every request does a Postgres lookup against the user id in the cookie. See `src/auth.js`.
 
 ---
 
@@ -91,16 +103,18 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 
 | File | Role |
 |---|---|
-| `server.js` | Express app. Routes, signup/consent flow, cron, boot bootstrap, daily-teaser fan-out. `dotenv` loaded with `override:true` (macOS launchd gotcha). |
+| `server.js` | Express app. Routes, signup/consent/login flow, cron, boot bootstrap, daily-teaser fan-out, Phase 7 auth migration. `cookieParser` middleware seeded with `SESSION_SECRET`. Static-leak gate redirects `/index.html` and `/digest-data.json` to `/digest`. `dotenv` loaded with `override:true` (macOS launchd gotcha). |
+| `auth.js` | Phase 7 session helpers. `requireAuth` middleware (looks up user by signed cookie, attaches `req.user`, redirects to `/login` on miss), `setSession`/`clearSession` cookie writers. 30-day expiry. |
 | `generate.js` | **Idempotent** digest generator. Checks `daily_digests` DB first; if today's row exists, writes to disk and returns. Otherwise: full pipeline → INSERT → disk. |
 | `data.js` | FMP `/stable/` API client. `fetchMarketData`, `fetchNews`, `fetchMovers`, `fetchTopMover`, `fetchQuotes`. All ticker fetches use **per-ticker fan-out** (FMP free tier doesn't support multi-ticker batch). Tolerates `changePercentage` ↔ `changesPercentage` field rename. |
 | `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). `generateContent` routes between three internal prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) based on `opts.edition.editionType` from calendar.js. **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
 | `calendar.js` | Edition type resolver. NYSE holiday calendar, day-of-week detection, `DATE_OVERRIDE` env-var support for testing. Exports `getEditionType()`, `getEditionDate()`, `isMarketHoliday()`, `getLastTradingDay()`, `getHolidayName()`, plus `MARKET_HOLIDAYS` for 2026–2027. |
 | `games.js` | Daily Challenge orchestrator. Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, in parallel). |
-| `template.js` | Builds digest HTML. Pure function — same input always produces same output. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
+| `template.js` | Builds digest HTML. `buildHTML(content, opts)` — `opts.kidName` (Phase 7) drives a personalized greeting + Log out pill in the header. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
 | `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
 | `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
-| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. Same API surface as the Phase 5 in-memory version. |
+| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. `createUserFromSignup` accepts `username` + `password_hash` (Phase 7). |
+| `migrations/add-auth-columns.sql` | Phase 7 forward-only migration: adds `username` + `password_hash` columns to `users`, partial unique index on `LOWER(username)`, expands `verification_tokens.purpose` CHECK to include `password_reset`. server.js runs this on boot if the columns are missing — also kept here for manual one-shots. |
 | `content-history.js` | Word-of-Day + Did-You-Know rotation guard. Generic `getRecent(kind)` / `record(kind)` backed by `state/content-history.json`. 30-day window. |
 | `emails.js` | Email renderers (pure) + `sendEmail` (Resend SDK). Five types: verify, consent, welcome, deletion-ack, daily teaser. Stub-mode fallback if `RESEND_API_KEY` is missing. |
 | `companies.js` | 75-company curated kid-recognizable list with `lookupCompany(ticker)` helper. |
@@ -110,7 +124,9 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 
 | Path | Role |
 |---|---|
-| `landing.html` / `.css` / `.js` | Landing + signup. CTA links to `/sample`, not `/digest`. |
+| `landing.html` / `.css` / `.js` | Landing + signup. Phase 7: collects username + password during signup, with real-time availability check against `/api/check-username`. CTA links to `/sample`, not `/digest`. |
+| `login.html` / `forgot-password.html` / `reset-password.html` | Phase 7 auth pages. Shared `public/auth.css` (matches landing-page design tokens). All three submit via fetch to the corresponding `/api` endpoints. |
+| `auth.css` | Shared styles for the 3 auth pages. Self-contained — does not depend on landing.css. |
 | `privacy.html` | COPPA-compliant privacy policy. §3 hedged for future sponsored content (30-day notice). |
 | `parent-delete-data.html` | Data deletion request UI. |
 | `index.html` | Generated daily digest (**gitignored** — rebuilt from DB on each boot). |
@@ -471,6 +487,8 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 6.6 | Real-data verification — end-to-end live pipeline | ✅ |
 | 6.7 | Immutable daily digest — `daily_digests` table, idempotent generation | ✅ |
 | 6.8 | 5+2 edition system — Weekly Wrap (Sun) + Week Ahead (Mon/post-holiday), `src/calendar.js` resolver, DATE_OVERRIDE support | ✅ |
+| 6.9 | Sunday Challenge — AI-generated weekly game, 4 rotating types (Trading Floor, CEO for a Day, Invest-a-Thon, Investor's Dilemma), `public/games/sunday-challenge.js` renderer, 4-week rotation derived from `edition.dateStr` | ✅ |
+| 7   | Kid-facing auth — username/password signup, bcrypt-hashed, `mbk_session` signed httpOnly cookie (30d), `/digest` gated by `requireAuth`, parent-initiated password reset via existing Resend email pipeline. New: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html` + `forgot-password.html` + `reset-password.html` + `auth.css`. | ✅ |
 
 ---
 

@@ -41,24 +41,31 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
 | **6.7** Immutable daily digest (`daily_digests` table) | ✅ | Redeploys don't regenerate |
-| **6.8** 5+2 edition system (Weekly Wrap + Week Ahead) | ✅ | On `dev`, not yet merged to `main` at last edit |
+| **6.8** 5+2 edition system (Weekly Wrap + Week Ahead) | ✅ | Shipped to `main` via PR #3 |
+| **6.9** Sunday Challenge — AI-generated rotating weekly game | ✅ | Shipped via PR #4 |
+| **7** Kid auth — username/password + 30d session + reset | ✅ | On `dev`, see session log below |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
-| **Polish** Market-closed note above scoreboard | ✅ | On `dev` |
+| **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
+| **Polish** Investing principles expanded 8 → 11 | ✅ | Shipped via PR #3 |
+| **Polish** Stories-section heading reflects edition type | ✅ | Shipped via PR #3 |
+| **Polish** Week-ahead market-closed copy → "yesterday" | ✅ | Shipped via PR #4 |
+| **Polish** Skip post-holiday Week Ahead when holiday is Monday | ✅ | On `dev`, `9b8dbef` |
 | Deploy | ✅ | Railway live |
 
 **Recent commits (most recent first):**
 
 | Commit | Branch | What |
 |---|---|---|
-| `632309a` | `dev` | `feat: market-closed note above scoreboard for weekend/holiday editions` |
-| `3454a9d` | `dev` | `feat: 5+2 edition system — Weekly Wrap + Week Ahead` (Phase 6.8) |
+| `940a955` | `dev` | `fix: week-ahead market-closed copy reads "yesterday" not "today"` |
+| `4aac70a` | `dev` | `feat: add Sunday Challenge — AI-generated rotating weekly game` (Phase 6.9) |
+| `5fa8834` | `main` | PR #3 merge — ships principles 8→11, dataset remap, edition-aware stories heading |
+| `a7c4d25` | `main` | `fix: stories-section heading reflects edition type` |
+| `c2f73e1` | `main` | `fix: remap game dataset principles from old 8 to new 11 numbering` |
+| `04823cf` | `main` | `feat: expand investing principles from 8 to 11` |
+| `0b20c14` | `main` | PR #2 merge — ships Phase 6.8 (5+2 editions) + market-closed note |
+| `632309a` | `main` | `feat: market-closed note above scoreboard for weekend/holiday editions` |
+| `3454a9d` | `main` | `feat: 5+2 edition system — Weekly Wrap + Week Ahead` (Phase 6.8) |
 | `10c069e` | `main` | `fix: migrate Claude model from sonnet-4-20250514 to sonnet-4-6` |
-| `7b00d38` | `main` | `HANDOFF.md: full Phase 6 session log + architecture decisions` |
-| `99816b7` | `main` | `Phase 6.7: immutable daily digest — persist to Postgres, idempotent generation` |
-| `bef1787` | `main` | `Fix /digest immediately-after-signup UX: bootstrap on boot + fallback to sample` |
-| `e3164c8` | `main` | `Add /sample route: static teaser digest` |
-| `0bdec78` | `main` | `Soften ad-language: privacy hedges + landing strips ad/tracking claims` |
-| `7b4b322` | `main` | `Phase 6 (1-6/6): backend, real-data verification, polish` (the big one) |
 
 ---
 
@@ -208,10 +215,13 @@ Currently in **Resend sandbox mode** — `from: onboarding@resend.dev` can only 
 
 ### Pending on `dev` to merge into `main`
 
-- Phase 6.8 (5+2 editions) — `3454a9d`
-- Market-closed note — `632309a`
+- Skip post-holiday Week Ahead when holiday is Monday — `9b8dbef`
+- Doc refresh through Phase 6.9 — `7715d2d`
+- Phase 7 kid auth — landing on the next commit after this doc refresh
 
 When ready: open PR `dev → main` on GitHub, merge, Railway auto-deploys.
+
+> Phase 6.9 Sunday Challenge + market-closed copy fix already shipped to `main` via PR #4. Earlier polish (principles 8→11, dataset remap, edition-aware stories heading) shipped via PR #3.
 
 ### Open questions / deferred polish
 
@@ -312,7 +322,7 @@ process.exit(0);
 
 ---
 
-*Last updated end-of-Phase-6.8 + market-closed-note session. On `dev`: `3454a9d` (editions) + `632309a` (market-closed note). Awaiting PR `dev → main` to ship both to production. Phase 6.3 push notifications still TODO. Resend domain verification still TODO to unblock signups beyond `sunny27@gmail.com`.*
+*Last updated end-of-Phase-7 (kid auth) session. On `dev` awaiting PR #5: calendar Monday-holiday fix (`9b8dbef`), doc refresh (`7715d2d`), and Phase 7 auth. Phase 6.3 push notifications still TODO. Resend domain verification still TODO to unblock signups beyond `sunny27@gmail.com`. Server-side engagement persistence is now possible — `req.user` is available wherever `requireAuth` runs.*
 
 ---
 
@@ -347,3 +357,30 @@ Backward compat: template still renders the old weeklyChallenge card if a cached
 
 Changes: src/ai.js (Weekly Wrap prompt), src/template.js (Sunday Challenge section + CSS + script tag),
 new public/games/sunday-challenge.js, CONTEXT.md.
+
+---
+
+## Session: Phase 7 — Kid Auth (username + password)
+
+Added kid-facing authentication:
+- Login page at `/login` with username + password
+- 30-day signed httpOnly cookie session (`mbk_session`) via `cookie-parser`
+- `/digest` now gated behind `requireAuth` middleware — also re-renders per request to greet the kid by name (was static disk-serve)
+- Signup form collects username + password; debounced availability check fires at `/api/check-username` as the parent types
+- Password hashed with `bcrypt` (cost factor 10)
+- Password reset: parent enters email → 1-hour `password_reset` token → click → set new password → log in
+- Real-time username availability + clean 409 error if a username gets sniped between check and submit
+- Digest header greets the kid: "Hey, [name]! 👋" with a small Log out pill
+- Welcome email now includes the kid's username + login link
+- Static-leak gate redirects `/index.html` and `/digest-data.json` (which the static middleware would otherwise serve) to `/digest` so the auth gate always runs
+
+DB migration runs on boot. `verification_tokens.purpose` CHECK constraint was expanded to accept `password_reset` (was: only `email_verify` and `parental_consent`). Existing rows are unaffected.
+
+`SESSION_SECRET` added to `.env.example`. Production MUST set this; local dev falls back to a hardcoded string with a loud warning.
+
+New files: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html`, `public/forgot-password.html`, `public/reset-password.html`, `public/auth.css`.
+Modified: `src/server.js`, `src/storage.js`, `src/schema.sql`, `src/emails.js` (welcome + new password-reset renderer), `src/template.js` (kidName + greeting/logout), `public/landing.html`, `public/landing.js`, `public/landing.css`, `CONTEXT.md`, `.env.example`.
+
+Known out-of-scope items flagged during this session (NOT addressed):
+- `public/landing.html` still references "8 investing principles" in its marketing copy (lines 117-129). Should be updated to the 11-principle framework in a follow-up.
+- Server-side engagement (XP/streaks/ranks) is still localStorage-only. Auth provides the identity foundation; persistence is a future task.

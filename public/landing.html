@@ -113,20 +113,26 @@
   </section>
 
   <!-- ============================================================ -->
-  <!-- What they'll learn (8 investing principles)                   -->
+  <!-- What they'll learn (11 investing principles)                  -->
   <!-- ============================================================ -->
+  <!-- Numbers/names match INVESTING_PRINCIPLES in src/ai.js and the -->
+  <!-- PRINCIPLES mapping in public/games/shared.js — keep all three -->
+  <!-- in sync when this list changes.                               -->
   <section class="principles">
     <h2>What they'll learn</h2>
-    <p class="section-sub">Every game, every reveal, every fact traces back to one of these 8 core principles.</p>
+    <p class="section-sub">Every game, every reveal, every fact traces back to one of these 11 core principles.</p>
     <div class="principles-grid">
-      <div class="principle"><div class="pri-num">1</div><div class="pri-icon">⏳</div><div class="pri-text"><h4>Start early</h4><p>Let time work for you. Compound interest is the closest thing to magic in finance.</p></div></div>
-      <div class="principle"><div class="pri-num">2</div><div class="pri-icon">🧺</div><div class="pri-text"><h4>Diversify</h4><p>Don't put all your eggs in one basket. Index funds vs single stocks.</p></div></div>
-      <div class="principle"><div class="pri-num">3</div><div class="pri-icon">📈</div><div class="pri-text"><h4>Volatility is normal</h4><p>Markets go up and down, but mostly up. Don't panic-sell on a bad day.</p></div></div>
-      <div class="principle"><div class="pri-num">4</div><div class="pri-icon">🔍</div><div class="pri-text"><h4>Know what you own</h4><p>Understand how a company makes money before you invest in it.</p></div></div>
-      <div class="principle"><div class="pri-num">5</div><div class="pri-icon">⚖️</div><div class="pri-text"><h4>Risk &amp; reward</h4><p>Higher potential returns come with higher risk. They're connected.</p></div></div>
-      <div class="principle"><div class="pri-num">6</div><div class="pri-icon">📰</div><div class="pri-text"><h4>News moves markets</h4><p>Real-world events affect stock prices. Reading the news = reading the market.</p></div></div>
-      <div class="principle"><div class="pri-num">7</div><div class="pri-icon">🏛️</div><div class="pri-text"><h4>Think like an owner</h4><p>Buying stock = owning a piece of a business. Not gambling. Not betting.</p></div></div>
-      <div class="principle"><div class="pri-num">8</div><div class="pri-icon">💸</div><div class="pri-text"><h4>Fees matter</h4><p>Small percentages compound into big differences over time. Watch the costs.</p></div></div>
+      <div class="principle"><div class="pri-num">1</div><div class="pri-icon">💰</div><div class="pri-text"><h4>Pay Yourself First</h4><p>Save before you spend. The first dollar of every paycheck has your name on it.</p></div></div>
+      <div class="principle"><div class="pri-num">2</div><div class="pri-icon">🚀</div><div class="pri-text"><h4>Compound Growth</h4><p>Make your money work for you. Compound growth is the closest thing to magic in finance.</p></div></div>
+      <div class="principle"><div class="pri-num">3</div><div class="pri-icon">🧾</div><div class="pri-text"><h4>Wealth Is the Gap</h4><p>Spend less than you earn. The bigger the gap, the faster wealth builds.</p></div></div>
+      <div class="principle"><div class="pri-num">4</div><div class="pri-icon">🔍</div><div class="pri-text"><h4>Know What You Own</h4><p>Invest in what you understand. Know how a company actually makes money.</p></div></div>
+      <div class="principle"><div class="pri-num">5</div><div class="pri-icon">🧺</div><div class="pri-text"><h4>Diversify</h4><p>Don't put all your eggs in one basket. Spread risk across many things.</p></div></div>
+      <div class="principle"><div class="pri-num">6</div><div class="pri-icon">⏳</div><div class="pri-text"><h4>Be Patient</h4><p>Think in years, not days. Markets reward people who can sit still.</p></div></div>
+      <div class="principle"><div class="pri-num">7</div><div class="pri-icon">🧘</div><div class="pri-text"><h4>Control Your Emotions</h4><p>Don't follow the crowd. The best decisions feel boring at the time.</p></div></div>
+      <div class="principle"><div class="pri-num">8</div><div class="pri-icon">🏛️</div><div class="pri-text"><h4>Think Like an Owner</h4><p>Stocks are real businesses. Buying a share = owning a slice of a company.</p></div></div>
+      <div class="principle"><div class="pri-num">9</div><div class="pri-icon">📆</div><div class="pri-text"><h4>Stay Consistent</h4><p>Regular investing beats perfect timing. Same amount, every month, for years.</p></div></div>
+      <div class="principle"><div class="pri-num">10</div><div class="pri-icon">🏷️</div><div class="pri-text"><h4>Price vs Value</h4><p>Expensive isn't always valuable. The price is what you pay; value is what you get.</p></div></div>
+      <div class="principle"><div class="pri-num">11</div><div class="pri-icon">🏠</div><div class="pri-text"><h4>Own Assets</h4><p>Make money while you sleep. Own things that pay you — not just stuff that sits.</p></div></div>
     </div>
   </section>
 
@@ -171,6 +177,29 @@
           <div class="field-note" id="note-coppa" hidden>
             🛡️ For kids 12 &amp; under, we'll send you a quick parental consent email. Takes 10 seconds.
           </div>
+        </div>
+
+        <div class="form-row">
+          <label for="username">Pick a username for your kid <span class="req">*</span></label>
+          <input type="text" id="username" name="username"
+                 required minlength="3" maxlength="20"
+                 pattern="[a-zA-Z0-9_]+"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 placeholder="e.g. StockWhiz2014"
+                 title="Letters, numbers, and underscores only">
+          <div class="field-error" id="err-username"></div>
+          <div class="field-note" id="note-username">
+            <span id="username-status" class="username-status"></span>
+            This is what they'll use to log in. Letters, numbers, and underscores only.
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="password">Create a password <span class="req">*</span></label>
+          <input type="password" id="password" name="password"
+                 required minlength="6" autocomplete="new-password"
+                 placeholder="At least 6 characters">
+          <div class="field-error" id="err-password"></div>
         </div>
 
         <details class="optional-fields">

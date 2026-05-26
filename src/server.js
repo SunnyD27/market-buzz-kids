@@ -3,6 +3,9 @@
 import dotenv from 'dotenv';
 dotenv.config({ override: true });
 import express from 'express';
+import cookieParser from 'cookie-parser';
+import bcrypt from 'bcrypt';
+import { randomBytes } from 'crypto';
 import cron from 'node-cron';
 import path from 'path';
 import fs from 'fs';
@@ -12,12 +15,14 @@ import { buildHTML } from './template.js';
 import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
 import { getTodaysDigest, todayNY } from './digest-store.js';
+import { requireAuth, setSession, clearSession } from './auth.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
   renderWelcomeEmail,
   renderDeletionAckEmail,
   renderDailyTeaserEmail,
+  renderPasswordResetEmail,
   sendEmail,
 } from './emails.js';
 
@@ -34,6 +39,29 @@ app.set('trust proxy', true);
 
 // Parse JSON bodies for /api endpoints (signup, deletion).
 app.use(express.json({ limit: '32kb' }));
+
+// Phase 7 — signed-cookie parser for the mbk_session cookie. The secret
+// signs the cookie value; cookie-parser refuses tampered cookies
+// automatically. Fallback only used in local dev — production MUST set
+// SESSION_SECRET. We log loudly if it's the fallback, so production
+// misconfigurations don't ship silently.
+const SESSION_SECRET = process.env.SESSION_SECRET || 'market-buzz-kids-fallback-secret-DEV-ONLY';
+if (!process.env.SESSION_SECRET) {
+  console.warn('[auth] SESSION_SECRET not set — using insecure dev fallback. SET THIS IN PRODUCTION.');
+}
+app.use(cookieParser(SESSION_SECRET));
+
+// Phase 7 — static-leak gate. The static middleware below would happily
+// serve public/index.html (the rendered digest) and public/digest-data.json
+// (its source) at /index.html and /digest-data.json, bypassing the
+// /digest auth gate entirely. Redirect those paths to /digest so the
+// auth middleware runs.
+app.use((req, res, next) => {
+  if (req.path === '/index.html' || req.path === '/digest-data.json') {
+    return res.redirect('/digest');
+  }
+  next();
+});
 
 // Static assets live under /public. This serves CSS, JS, images, manifest,
 // service worker — anything explicitly placed in the public dir. NOTE: we
@@ -61,60 +89,43 @@ app.get('/', (req, res) => {
 // `/digest` — the daily digest. Kid-facing surface, linked from the
 // daily teaser email + the activation page. PWA start_url points here.
 //
-// Read-path priority (Phase 6.7):
-//   1. public/index.html on disk — fastest (sendFile, no JSON parsing).
-//      Populated by generateDigest() and persisted across requests
-//      within the same container's lifetime.
-//   2. daily_digests row in Postgres — source of truth. Survives
-//      redeploys, restarts, container rotation. If disk is empty (fresh
-//      container), we re-render from the DB row and warm the disk so
-//      subsequent requests hit the fast path.
-//   3. /sample fallback — only when (2) also has nothing. This means
-//      today's row hasn't been generated AT ALL yet (e.g., first deploy
-//      of the day before the bootstrap finished). Sample provides
-//      immediate value so the kid is never stuck on a "brewing" page.
+// Phase 7 — gated by requireAuth. Logged-out kids → /login.
+// Phase 7 — re-renders per request to personalize the greeting in the
+//   header. The DB row's content is identical across kids; only the
+//   "Hey, Sam!" line differs. We DON'T fast-path from disk anymore
+//   because the disk file is baked for a specific kid (whoever caused
+//   the last write), and serving it to a different kid would greet
+//   them by the wrong name. buildHTML is fast enough (~5ms) that this
+//   is fine.
 //
-// Critical invariant: paths 1 and 2 ALWAYS serve identical content for
-// the same calendar day, regardless of how many redeploys have happened.
-// The DB row is locked via ON CONFLICT DO NOTHING in saveDigest().
-app.get('/digest', async (req, res) => {
-  const digestPath = path.join(__dirname, '..', 'public', 'index.html');
-  if (fs.existsSync(digestPath)) {
-    return res.sendFile(digestPath);
-  }
+// Read-path priority:
+//   1. daily_digests row in Postgres → buildHTML with kidName → serve.
+//   2. /sample fallback when no row yet — generic, no greeting.
+//
+// The DB row is still locked via ON CONFLICT DO NOTHING in saveDigest()
+// so every kid for the same calendar day sees the same content (modulo
+// their own name in the header).
+app.get('/digest', requireAuth, async (req, res) => {
+  const kidName = req.user?.kid_first_name;
 
-  // Disk empty — try the DB.
   try {
     const dbDigest = await getTodaysDigest();
     if (dbDigest?.content) {
-      const html = buildHTML(dbDigest.content);
-      // Warm the disk so the next request (and the rest of this
-      // container's lifetime) hits the fast path.
-      try {
-        fs.mkdirSync(path.dirname(digestPath), { recursive: true });
-        fs.writeFileSync(digestPath, html, 'utf-8');
-        fs.writeFileSync(
-          path.join(__dirname, '..', 'public', 'digest-data.json'),
-          JSON.stringify(dbDigest.content, null, 2),
-          'utf-8',
-        );
-      } catch (writeErr) {
-        // Non-fatal — we can still serve the response from memory.
-        console.warn('[digest] disk warm-up failed (non-fatal):', writeErr.message);
-      }
+      const html = buildHTML(dbDigest.content, { kidName });
       return res.status(200).type('html').send(html);
     }
   } catch (err) {
     console.error('[digest] DB lookup failed:', err.message);
-    // Fall through to sample.
+    // Fall through to sample so kids on a freshly-deployed container
+    // aren't stuck on a brewing page.
   }
 
-  // DB row missing too — show the sample so the kid gets immediate value.
+  // DB row missing — fall back to the sample (no greeting, no kid name).
   try {
     const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
     const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
     content.isSample = true;
-    return res.status(200).type('html').send(buildHTML(content));
+    return res.status(200).type('html').send(buildHTML(content, { kidName }));
   } catch (err) {
     console.error('[digest] sample fallback also failed:', err.message);
     return res.status(200).type('html').send(digestBrewingPage());
@@ -147,6 +158,209 @@ app.get('/privacy', (req, res) => {
 // `/parent/delete-data` — parent-initiated data deletion form.
 app.get('/parent/delete-data', (req, res) => {
   res.sendFile(path.join(__dirname, '..', 'public', 'parent-delete-data.html'));
+});
+
+// ============================================================
+// Phase 7 — Auth pages (login / forgot-password / reset-password)
+// ============================================================
+// All three are static HTML. /login redirects logged-in users straight
+// to /digest so it doesn't show as an empty form for already-authenticated
+// kids (and the cookie persists for 30 days, so this is common).
+app.get('/login', (req, res) => {
+  if (req.signedCookies?.mbk_session) return res.redirect('/digest');
+  res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
+});
+
+app.get('/forgot-password', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'forgot-password.html'));
+});
+
+app.get('/reset-password', (req, res) => {
+  res.sendFile(path.join(__dirname, '..', 'public', 'reset-password.html'));
+});
+
+// ============================================================
+// API — login / logout / username-availability
+// ============================================================
+// Login looks up by LOWER(username), validates the bcrypt hash, then
+// sets the session cookie. Same error message for "user not found" and
+// "wrong password" — never reveal which one failed.
+app.post('/api/login', async (req, res) => {
+  const body = req.body || {};
+  const username = String(body.username || '').trim();
+  const password = String(body.password || '');
+
+  if (!username || !password) {
+    return res.status(400).json({ error: 'Username and password are required.' });
+  }
+
+  let row;
+  try {
+    const result = await dbQuery(
+      `SELECT id, password_hash, is_active
+         FROM users
+        WHERE LOWER(username) = LOWER($1)
+          AND deleted_at IS NULL
+        LIMIT 1`,
+      [username],
+    );
+    row = result.rows[0];
+  } catch (err) {
+    console.error('[login] DB lookup failed:', err.message);
+    return res.status(500).json({ error: 'Login is temporarily unavailable.' });
+  }
+
+  if (!row || !row.password_hash) {
+    return res.status(401).json({ error: 'Wrong username or password.' });
+  }
+
+  // Account exists but isn't activated yet — surface a distinct copy so
+  // the parent knows to click the email link rather than wonder why
+  // their correct password "doesn't work."
+  if (!row.is_active) {
+    return res.status(401).json({ error: "Account not yet activated. Check your parent's email for the confirmation link." });
+  }
+
+  let match;
+  try {
+    match = await bcrypt.compare(password, row.password_hash);
+  } catch (err) {
+    console.error('[login] bcrypt failed:', err.message);
+    return res.status(500).json({ error: 'Login is temporarily unavailable.' });
+  }
+
+  if (!match) {
+    return res.status(401).json({ error: 'Wrong username or password.' });
+  }
+
+  setSession(res, row.id);
+  res.json({ success: true, redirect: '/digest' });
+});
+
+app.post('/api/logout', (req, res) => {
+  clearSession(res);
+  res.json({ success: true, redirect: '/login' });
+});
+
+// Real-time availability check from the signup form. Returns
+// { available: true|false }. Returns false for any string the server
+// would reject (too short, bad chars) so the UI shows red ✗ pre-submit.
+app.get('/api/check-username', async (req, res) => {
+  const username = String(req.query.username || '').trim();
+  if (!username || username.length < 3 || username.length > 20 || !/^[a-zA-Z0-9_]+$/.test(username)) {
+    return res.json({ available: false });
+  }
+  try {
+    const { rows } = await dbQuery(
+      'SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
+      [username],
+    );
+    return res.json({ available: rows.length === 0 });
+  } catch (err) {
+    console.error('[check-username] DB lookup failed:', err.message);
+    return res.json({ available: false });
+  }
+});
+
+// ============================================================
+// API — password reset (parent-initiated)
+// ============================================================
+// /api/forgot-password ALWAYS returns 200 — we don't reveal whether the
+// email exists. If it does, we issue a 1-hour token and email a reset
+// link to the parent.
+//
+// /api/reset-password validates the token, hashes the new password, and
+// marks the token used. Same token table the verify/consent flow uses
+// (the CHECK constraint was expanded to accept 'password_reset').
+app.post('/api/forgot-password', async (req, res) => {
+  const email = String(req.body?.email || '').trim();
+
+  // Always 200, always identical body — even on error. The actual work
+  // happens after the response so a slow Resend call doesn't leak a
+  // timing signal about whether the email existed.
+  res.json({ success: true });
+
+  if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return;
+
+  let rows;
+  try {
+    const result = await dbQuery(
+      `SELECT id, kid_first_name, parent_email, username
+         FROM users
+        WHERE LOWER(parent_email) = LOWER($1)
+          AND deleted_at IS NULL`,
+      [email],
+    );
+    rows = result.rows;
+  } catch (err) {
+    console.error('[forgot-password] DB lookup failed:', err.message);
+    return;
+  }
+  if (!rows.length) return;
+
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  for (const user of rows) {
+    if (!user.username) continue; // pre-Phase-7 account, can't reset
+    const token = randomBytes(32).toString('hex');
+    try {
+      await dbQuery(
+        `INSERT INTO verification_tokens (token, user_id, purpose, expires_at)
+         VALUES ($1, $2, 'password_reset', $3)`,
+        [token, user.id, expiresAt],
+      );
+      const link = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
+      const payload = renderPasswordResetEmail(user, link);
+      sendEmail({ to: user.parent_email, ...payload }).catch(err =>
+        console.error('[forgot-password] sendEmail failed:', err.message),
+      );
+    } catch (err) {
+      console.error('[forgot-password] token insert failed:', err.message);
+    }
+  }
+});
+
+app.post('/api/reset-password', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  const password = String(req.body?.password || '');
+
+  if (!token || !password) {
+    return res.status(400).json({ error: 'Token and password are required.' });
+  }
+  if (password.length < 6) {
+    return res.status(400).json({ error: 'Password must be at least 6 characters.' });
+  }
+
+  let tokenRow;
+  try {
+    const result = await dbQuery(
+      `SELECT user_id
+         FROM verification_tokens
+        WHERE token = $1
+          AND purpose = 'password_reset'
+          AND expires_at > NOW()
+          AND used_at IS NULL
+        LIMIT 1`,
+      [token],
+    );
+    tokenRow = result.rows[0];
+  } catch (err) {
+    console.error('[reset-password] DB lookup failed:', err.message);
+    return res.status(500).json({ error: 'Reset is temporarily unavailable.' });
+  }
+
+  if (!tokenRow) {
+    return res.status(400).json({ error: 'Invalid or expired reset link. Request a new one.' });
+  }
+
+  try {
+    const hash = await bcrypt.hash(password, 10);
+    await dbQuery('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, tokenRow.user_id]);
+    await dbQuery("UPDATE verification_tokens SET used_at = NOW() WHERE token = $1", [token]);
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[reset-password] update failed:', err.message);
+    return res.status(500).json({ error: 'Reset failed. Try again in a moment.' });
+  }
 });
 
 // ============================================================
@@ -188,6 +402,29 @@ app.post('/api/signup', async (req, res) => {
     errors.kid_age = 'Please choose an age between 10 and 16.';
   }
 
+  // Phase 7 — username + password validation. Mirrors the client-side
+  // checks but is authoritative; the client may be bypassed.
+  const username = String(body.username || '').trim();
+  if (!username) {
+    errors.username = 'Pick a username for your kid.';
+  } else if (username.length < 3) {
+    errors.username = 'Username must be at least 3 characters.';
+  } else if (username.length > 20) {
+    errors.username = 'Username is too long (max 20 chars).';
+  } else if (!/^[a-zA-Z0-9_]+$/.test(username)) {
+    errors.username = 'Username can only contain letters, numbers, and underscores.';
+  }
+
+  const password = String(body.password || '');
+  if (!password) {
+    errors.password = 'Pick a password.';
+  } else if (password.length < 6) {
+    errors.password = 'Password must be at least 6 characters.';
+  } else if (password.length > 200) {
+    // Hard cap to keep bcrypt happy and prevent slowloris-style payloads.
+    errors.password = 'Password is too long.';
+  }
+
   if (Object.keys(errors).length) {
     return res.status(400).json({ ok: false, errors });
   }
@@ -202,6 +439,36 @@ app.post('/api/signup', async (req, res) => {
     }
   } catch (err) {
     console.error('[signup] duplicate-check failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
+  }
+
+  // ---- Phase 7: username uniqueness pre-check ----
+  // The unique index on LOWER(username) catches races too — that error
+  // is mapped to 23505 below and returned as a username-specific
+  // 409. The pre-check just gives the parent a cleaner error message
+  // in the common case.
+  try {
+    const { rows: dupRows } = await dbQuery(
+      'SELECT 1 FROM users WHERE LOWER(username) = LOWER($1) LIMIT 1',
+      [username],
+    );
+    if (dupRows.length > 0) {
+      return res.status(409).json({
+        ok: false,
+        errors: { username: 'That username is already taken. Try another one!' },
+      });
+    }
+  } catch (err) {
+    console.error('[signup] username pre-check failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
+  }
+
+  // ---- Phase 7: hash the password ----
+  let password_hash;
+  try {
+    password_hash = await bcrypt.hash(password, 10);
+  } catch (err) {
+    console.error('[signup] bcrypt failed:', err.message);
     return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
   }
 
@@ -229,10 +496,20 @@ app.post('/api/signup', async (req, res) => {
       device_type:  classifyDevice(userAgent),
       timezone:     typeof body.timezone === 'string' ? body.timezone.slice(0, 64) : null,
       signup_ip:    req.ip,
+      username,
+      password_hash,
     }));
   } catch (err) {
-    // 23505 = unique_violation, e.g. a race against the duplicate pre-check.
+    // 23505 = unique_violation. Two indexes can fire: parent_email or
+    // username. The Postgres error includes the constraint name in
+    // err.constraint — use it to give a precise message.
     if (err.code === '23505') {
+      if (err.constraint && err.constraint.includes('username')) {
+        return res.status(409).json({
+          ok: false,
+          errors: { username: 'That username is already taken. Try another one!' },
+        });
+      }
       return res.status(409).json({
         ok: false,
         message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
@@ -621,21 +898,64 @@ async function bootstrapTodaysDigest() {
   }
 }
 
+// ============================================================
+// Phase 7 — Boot-time DB migration (auth columns + CHECK expansion)
+// ============================================================
+// Lightweight, idempotent migration runner. We don't ship a real
+// migration tool (no Knex / Prisma here) — this is fine because there
+// are only a handful of forward-only ALTERs across the project's life
+// so far. The runner inspects information_schema and only mutates if
+// the change is missing.
+async function runBootMigrations() {
+  if (!process.env.DATABASE_URL) {
+    console.warn('[migrations] DATABASE_URL not set — skipping. (DB-backed routes will error until set.)');
+    return;
+  }
+  try {
+    const { rows } = await dbQuery(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'username'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Adding Phase 7 auth columns + expanding verification_tokens.purpose CHECK…');
+      await dbQuery(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS username       VARCHAR(30);
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS password_hash  VARCHAR(255);
+        CREATE UNIQUE INDEX IF NOT EXISTS users_username_lower_uniq
+          ON users (LOWER(username))
+          WHERE username IS NOT NULL;
+        ALTER TABLE verification_tokens
+          DROP CONSTRAINT IF EXISTS verification_tokens_purpose_check;
+        ALTER TABLE verification_tokens
+          ADD CONSTRAINT verification_tokens_purpose_check
+          CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset'));
+      `);
+      console.log('[migrations] ✅ Phase 7 auth migration applied.');
+    }
+  } catch (err) {
+    console.error('[migrations] Failed (auth routes may not work until fixed):', err.message);
+  }
+}
+
 app.listen(PORT, () => {
   console.log(`📈 Market Buzz Kids running on port ${PORT}`);
   console.log(`   Landing:        /`);
-  console.log(`   Digest:         /digest  (fallback: /sample when index.html missing)`);
+  console.log(`   Login:          /login  (kid-facing, gates /digest)`);
+  console.log(`   Digest:         /digest  (requires auth; fallback: /sample for un-generated days)`);
   console.log(`   Sample:         /sample`);
   console.log(`   Privacy:        /privacy`);
   console.log(`   Delete data:    /parent/delete-data`);
   console.log(`   Signup API:     POST /api/signup`);
+  console.log(`   Login API:      POST /api/login`);
   console.log(`   Delete API:     POST /api/delete-data`);
   console.log(`   Teaser fan-out: POST /api/cron/send-digest (X-Cron-Secret)`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
 
-  // Fire-and-forget bootstrap. If anything fails, the 7 AM cron will recover.
-  bootstrapTodaysDigest();
+  // Run migrations FIRST (so routes that depend on the new columns
+  // work on the next request after a fresh deploy), then bootstrap the
+  // digest. Both are fire-and-forget so a slow DB on boot doesn't block
+  // the listener (Railway healthchecks would fail).
+  runBootMigrations().then(() => bootstrapTodaysDigest());
 });
 
 // ============================================================

@@ -11,11 +11,12 @@
  * server still boots and the signup/consent/deletion routes still complete.
  *
  * Email types:
- *   renderVerifyEmail        — ages 13-16, standard email verification
- *   renderConsentEmail       — ages 10-12, COPPA email-plus consent
- *   renderWelcomeEmail       — sent the moment a user becomes is_active
- *   renderDeletionAckEmail   — confirms receipt of a /parent/delete-data request
- *   renderDailyTeaserEmail   — 7 AM teaser linking to today's web digest
+ *   renderVerifyEmail         — ages 13-16, standard email verification
+ *   renderConsentEmail        — ages 10-12, COPPA email-plus consent
+ *   renderWelcomeEmail        — sent the moment a user becomes is_active
+ *   renderDeletionAckEmail    — confirms receipt of a /parent/delete-data request
+ *   renderDailyTeaserEmail    — 7 AM teaser linking to today's web digest
+ *   renderPasswordResetEmail  — Phase 7, parent-initiated password reset
  */
 
 import { Resend } from 'resend';
@@ -237,9 +238,26 @@ export function renderVerifyEmail(user, link) {
 // ============================================================
 export function renderWelcomeEmail(user) {
   const kid = escapeHTML(user.kid_first_name);
+  const username = escapeHTML(user.username || '');
   const digestLink = appUrl('/digest');
+  const loginLink = appUrl('/login');
   const subject = `${kid} is in! First digest arrives tomorrow at 7 AM`;
   const preheader = `Welcome to Market Buzz Kids — here's what to expect.`;
+
+  // Phase 7: include kid's login credentials block when a username is on
+  // file (every signup after Phase 7 will have one — older accounts won't).
+  const credentialsBlock = username ? `
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background:#f0f7ff;border:1px solid #d6e7ff;border-left:4px solid ${BRAND.blue};border-radius:8px;margin:0 0 18px 0;">
+      <tr><td style="padding:14px 18px;color:#1c2030;font-size:14px;line-height:1.7;">
+        <strong>Login info for ${kid}:</strong><br>
+        Username: <strong style="font-family:'Courier New',monospace;">${username}</strong><br>
+        Password: the one you chose during signup<br>
+        Log in at: <a href="${escapeHTML(loginLink)}" style="color:${BRAND.blue};">${escapeHTML(loginLink)}</a><br>
+        <span style="color:#454a5b;font-size:13px;">Save this email — you'll need the username if they forget it.</span>
+      </td></tr>
+    </table>
+  ` : '';
 
   const body = `
     <h1 style="font-size:24px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.5px;">
@@ -250,6 +268,7 @@ export function renderWelcomeEmail(user) {
       ${kid} will get the first daily digest: real market headlines, today's biggest mover,
       and 3 short games that teach real investing principles.
     </p>
+    ${credentialsBlock}
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
       Want to peek before tomorrow's digest lands?
     </p>
@@ -272,12 +291,16 @@ export function renderWelcomeEmail(user) {
     </p>
   `;
 
+  const credentialsText = username
+    ? `\nLogin info for ${kid}:\n  Username: ${username}\n  Password: the one you chose during signup\n  Log in at: ${loginLink}\nSave this email — you'll need the username if they forget it.\n`
+    : '';
+
   return {
     subject,
     html: shell({ preheader, body }),
     text: [
       `${kid} is in! First digest arrives tomorrow at 7 AM EST.`,
-      '',
+      credentialsText,
       `Want to peek? ${digestLink}`,
       '',
       'On iPhone: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
@@ -398,6 +421,57 @@ export function renderDailyTeaserEmail(user, content) {
       '',
       `Read it: ${digestLink}`,
     ].filter(Boolean).join('\n'),
+  };
+}
+
+// ============================================================
+// 6) Password reset (Phase 7)
+// ============================================================
+// Parent-initiated. Sent in response to POST /api/forgot-password when an
+// account with the supplied parent_email exists. The link contains a
+// short-lived (1 hour) token; clicking it lands on /reset-password where
+// the parent picks a new password for the kid.
+export function renderPasswordResetEmail(user, link) {
+  const kid = escapeHTML(user.kid_first_name || 'your kid');
+  const subject = `Reset password for ${kid}'s Market Buzz Kids account`;
+  const preheader = `Set a new password for ${kid}. Link expires in 1 hour.`;
+
+  const body = `
+    <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.3px;">
+      🔐 Reset password
+    </h1>
+    <p style="margin:0 0 14px 0;font-size:15px;color:#454a5b;">
+      Hi! Someone requested a password reset for <strong>${kid}</strong>'s Market Buzz Kids account.
+      Click the button below to set a new password.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
+          Reset password →
+        </a>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 14px 0;font-size:14px;color:#454a5b;">
+      Or paste this link into your browser:<br>
+      <a href="${escapeHTML(link)}" style="color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</a>
+    </p>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#8b91a3;">
+      This link expires in 1 hour. If you didn't request this, you can safely ignore this email — ${kid}'s current password still works.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      `Reset password for ${kid}'s Market Buzz Kids account`,
+      '',
+      `Someone requested a password reset. Click to set a new one:`,
+      link,
+      '',
+      'Link expires in 1 hour.',
+      "If you didn't request this, you can safely ignore this email.",
+    ].join('\n'),
   };
 }
 
