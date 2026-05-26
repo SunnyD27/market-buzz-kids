@@ -4,3 +4,4 @@ public/index.html
 public/digest-data.json
 state/
 .DS_Store
+.claude/
