@@ -72,18 +72,50 @@ body {
 @media (min-width: 880px) {
   .hero { grid-template-columns: 1.1fr 0.9fr; gap: 48px; padding: 56px 0 88px; }
 }
-.hero-headline {
-  font-size: 38px; line-height: 1.1; font-weight: 700;
-  color: var(--bright);
-  margin-bottom: 16px;
-  letter-spacing: -1px;
+/* ── Hero brand wordmark — the dominant visual on the page ──
+   "Market Juice" rendered at clamp(3rem, 8vw, 6rem) — ~48px on small
+   phones, ~96px on wide desktops. Two .brand-word spans inside the h1
+   let the words wrap to two lines on narrow viewports while preserving
+   the gradient on each word (gradients don't naturally span line breaks
+   so we put one on each word). Line-height tight so the stacked-words
+   case still feels like one wordmark, not a list. */
+.hero-brand {
+  font-size: clamp(3rem, 8vw, 6rem);
+  line-height: 0.95;
+  font-weight: 700;
+  letter-spacing: -2px;
+  margin: 0 0 16px;
+  /* Allow the two words to flow onto separate lines on narrow viewports
+     without forcing it on wider ones. */
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 0.25em;
 }
-@media (min-width: 600px) { .hero-headline { font-size: 48px; } }
-@media (min-width: 880px) { .hero-headline { font-size: 56px; } }
+.hero-brand .brand-word {
+  display: inline-block;
+}
+@media (min-width: 880px) {
+  .hero-brand { margin-bottom: 18px; }
+}
+
+/* The gold/purple/blue gradient used on the brand and the old "market
+   smarts" callout. Kept as a shared utility so it's reusable. */
 .grad {
   background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
 }
+
+/* Tagline directly under the brand. Roughly 40-50% of the h1 size,
+   light and clean — supports the brand without competing with it. */
+.hero-tagline {
+  font-size: clamp(1.25rem, 3vw, 2rem);
+  line-height: 1.25;
+  font-weight: 500;
+  color: var(--bright);
+  letter-spacing: -0.3px;
+  margin: 0 0 16px;
+}
+
 .hero-sub {
   font-size: 17px;
   color: var(--text);
