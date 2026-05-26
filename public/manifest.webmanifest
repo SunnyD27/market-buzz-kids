@@ -1,7 +1,7 @@
 {
-  "name": "Market Buzz Kids",
-  "short_name": "Market Buzz",
-  "description": "The daily stock market cheat code for kids — games, stories, and lessons in 3 minutes a day.",
+  "name": "Market Juice",
+  "short_name": "Market Juice",
+  "description": "Your daily squeeze of market smarts — games, stories, and real investing lessons in 3 minutes a day. Built for kids ages 10-14.",
   "start_url": "/digest",
   "scope": "/",
   "display": "standalone",

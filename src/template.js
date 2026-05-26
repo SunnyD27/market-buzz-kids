@@ -1,5 +1,5 @@
 // src/template.js — Builds the final HTML page from generated content.
-// Phase 1: Market Buzz Kids — VOO removed, Today's Mover added, Did You Know
+// Phase 1: Market Juice — VOO removed, Today's Mover added, Did You Know
 // replaces Coming Up. Engagement systems (XP, ranks, streaks, games) come in
 // later phases.
 
@@ -213,12 +213,12 @@ export function buildHTML(content, opts = {}) {
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Market Buzz Kids">
+<meta name="apple-mobile-web-app-title" content="Market Juice">
 <meta name="theme-color" content="#0d1117">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon.svg">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
-<title>Market Buzz Kids</title>
+<title>Market Juice</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/engagement.css">
 <link rel="stylesheet" href="/games/styles.css">
@@ -244,6 +244,8 @@ export function buildHTML(content, opts = {}) {
   @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
   .logo { font-size: 42px; font-weight: 700; background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -1px; }
   .logo-emoji { font-size: 36px; -webkit-text-fill-color: initial; }
+  /* "Juice" accent — solid gold to mirror the landing-page logo treatment. */
+  .logo em { font-style: normal; color: var(--yellow); -webkit-text-fill-color: var(--yellow); }
   .date-line { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
   .tagline { font-size: 15px; color: var(--text-dim); margin-top: 4px; }
   .section-header { display: flex; align-items: center; gap: 10px; margin: 32px 0 16px; animation: fadeIn 0.5s ease-out both; }
@@ -715,10 +717,10 @@ export function buildHTML(content, opts = {}) {
   ${sampleBannerHTML}
 
   <div class="header">
-    <div class="logo"><span class="logo-emoji">📈</span> Market Buzz Kids${sampleChipHTML}</div>
+    <div class="logo"><span class="logo-emoji">📈</span> Market <em>Juice</em>${sampleChipHTML}</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
     ${editionLabelHTML}
-    <div class="tagline">The daily stock market cheat code for kids</div>
+    <div class="tagline">Your daily squeeze of market smarts</div>
     ${greetingHTML}
   </div>
 
@@ -795,7 +797,7 @@ export function buildHTML(content, opts = {}) {
 
   <div class="footer">
     <div class="rocket">🚀</div>
-    <p style="margin-top: 6px;">Market Buzz Kids — Built for future investors</p>
+    <p style="margin-top: 6px;">Market Juice — Built for future investors</p>
     <p style="margin-top: 4px; font-size: 11px; color: #484f58;">Not financial advice. Just getting smarter every day.</p>
     <!-- Scroll-to-bottom XP marker: engagement.js watches this with IntersectionObserver -->
     <div id="mb-bottom-marker" aria-hidden="true" style="height:1px"></div>

@@ -1,4 +1,4 @@
--- src/schema.sql — Market Buzz Kids · Neon PostgreSQL schema
+-- src/schema.sql — Market Juice · Neon PostgreSQL schema
 -- Run against the Neon database in Phase 6 (creates extension + tables).
 -- Phase 5 mirrors this shape in-memory via src/storage.js so the API
 -- contract is identical when we swap stores.

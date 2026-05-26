@@ -1,4 +1,4 @@
-/* public/sw.js — Market Buzz Kids service worker.
+/* public/sw.js — Market Juice service worker.
  *
  * Strategy:
  *   - App shell (CSS/JS/icons/fonts) — cache-first. These rarely change;
@@ -13,9 +13,13 @@
  * (Web Push API + VAPID). Click on notification opens / focuses the digest.
  */
 
-const VERSION = 'v1';
-const SHELL_CACHE = 'mb-shell-' + VERSION;
-const RUNTIME_CACHE = 'mb-runtime-' + VERSION;
+// Bumped to v2 + renamed `mb-` → `mj-` prefix for the Market Juice rebrand
+// (was Market Buzz Kids). The activate handler below explicitly deletes any
+// leftover `mb-*` caches so kids who had the PWA installed pre-rebrand get
+// fresh assets on their next visit instead of stale branded content.
+const VERSION = 'v2';
+const SHELL_CACHE = 'mj-shell-' + VERSION;
+const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
 // App shell: static assets the digest depends on. Pre-cached on SW install
 // so the first PWA open works offline immediately.
@@ -50,11 +54,14 @@ self.addEventListener('install', (event) => {
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
-    // Reap old versioned caches.
+    // Reap old versioned caches. Includes legacy `mb-*` caches from the
+    // pre-rebrand Market Buzz Kids days, plus any `mj-*` caches that
+    // aren't the current ones.
     const names = await caches.keys();
     await Promise.all(
       names
-        .filter(n => n.startsWith('mb-') && n !== SHELL_CACHE && n !== RUNTIME_CACHE)
+        .filter(n => (n.startsWith('mb-') || n.startsWith('mj-'))
+                     && n !== SHELL_CACHE && n !== RUNTIME_CACHE)
         .map(n => caches.delete(n))
     );
     await self.clients.claim();
@@ -112,7 +119,7 @@ async function networkFirst(req, cacheName) {
     // For navigation requests with no cache, return a tiny offline shell.
     if (req.mode === 'navigate') {
       return new Response(
-        '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Market Buzz Kids — Offline</title>'
+        '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Market Juice — Offline</title>'
         + '<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;'
         + 'display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;}'
         + 'h1{font-size:32px;margin-bottom:8px;} p{color:#8b949e;}</style></head>'
@@ -144,9 +151,9 @@ self.addEventListener('push', (event) => {
   let payload = {};
   if (event.data) {
     try { payload = event.data.json(); }
-    catch { payload = { title: 'Market Buzz Kids', body: event.data.text() }; }
+    catch { payload = { title: 'Market Juice', body: event.data.text() }; }
   }
-  const title = payload.title || '📈 Today\'s Market Buzz is ready';
+  const title = payload.title || '📈 Today\'s Market Juice is ready';
   const opts = {
     body: payload.body || 'Open the digest to play today\'s games.',
     icon: '/icons/icon.svg',

@@ -1,6 +1,6 @@
 /* public/engagement.js
  *
- * Market Buzz Kids — Engagement engine.
+ * Market Juice — Engagement engine.
  *
  * Runs in the browser, client-side only. Persists everything to localStorage.
  * No backend dependency. Designed so games (Phase 3) can plug straight in via

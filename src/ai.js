@@ -110,7 +110,7 @@ function buildStandardPrompt(marketData, news, movers, topMover, recentWords, re
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
 
-  return `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14 and their parents. This is a financial education product disguised as a daily habit — every game, story, and fun fact teaches a real investing principle.
+  return `You are the writer for "Market Juice," a daily stock market digest for kids ages 10-14 and their parents. This is a financial education product disguised as a daily habit — every game, story, and fun fact teaches a real investing principle.
 
 ${PROFANITY_RULE}
 
@@ -357,7 +357,7 @@ function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, e
   }`,
   }[sundayChallengeType];
 
-  return `You are the writer for "Market Buzz Kids," and today is Sunday — THE WEEKLY WRAP. This is a RECAP of the past week's biggest market stories for kids 10-14 and their parents. NOT a daily report.
+  return `You are the writer for "Market Juice," and today is Sunday — THE WEEKLY WRAP. This is a RECAP of the past week's biggest market stories for kids 10-14 and their parents. NOT a daily report.
 
 ${PROFANITY_RULE}
 
@@ -736,7 +736,7 @@ function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, ed
 
   const prevDayName = edition.previousTradingDayName || 'Friday';
 
-  return `You are the writer for "Market Buzz Kids," and today is THE WEEK AHEAD — a forward-looking preview of what's coming this week in markets. For kids 10-14 and their parents.
+  return `You are the writer for "Market Juice," and today is THE WEEK AHEAD — a forward-looking preview of what's coming this week in markets. For kids 10-14 and their parents.
 
 ${PROFANITY_RULE}
 
@@ -1017,7 +1017,7 @@ async function callReframer({ system, user, expectedKeys, label }) {
  */
 export async function reframeBullBear(scenario) {
   const principleHint = INVESTING_PRINCIPLES;
-  const system = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
+  const system = `You are the writer for "Market Juice," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
 
 ${PROFANITY_RULE}
 
@@ -1066,7 +1066,7 @@ Write a fresh take. Return ONLY this JSON, no markdown:
  */
 export async function reframeTimeMachine(scenario) {
   const principleHint = INVESTING_PRINCIPLES;
-  const system = `You are the writer for "Market Buzz Kids," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
+  const system = `You are the writer for "Market Juice," a daily stock market digest for kids ages 10-14. Voice: casual, fun, like a cool older sibling. Short punchy sentences. Use analogies kids get.
 
 ${PROFANITY_RULE}
 

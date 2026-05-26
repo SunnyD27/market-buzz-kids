@@ -40,12 +40,12 @@ app.set('trust proxy', true);
 // Parse JSON bodies for /api endpoints (signup, deletion).
 app.use(express.json({ limit: '32kb' }));
 
-// Phase 7 — signed-cookie parser for the mbk_session cookie. The secret
+// Phase 7 — signed-cookie parser for the mj_session cookie. The secret
 // signs the cookie value; cookie-parser refuses tampered cookies
 // automatically. Fallback only used in local dev — production MUST set
 // SESSION_SECRET. We log loudly if it's the fallback, so production
 // misconfigurations don't ship silently.
-const SESSION_SECRET = process.env.SESSION_SECRET || 'market-buzz-kids-fallback-secret-DEV-ONLY';
+const SESSION_SECRET = process.env.SESSION_SECRET || 'market-juice-fallback-secret-DEV-ONLY';
 if (!process.env.SESSION_SECRET) {
   console.warn('[auth] SESSION_SECRET not set — using insecure dev fallback. SET THIS IN PRODUCTION.');
 }
@@ -167,7 +167,7 @@ app.get('/parent/delete-data', (req, res) => {
 // to /digest so it doesn't show as an empty form for already-authenticated
 // kids (and the cookie persists for 30 days, so this is common).
 app.get('/login', (req, res) => {
-  if (req.signedCookies?.mbk_session) return res.redirect('/digest');
+  if (req.signedCookies?.mj_session) return res.redirect('/digest');
   res.sendFile(path.join(__dirname, '..', 'public', 'login.html'));
 });
 
@@ -628,7 +628,7 @@ function activationPage({ ok, reason, action, user }) {
   return `<!DOCTYPE html>
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>${escapeHTML(title.replace(/^[^a-zA-Z]+/, ''))} — Market Buzz Kids</title>
+<title>${escapeHTML(title.replace(/^[^a-zA-Z]+/, ''))} — Market Juice</title>
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
 <style>
   body { background:#0d1117;color:#e6edf3;font-family:'Fredoka',sans-serif;
@@ -937,7 +937,7 @@ async function runBootMigrations() {
 }
 
 app.listen(PORT, () => {
-  console.log(`📈 Market Buzz Kids running on port ${PORT}`);
+  console.log(`📈 Market Juice running on port ${PORT}`);
   console.log(`   Landing:        /`);
   console.log(`   Login:          /login  (kid-facing, gates /digest)`);
   console.log(`   Digest:         /digest  (requires auth; fallback: /sample for un-generated days)`);
@@ -967,7 +967,7 @@ function landingPlaceholder() {
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-<title>Market Buzz Kids</title>
+<title>Market Juice</title>
 <style>
   body{background:#0d1117;color:#e6edf3;font-family:'Fredoka',sans-serif;
        display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;}
@@ -979,7 +979,7 @@ function landingPlaceholder() {
 </style>
 </head><body>
 <div>
-  <h1>📈 Market Buzz Kids</h1>
+  <h1>📈 Market Juice</h1>
   <p>Landing page coming up in commit 2.</p>
   <p style="font-size:14px;margin-top:20px;color:#484f58;">
     Want to see the digest? <a href="/digest">View today's digest →</a>
@@ -993,7 +993,7 @@ function digestBrewingPage() {
 <html><head>
 <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;600;700&display=swap" rel="stylesheet">
-<title>Market Buzz Kids</title>
+<title>Market Juice</title>
 <style>
   body{background:#0d1117;color:#e6edf3;font-family:'Fredoka',sans-serif;
        display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;}
@@ -1001,7 +1001,7 @@ function digestBrewingPage() {
   p{font-size:18px;color:#8b949e;}
 </style></head><body>
 <div>
-  <h1>📈 Market Buzz</h1>
+  <h1>📈 Market Juice</h1>
   <p>Your first digest is brewing! Check back after 7:00 AM EST.</p>
   <p style="font-size:14px;margin-top:20px;color:#484f58;">
     The digest generates fresh every morning at 7 AM.
