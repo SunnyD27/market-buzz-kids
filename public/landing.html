@@ -173,6 +173,29 @@
           </div>
         </div>
 
+        <div class="form-row">
+          <label for="username">Pick a username for your kid <span class="req">*</span></label>
+          <input type="text" id="username" name="username"
+                 required minlength="3" maxlength="20"
+                 pattern="[a-zA-Z0-9_]+"
+                 autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false"
+                 placeholder="e.g. StockWhiz2014"
+                 title="Letters, numbers, and underscores only">
+          <div class="field-error" id="err-username"></div>
+          <div class="field-note" id="note-username">
+            <span id="username-status" class="username-status"></span>
+            This is what they'll use to log in. Letters, numbers, and underscores only.
+          </div>
+        </div>
+
+        <div class="form-row">
+          <label for="password">Create a password <span class="req">*</span></label>
+          <input type="password" id="password" name="password"
+                 required minlength="6" autocomplete="new-password"
+                 placeholder="At least 6 characters">
+          <div class="field-error" id="err-password"></div>
+        </div>
+
         <details class="optional-fields">
           <summary>A couple optional questions (helps us improve)</summary>
           <div class="form-row">

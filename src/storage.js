@@ -69,13 +69,15 @@ async function createUserFromSignup(input) {
         invest_experience, referral_source,
         utm_source, utm_medium, utm_campaign, utm_content, utm_term,
         user_agent, device_type, timezone, signup_ip,
-        consent_required
+        consent_required,
+        username, password_hash
       ) VALUES (
         $1, $2, $3,
         $4, $5,
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14,
-        $15
+        $15,
+        $16, $17
       )
       RETURNING *`,
       [
@@ -94,6 +96,12 @@ async function createUserFromSignup(input) {
         input.timezone || null,
         input.signup_ip || null,
         consentRequired,
+        // Phase 7 — both nullable. createUserFromSignup callers that
+        // pre-date kid-auth (none in this codebase, but defensive) just
+        // omit these and the row goes in with NULL/NULL. POST /api/signup
+        // requires them and validates upstream.
+        input.username ? input.username.trim() : null,
+        input.password_hash || null,
       ]
     );
     const user = userInsert.rows[0];

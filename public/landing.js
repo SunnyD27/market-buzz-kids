@@ -32,6 +32,8 @@
   const btn      = document.getElementById('submit-btn');
   const ageEl    = document.getElementById('kid_age');
   const coppaNote = document.getElementById('note-coppa');
+  const usernameEl     = document.getElementById('username');
+  const usernameStatus = document.getElementById('username-status');
 
   // ---- COPPA hint: show note when age 10-12 is selected ----------------
   ageEl.addEventListener('change', () => {
@@ -39,13 +41,52 @@
     coppaNote.hidden = !(a >= 10 && a <= 12);
   });
 
+  // ---- Username availability check (debounced) -------------------------
+  // Fires 350ms after the kid stops typing. Hits GET /api/check-username
+  // and paints a pill in #username-status. Cheap — same shape as the
+  // server enforces, so we don't over-promise (a server-side race could
+  // still steal a username between this check and submit; the server
+  // returns 409 in that case and we surface the message).
+  const USERNAME_RE = /^[a-zA-Z0-9_]+$/;
+  let usernameDebounce = null;
+  let lastChecked = '';
+  function setUsernameStatus(kind, text) {
+    if (!usernameStatus) return;
+    usernameStatus.className = 'username-status ' + (kind || '');
+    usernameStatus.textContent = text || '';
+  }
+  function checkUsername(raw) {
+    const v = String(raw || '').trim();
+    if (!v) { setUsernameStatus('', ''); return; }
+    if (v.length < 3) { setUsernameStatus('invalid', 'too short'); return; }
+    if (v.length > 20) { setUsernameStatus('invalid', 'too long'); return; }
+    if (!USERNAME_RE.test(v)) { setUsernameStatus('invalid', 'letters / numbers / _ only'); return; }
+    if (v.toLowerCase() === lastChecked.toLowerCase()) return; // already checked
+    setUsernameStatus('checking', 'checking…');
+    fetch('/api/check-username?username=' + encodeURIComponent(v))
+      .then(r => r.json()).catch(() => ({ available: false }))
+      .then(j => {
+        // Ignore stale responses if the field changed during the request.
+        if (usernameEl.value.trim() !== v) return;
+        lastChecked = v;
+        if (j.available) setUsernameStatus('available', '✓ available');
+        else             setUsernameStatus('taken',     '✗ taken');
+      });
+  }
+  if (usernameEl) {
+    usernameEl.addEventListener('input', () => {
+      clearTimeout(usernameDebounce);
+      usernameDebounce = setTimeout(() => checkUsername(usernameEl.value), 350);
+    });
+  }
+
   // ---- Field validation -------------------------------------------------
   function setError(name, msg) {
     const el = document.getElementById('err-' + name);
     if (el) el.textContent = msg || '';
   }
   function clearAllErrors() {
-    ['parent_email', 'kid_first_name', 'kid_age'].forEach(n => setError(n, ''));
+    ['parent_email', 'kid_first_name', 'kid_age', 'username', 'password'].forEach(n => setError(n, ''));
   }
   function isValidEmail(s) {
     // Lightweight check — server does the authoritative validation.
@@ -64,6 +105,16 @@
     if (!values.kid_age || values.kid_age < 10 || values.kid_age > 16) {
       setError('kid_age', 'Please choose an age from the dropdown.'); ok = false;
     }
+    if (!values.username || values.username.length < 3) {
+      setError('username', 'Username must be at least 3 characters.'); ok = false;
+    } else if (values.username.length > 20) {
+      setError('username', 'Username is too long (max 20 chars).'); ok = false;
+    } else if (!USERNAME_RE.test(values.username)) {
+      setError('username', 'Username can only contain letters, numbers, and underscores.'); ok = false;
+    }
+    if (!values.password || values.password.length < 6) {
+      setError('password', 'Password must be at least 6 characters.'); ok = false;
+    }
     return ok;
   }
 
@@ -76,6 +127,8 @@
       parent_email:      form.parent_email.value.trim(),
       kid_first_name:    form.kid_first_name.value.trim(),
       kid_age:           parseInt(form.kid_age.value, 10),
+      username:          form.username.value.trim(),
+      password:          form.password.value,
       invest_experience: form.invest_experience.value || null,
       referral_source:   form.referral_source.value || null,
       ...utm,

@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#0d1117">
+<title>Log in — Market Buzz Kids</title>
+<link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/auth.css">
+</head>
+<body>
+  <div class="auth-wrap">
+    <a href="/" class="auth-logo">
+      <span>📈</span><span class="grad">Market Buzz <em>Kids</em></span>
+    </a>
+
+    <div class="auth-card">
+      <h1>Welcome back! 👋</h1>
+      <p class="sub">Log in to see today's digest.</p>
+
+      <div class="alert alert-error" id="err" hidden></div>
+
+      <form id="login-form" novalidate>
+        <div class="form-row">
+          <label for="username">Username</label>
+          <input id="username" name="username" type="text" autocomplete="username"
+                 required minlength="3" maxlength="30" autocapitalize="off"
+                 autocorrect="off" spellcheck="false" autofocus>
+        </div>
+
+        <div class="form-row">
+          <label for="password">Password</label>
+          <input id="password" name="password" type="password"
+                 autocomplete="current-password" required minlength="6">
+          <a href="/forgot-password" class="inline-link">Forgot password?</a>
+        </div>
+
+        <button type="submit" id="submit-btn" class="btn btn-primary btn-block">Log in</button>
+      </form>
+    </div>
+
+    <p class="foot-link">
+      Don't have an account? <a href="/#signup">Sign up →</a>
+    </p>
+  </div>
+
+  <script>
+    (function () {
+      const form = document.getElementById('login-form');
+      const errEl = document.getElementById('err');
+      const btn = document.getElementById('submit-btn');
+
+      function showError(msg) {
+        errEl.textContent = msg;
+        errEl.hidden = false;
+      }
+      function clearError() {
+        errEl.hidden = true;
+      }
+
+      form.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        clearError();
+
+        const username = form.username.value.trim();
+        const password = form.password.value;
+
+        if (!username || !password) {
+          showError('Username and password are required.');
+          return;
+        }
+
+        btn.disabled = true;
+        const original = btn.textContent;
+        btn.textContent = 'Logging in…';
+
+        try {
+          const res = await fetch('/api/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password }),
+          });
+          const body = await res.json().catch(() => ({}));
+          if (res.ok && body.success) {
+            location.href = body.redirect || '/digest';
+            return;
+          }
+          showError(body.error || 'Wrong username or password. Try again!');
+        } catch (err) {
+          console.error('[login] network error:', err);
+          showError('Network error. Check your connection and try again.');
+        } finally {
+          btn.disabled = false;
+          btn.textContent = original;
+        }
+      });
+    })();
+  </script>
+</body>
+</html>
