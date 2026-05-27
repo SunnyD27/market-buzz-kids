@@ -83,23 +83,34 @@ body {
    the top of the wordmark via align-items so it stays anchored to
    "Market" when the wordmark wraps. */
 .hero-brand {
-  font-size: clamp(3rem, 8vw, 6rem);
+  /* Slightly smaller minimum than before (2.5rem vs 3rem) so the whole
+     lockup still fits on one line on narrow mobile viewports. The
+     no-wrap rule below is what forces the single line; this clamp
+     keeps that constraint achievable. */
+  font-size: clamp(2.5rem, 8vw, 6rem);
   line-height: 0.95;
   font-weight: 700;
   letter-spacing: -2px;
   margin: 0 0 16px;
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 0 clamp(0.5rem, 1.5vw, 0.75em);
+  flex-wrap: nowrap;          /* lockup stays on a single line */
+  align-items: center;        /* mark vertically centered against the wordmark */
+  /* Tight gap — the mark and wordmark read as a single lockup, not
+     two separate elements with breathing room between them. */
+  gap: 0 clamp(0.15rem, 0.4vw, 0.3em);
+  /* Prevent the lockup from breaking the page layout on extreme narrow
+     viewports — let it shrink before forcing a wrap. */
+  min-width: 0;
 }
 .hero-brand .brand-word {
   display: inline-block;
+  white-space: nowrap;        /* "Market" and "Juice" never break internally */
 }
 .hero-brand .brand-mark {
-  /* Slightly larger than the cap-height so the mark reads as the
-     "anchor" of the lockup rather than as a glyph. */
-  width: clamp(3.5rem, 9vw, 6.5rem);
+  /* The mark dominates the lockup — visually heavier than the wordmark
+     cap-height so it reads as the anchor of the brand. clamp scales
+     from ~88px on small phones to ~176px on wide desktops. */
+  width: clamp(5.5rem, 16vw, 11rem);
   height: auto;
   flex-shrink: 0;
   display: block;
