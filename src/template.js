@@ -253,8 +253,29 @@ export function buildHTML(content, opts = {}) {
   .container { max-width: 680px; margin: 0 auto; padding: 24px 16px 60px; position: relative; z-index: 1; }
   .header { text-align: center; margin-bottom: 32px; animation: slideDown 0.6s ease-out; }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
-  .logo { font-size: 42px; font-weight: 700; background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow)); -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text; letter-spacing: -1px; }
-  .logo-emoji { font-size: 36px; -webkit-text-fill-color: initial; }
+  /* Brand lockup: PNG mark + wordmark in one flex container, matching the
+     landing-page hero treatment (Phase 9). The wordmark keeps the
+     gradient-on-Market / solid-gold-on-Juice treatment digest readers are
+     used to. */
+  .logo {
+    display: inline-flex; align-items: center;
+    gap: clamp(0.2rem, 0.6vw, 0.45rem);
+    font-size: 42px; font-weight: 700;
+    background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow));
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -1px;
+    line-height: 1;
+  }
+  .logo-mark {
+    width: clamp(5rem, 14vw, 8rem);
+    height: auto;
+    display: inline-block;
+    flex-shrink: 0;
+    filter: drop-shadow(0 6px 18px rgba(188,140,255,0.22));
+    -webkit-text-fill-color: initial;
+  }
   /* "Juice" accent — solid gold to mirror the landing-page logo treatment. */
   .logo em { font-style: normal; color: var(--yellow); -webkit-text-fill-color: var(--yellow); }
   .date-line { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
@@ -728,7 +749,7 @@ export function buildHTML(content, opts = {}) {
   ${sampleBannerHTML}
 
   <div class="header">
-    <div class="logo"><span class="logo-emoji">📈</span> Market <em>Juice</em>${sampleChipHTML}</div>
+    <div class="logo"><img src="/icons/logo.png" alt="" class="logo-mark" width="160" height="160"/>Market&nbsp;<em>Juice</em>${sampleChipHTML}</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
     ${editionLabelHTML}
     <div class="tagline">Your daily squeeze of market smarts</div>
