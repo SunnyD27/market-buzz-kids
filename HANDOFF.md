@@ -44,7 +44,8 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.8** 5+2 edition system (Weekly Wrap + Week Ahead) | ✅ | Shipped to `main` via PR #3 |
 | **6.9** Sunday Challenge — AI-generated rotating weekly game | ✅ | Shipped via PR #4 |
 | **7** Kid auth — username/password + 30d session + reset | ✅ | Shipped via PR #5 |
-| **8** Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com) | ✅ | On `dev`, see session log below |
+| **8** Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com) | ✅ | Shipped via PR #6 |
+| **9** Hero restructure — brand-as-h1 + citrus/chart logo lockup | ✅ | Hero h1 shipped via PR #6 (`09ac7e8`); logo lockup `1251c8f` + `34c1e95` on `dev` awaiting PR #7 |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
 | **Polish** Investing principles expanded 8 → 11 | ✅ | Shipped via PR #3 |
@@ -57,16 +58,16 @@ the door for future sponsored content with a 30-day parent notice).
 
 | Commit | Branch | What |
 |---|---|---|
-| `940a955` | `dev` | `fix: week-ahead market-closed copy reads "yesterday" not "today"` |
-| `4aac70a` | `dev` | `feat: add Sunday Challenge — AI-generated rotating weekly game` (Phase 6.9) |
-| `5fa8834` | `main` | PR #3 merge — ships principles 8→11, dataset remap, edition-aware stories heading |
-| `a7c4d25` | `main` | `fix: stories-section heading reflects edition type` |
-| `c2f73e1` | `main` | `fix: remap game dataset principles from old 8 to new 11 numbering` |
-| `04823cf` | `main` | `feat: expand investing principles from 8 to 11` |
-| `0b20c14` | `main` | PR #2 merge — ships Phase 6.8 (5+2 editions) + market-closed note |
-| `632309a` | `main` | `feat: market-closed note above scoreboard for weekend/holiday editions` |
-| `3454a9d` | `main` | `feat: 5+2 edition system — Weekly Wrap + Week Ahead` (Phase 6.8) |
-| `10c069e` | `main` | `fix: migrate Claude model from sonnet-4-20250514 to sonnet-4-6` |
+| `34c1e95` | `dev` | `landing: swap brand mark to user-provided PNG, tighten lockup` |
+| `1251c8f` | `dev` | `landing: add citrus + chart logo mark to hero brand lockup` |
+| `2bfa45b` | `main` | PR #6 merge — ships Phase 8 rebrand + hero restructure |
+| `09ac7e8` | `main` | `landing: make Market Juice the hero headline` (Phase 9 step 1) |
+| `5aad556` | `main` | `rebrand: Market Buzz Kids → Market Juice` (Phase 8) |
+| `6d209d2` | `main` | PR #5 merge — ships Phase 7 kid auth + calendar fix + landing 11-principles |
+| `1afce38` | `main` | `fix: update landing page to show all 11 investing principles` |
+| `491e492` | `main` | `feat: add username/password auth for kids` (Phase 7) |
+| `9b8dbef` | `main` | `fix: skip post-holiday Week Ahead when holiday is Monday` |
+| `7715d2d` | `main` | `docs: refresh CONTEXT.md + HANDOFF.md through Phase 6.9` |
 
 ---
 
@@ -210,19 +211,18 @@ The remaining MVP sub-phase. Email-only is fine; push is nice-to-have.
 
 ~½ day of work.
 
-### Resend custom domain (blocking real signups beyond Sunny)
+### Resend custom domain — ✅ verified
 
-Currently in **Resend sandbox mode** — `from: onboarding@resend.dev` can only deliver to `sunny27@gmail.com`. Every other recipient gets HTTP 403 from Resend. **Verify a domain on Resend** (DNS records: SPF, DKIM, DMARC), then update `FROM_EMAIL` on Railway. After that, any signup gets real emails.
+**themarketjuice.com** is verified on Resend (SPF / DKIM / DMARC all green). `FROM_EMAIL=hello@themarketjuice.com` is set in Railway env. Smoke-tested via a one-shot Node script on 5/26/2026: email arrived in the inbox cleanly, no spam classification, Resend delivery ID logged. All five transactional emails (verify, consent, welcome, password reset, daily teaser) now deliver to any parent — no more `sunny27@gmail.com`-only sandbox restriction.
 
 ### Pending on `dev` to merge into `main`
 
-- Skip post-holiday Week Ahead when holiday is Monday — `9b8dbef`
-- Doc refresh through Phase 6.9 — `7715d2d`
-- Phase 7 kid auth — landing on the next commit after this doc refresh
+- `1251c8f` — landing: add citrus + chart logo mark to hero brand lockup
+- `34c1e95` — landing: swap brand mark to user-provided PNG, tighten lockup
 
-When ready: open PR `dev → main` on GitHub, merge, Railway auto-deploys.
+When ready: open PR #7 `dev → main` on GitHub, merge, Railway auto-deploys.
 
-> Phase 6.9 Sunday Challenge + market-closed copy fix already shipped to `main` via PR #4. Earlier polish (principles 8→11, dataset remap, edition-aware stories heading) shipped via PR #3.
+> Already shipped: PR #6 brought in the Phase 8 rebrand (`5aad556`) + Phase 9 hero h1 (`09ac7e8`). PR #5 shipped Phase 7 auth + earlier polish. PR #4 shipped Sunday Challenge + market-closed copy fix. PR #3 shipped principles 8→11 + edition-aware heading. PR #2 shipped Phase 6.8 (5+2 editions) + market-closed note. PR #1 was the initial Phase 6 backbone.
 
 ### Open questions / deferred polish
 
@@ -323,7 +323,7 @@ process.exit(0);
 
 ---
 
-*Last updated end-of-Phase-8 (Market Juice rebrand) session. PR #5 (Phase 7 kid auth + calendar fix + landing 11-principles + doc refresh) already shipped to `main`. On `dev` awaiting PR #6: the rebrand commit. themarketjuice.com Resend domain verified ✅ — emails now deliver to any parent. Phase 6.3 push notifications still TODO. Internal JS namespaces (`window.MBGames`, `window.MarketBuzz`, `mbg-` CSS prefix) still carry the old brand abbreviation — deliberate scope; future refactor.*
+*Last updated end-of-Phase-9 (hero restructure + logo lockup) session. PR #6 shipped Phase 8 rebrand + the Phase 9 hero h1 promotion. On `dev` awaiting PR #7: the two logo-lockup commits (`1251c8f` + `34c1e95`). themarketjuice.com Resend domain is verified and transactional emails deliver to any parent ✅. Open follow-ups: (1) Phase 6.3 push notifications still TODO. (2) Internal JS namespaces still carry the old brand abbreviation (`window.MBGames`, `window.MarketBuzz`, `mbg-` CSS prefix) — deliberate scope; future atomic refactor. (3) Server-side engagement persistence is unlocked by Phase 7 auth but not yet wired (XP/streaks/ranks still localStorage-only).*
 
 ---
 
@@ -406,3 +406,26 @@ Service worker cache prefix changed from `mb-` to `mj-` and version bumped to v2
 **Domain caveat:** Railway deployment URL is still `market-buzz-kids-production.up.railway.app` until the service is renamed in the Railway dashboard. DNS for themarketjuice.com points there. Updated docs treat themarketjuice.com as canonical.
 
 Changes: 24 files (HTML pages, email templates, AI prompts, server.js, auth.js, template.js, sw.js, manifest.webmanifest, landing.css, landing.js, CONTEXT.md, HANDOFF.md, package.json, package-lock.json). No DB changes.
+
+Footnote (added later): the rebrand-session hero h1 was a temporary form — **"Your daily squeeze of / market smarts" as the headline.** That was superseded by the Phase 9 work below: "Market Juice" itself is now the page h1.
+
+---
+
+## Session: Phase 9 — Hero restructure + logo lockup
+
+Two-step redesign of the hero based on feedback that "Market Juice" was reading like a nav label instead of the brand. Both already-shipped + pending pieces are part of this phase.
+
+**Step 1 — brand promoted to h1 (`09ac7e8`, shipped via PR #6).** Removed the small `.logo` block above the headline. The `<h1>` now contains "Market Juice" itself, rendered at `clamp(3rem, 8vw, 6rem)` with the full purple→blue→gold gradient on each word (per-word gradients because CSS gradients don't span line breaks naturally — each `.brand-word` owns its own). Old headline "Your daily squeeze of / market smarts" was demoted to a `<p class="hero-tagline">` directly below, at `clamp(1.25rem, 3vw, 2rem)` in solid white. Visual hierarchy is now: brand → tagline → body copy → CTAs.
+
+**Step 2 — citrus + chart logo mark in the lockup (`1251c8f` then `34c1e95`, on `dev`).** First commit dropped in an SVG interpretation I wrote inline (transparent bg, brand palette). Sunny didn't like the SVG and provided a 1024×1024 transparent PNG of the actual designed logo — second commit swapped to that PNG and tuned the lockup sizing.
+
+Final lockup CSS:
+- Mark size: `clamp(5.5rem, 16vw, 11rem)` — 88px on small phones through 176px on wide desktops. Slightly heavier than the wordmark cap-height so it reads as the anchor of the lockup.
+- Mark↔wordmark gap: `clamp(0.15rem, 0.4vw, 0.3em)` — about 3px on typical viewports. Tight enough that the two read as a single lockup unit.
+- `flex-wrap: nowrap` on `.hero-brand` — forces the whole lockup onto a single line. Lowered wordmark font min from 3rem → 2.5rem so the no-wrap constraint still fits on narrow mobile.
+- `align-items: center` — mark vertically centered against the wordmark cap-height.
+- `filter: drop-shadow(0 6px 18px rgba(188,140,255,0.25))` — subtle purple glow that ties the PNG to the page's gradient theme.
+
+Removed the unused `public/icons/logo-mark.svg` (my earlier SVG interpretation). The PNG at `public/icons/logo.png` is now the authoritative brand mark.
+
+**Other:** added `.claude/` to `.gitignore` (local preview-tool launch config; per-repo only). Phase 9 also picked up a Resend smoke test against `hello@themarketjuice.com` that landed cleanly — see the Resend section above; sandbox restriction is fully lifted.
