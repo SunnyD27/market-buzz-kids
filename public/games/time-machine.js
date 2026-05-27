@@ -26,7 +26,7 @@
  */
 (function () {
   'use strict';
-  const SHARED = window.MBGames.shared;
+  const SHARED = window.MJGames.shared;
 
   function valueOf(choice) {
     if (choice.status === 'active') {
@@ -43,22 +43,22 @@
     let revealed = false;
 
     host.innerHTML = `
-      <div class="mbg-card" id="tm-card">
-        <div class="mbg-label">⏱️ Daily Challenge · Time Machine Trade</div>
-        <div class="mbg-title">Pick one stock. We'll fast-forward.</div>
-        <div class="mbg-tm-header">
-          <div class="mbg-tm-year">${SHARED.escapeHTML(scenario.anchor.toUpperCase())}</div>
-          <div class="mbg-tm-budget">You have $1,000</div>
+      <div class="mj-card" id="tm-card">
+        <div class="mj-label">⏱️ Daily Challenge · Time Machine Trade</div>
+        <div class="mj-title">Pick one stock. We'll fast-forward.</div>
+        <div class="mj-tm-header">
+          <div class="mj-tm-year">${SHARED.escapeHTML(scenario.anchor.toUpperCase())}</div>
+          <div class="mj-tm-budget">You have $1,000</div>
         </div>
-        <div class="mbg-prompt">${scenario.framing}</div>
+        <div class="mj-prompt">${scenario.framing}</div>
 
-        <div class="mbg-tm-choices" id="tm-choices"></div>
+        <div class="mj-tm-choices" id="tm-choices"></div>
 
-        <button type="button" class="mbg-btn mbg-btn-primary" id="tm-lock" disabled>
+        <button type="button" class="mj-btn mj-btn-primary" id="tm-lock" disabled>
           Lock in my pick → fast-forward to today
         </button>
 
-        <div class="mbg-reveal" id="tm-reveal"></div>
+        <div class="mj-reveal" id="tm-reveal"></div>
       </div>
     `;
 
@@ -67,12 +67,12 @@
 
     choices.forEach((c, i) => {
       const tile = document.createElement('div');
-      tile.className = 'mbg-tm-pick';
+      tile.className = 'mj-tm-pick';
       tile.dataset.idx = String(i);
       tile.innerHTML = `
-        <div class="mbg-tm-pick-name">${SHARED.escapeHTML(c.name)}</div>
-        <div class="mbg-tm-pick-ticker">${SHARED.escapeHTML(c.ticker)}</div>
-        <div class="mbg-tm-pick-price">${SHARED.fmtMoney(c.priceThen)} / share</div>
+        <div class="mj-tm-pick-name">${SHARED.escapeHTML(c.name)}</div>
+        <div class="mj-tm-pick-ticker">${SHARED.escapeHTML(c.ticker)}</div>
+        <div class="mj-tm-pick-price">${SHARED.fmtMoney(c.priceThen)} / share</div>
       `;
       tile.addEventListener('click', () => {
         if (revealed) return;
@@ -99,7 +99,7 @@
       // Sort the results display from best → worst so the lesson lands cleanly.
       sortedByValue.forEach(({ c, i, value }) => {
         const row = document.createElement('div');
-        row.className = 'mbg-tm-result-row';
+        row.className = 'mj-tm-result-row';
         if (i === winnerIdx) row.classList.add('winner');
         if (i === picked) row.classList.add('your-pick');
 
@@ -123,14 +123,14 @@
 
         row.innerHTML = `
           <div style="flex:1; min-width: 0;">
-            <div class="mbg-tm-result-name">
+            <div class="mj-tm-result-name">
               ${SHARED.escapeHTML(c.name)}
               ${i === picked ? '<span style="color: var(--purple); font-size: 11px; margin-left: 6px;">· YOUR PICK</span>' : ''}
               ${i === winnerIdx ? '<span style="color: var(--yellow); font-size: 11px; margin-left: 6px;">· WINNER</span>' : ''}
             </div>
             <div style="font-size: 12px; color: var(--text-dim); margin-top: 2px; line-height: 1.45;">${subline}</div>
           </div>
-          <div class="mbg-tm-result-now ${valueClass}" style="margin-left: 12px; white-space: nowrap;">${valueLabel}</div>
+          <div class="mj-tm-result-now ${valueClass}" style="margin-left: 12px; white-space: nowrap;">${valueLabel}</div>
         `;
         choicesHost.appendChild(row);
       });
@@ -154,5 +154,5 @@
     });
   }
 
-  window.MBGames['time-machine'] = { render };
+  window.MJGames['time-machine'] = { render };
 })();

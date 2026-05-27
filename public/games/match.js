@@ -19,7 +19,7 @@
  */
 (function () {
   'use strict';
-  const SHARED = window.MBGames.shared;
+  const SHARED = window.MJGames.shared;
 
   // Pair-color palette — when a kid pairs a company with a description,
   // both tiles get the matching ring so they can see what's connected.
@@ -34,27 +34,27 @@
     opts = opts || {};
     const companies = data.companies.slice(0, 4);
     if (companies.length !== 4) {
-      host.innerHTML = `<div class="mbg-card"><div class="mbg-title">Match the Company needs 4 entries (got ${companies.length}).</div></div>`;
+      host.innerHTML = `<div class="mj-card"><div class="mj-title">Match the Company needs 4 entries (got ${companies.length}).</div></div>`;
       return;
     }
     const shuffledDescs = SHARED.shuffle(companies.map((c, i) => ({ ...c, originalIndex: i })));
 
     host.innerHTML = `
-      <div class="mbg-card" id="mt-card">
-        <div class="mbg-label">🎯 Daily Challenge · Match the Company</div>
-        <div class="mbg-title">How does each company actually make money?</div>
-        <div class="mbg-prompt">Tap a company, then tap the way it makes money. Pair all 4.</div>
+      <div class="mj-card" id="mt-card">
+        <div class="mj-label">🎯 Daily Challenge · Match the Company</div>
+        <div class="mj-title">How does each company actually make money?</div>
+        <div class="mj-prompt">Tap a company, then tap the way it makes money. Pair all 4.</div>
 
-        <div class="mbg-match-instr" id="mt-instr">Pick a company →</div>
+        <div class="mj-match-instr" id="mt-instr">Pick a company →</div>
 
-        <div class="mbg-match-grid" id="mt-companies"></div>
-        <div class="mbg-match-grid" id="mt-descs" style="margin-top: 10px;"></div>
+        <div class="mj-match-grid" id="mt-companies"></div>
+        <div class="mj-match-grid" id="mt-descs" style="margin-top: 10px;"></div>
 
-        <button type="button" class="mbg-btn mbg-btn-primary" id="mt-check" disabled style="margin-top: 10px;">
+        <button type="button" class="mj-btn mj-btn-primary" id="mt-check" disabled style="margin-top: 10px;">
           Check my answers
         </button>
 
-        <div class="mbg-reveal" id="mt-reveal"></div>
+        <div class="mj-reveal" id="mt-reveal"></div>
       </div>
     `;
 
@@ -66,13 +66,13 @@
     // Build company tiles (originalIndex used as the answer key).
     companies.forEach((c, i) => {
       const tile = document.createElement('div');
-      tile.className = 'mbg-match-tile';
+      tile.className = 'mj-match-tile';
       tile.dataset.role = 'company';
       tile.dataset.idx = String(i);
       tile.innerHTML = `
         <div>
           <div style="font-size: 28px; margin-bottom: 4px;">${SHARED.escapeHTML(c.emoji || '🏢')}</div>
-          <div class="mbg-match-company-name">${SHARED.escapeHTML(c.name)}</div>
+          <div class="mj-match-company-name">${SHARED.escapeHTML(c.name)}</div>
         </div>
       `;
       tile.addEventListener('click', () => onTileTap(tile));
@@ -83,10 +83,10 @@
     // company's original index — that's the correctness check.
     shuffledDescs.forEach(d => {
       const tile = document.createElement('div');
-      tile.className = 'mbg-match-tile';
+      tile.className = 'mj-match-tile';
       tile.dataset.role = 'desc';
       tile.dataset.idx = String(d.originalIndex);
-      tile.innerHTML = `<div class="mbg-match-revenue">${SHARED.escapeHTML(d.shortModel)}</div>`;
+      tile.innerHTML = `<div class="mj-match-revenue">${SHARED.escapeHTML(d.shortModel)}</div>`;
       tile.addEventListener('click', () => onTileTap(tile));
       descsHost.appendChild(tile);
     });
@@ -306,5 +306,5 @@
     updateUI();
   }
 
-  window.MBGames.match = { render };
+  window.MJGames.match = { render };
 })();

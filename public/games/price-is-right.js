@@ -39,7 +39,7 @@
  */
 (function () {
   'use strict';
-  const SHARED = window.MBGames.shared;
+  const SHARED = window.MJGames.shared;
 
   function fmtPriceOption(p) {
     // Whole-dollar formatting for prices ≥ $20, one decimal for cheaper.
@@ -59,19 +59,19 @@
     const shuffled = SHARED.shuffle(data.options.slice());
 
     host.innerHTML = `
-      <div class="mbg-card" id="pir-card">
-        <div class="mbg-label">💰 Daily Challenge · Price is Right</div>
-        <div class="mbg-title">How much does ONE share cost right now?</div>
+      <div class="mj-card" id="pir-card">
+        <div class="mj-label">💰 Daily Challenge · Price is Right</div>
+        <div class="mj-title">How much does ONE share cost right now?</div>
 
-        <div class="mbg-pir-company">
+        <div class="mj-pir-company">
           <div style="font-size:48px; line-height:1; margin-bottom:6px;">${SHARED.escapeHTML(data.emoji || '🏢')}</div>
-          <div class="mbg-pir-name">${SHARED.escapeHTML(data.name)}</div>
-          <div class="mbg-pir-ticker">${SHARED.escapeHTML(data.ticker)}</div>
+          <div class="mj-pir-name">${SHARED.escapeHTML(data.name)}</div>
+          <div class="mj-pir-ticker">${SHARED.escapeHTML(data.ticker)}</div>
         </div>
 
-        <div class="mbg-pir-options" id="pir-options"></div>
+        <div class="mj-pir-options" id="pir-options"></div>
 
-        <div class="mbg-reveal" id="pir-reveal"></div>
+        <div class="mj-reveal" id="pir-reveal"></div>
       </div>
     `;
 
@@ -80,7 +80,7 @@
     shuffled.forEach(price => {
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'mbg-pir-option';
+      btn.className = 'mj-pir-option';
       btn.textContent = fmtPriceOption(price);
       btn.addEventListener('click', () => {
         if (answered) return;
@@ -143,5 +143,5 @@
     });
   }
 
-  window.MBGames['price-is-right'] = { render };
+  window.MJGames['price-is-right'] = { render };
 })();

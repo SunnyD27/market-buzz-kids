@@ -249,6 +249,7 @@ export function renderWelcomeEmail(user) {
   const username = escapeHTML(user.username || '');
   const digestLink = appUrl('/digest');
   const loginLink = appUrl('/login');
+  const progressLink = appUrl('/progress');
   const subject = `${kid} is in — today's digest is live!`;
   const preheader = `Welcome to Market Juice — here's what to expect.`;
 
@@ -291,6 +292,11 @@ export function renderWelcomeEmail(user) {
         "Add to Home Screen" so the digest opens like an app each morning.
       </td></tr>
     </table>
+    <p style="margin:14px 0 0 0;font-size:14px;color:#454a5b;line-height:1.55;">
+      As ${kid} plays, they'll earn <strong>Market Coins</strong>, climb investor ranks,
+      and unlock badges. See the full profile any time at
+      <a href="${escapeHTML(progressLink)}" style="color:${BRAND.accent};">${escapeHTML(progressLink)}</a>.
+    </p>
     <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
       Reply to this email any time. We read every message.
     </p>
@@ -309,6 +315,8 @@ export function renderWelcomeEmail(user) {
       `See today's digest: ${digestLink}`,
       '',
       'On iPhone or iPad: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
+      '',
+      `As ${kid} plays, they'll earn Market Coins, climb investor ranks, and unlock badges. See the full profile at ${progressLink}.`,
       '',
       'Reply to this email any time. We read every message.',
     ].join('\n'),

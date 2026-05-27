@@ -16,7 +16,7 @@
  */
 (function () {
   'use strict';
-  const SHARED = window.MBGames.shared;
+  const SHARED = window.MJGames.shared;
 
   // Spec calls out ~10% average annual return for the visualization.
   // This matches S&P 500 historical nominal return over long periods.
@@ -32,45 +32,45 @@
     opts = opts || {};
     const amount = Math.max(1, data.amount || 50);
     host.innerHTML = `
-      <div class="mbg-card" id="ci-card">
-        <div class="mbg-label">🚀 Daily Challenge · Compound Machine</div>
-        <div class="mbg-title">What if you never spent it?</div>
-        <div class="mbg-prompt">${data.framing || ''}</div>
+      <div class="mj-card" id="ci-card">
+        <div class="mj-label">🚀 Daily Challenge · Compound Machine</div>
+        <div class="mj-title">What if you never spent it?</div>
+        <div class="mj-prompt">${data.framing || ''}</div>
 
-        <div class="mbg-ci-amount">
+        <div class="mj-ci-amount">
           <div class="principal">starting amount · ${SHARED.fmtMoney(amount, { maxDigits: 0 })}</div>
           <div class="final" id="ci-final">${SHARED.fmtMoney(amount, { maxDigits: 0 })}</div>
-          <div class="mbg-ci-after">after <span id="ci-years">${DEFAULT_YEARS}</span> years at 10% / year (S&amp;P 500 long-term average)</div>
+          <div class="mj-ci-after">after <span id="ci-years">${DEFAULT_YEARS}</span> years at 10% / year (S&amp;P 500 long-term average)</div>
         </div>
 
-        <div class="mbg-ci-slider-wrap">
-          <div class="mbg-ci-years-label">
+        <div class="mj-ci-slider-wrap">
+          <div class="mj-ci-years-label">
             <span>1 year</span>
             <span>${MAX_YEARS} years</span>
           </div>
-          <input type="range" class="mbg-ci-slider" id="ci-slider"
+          <input type="range" class="mj-ci-slider" id="ci-slider"
                  min="1" max="${MAX_YEARS}" step="1" value="${DEFAULT_YEARS}"
                  aria-label="Years invested">
         </div>
 
-        <svg class="mbg-ci-chart" id="ci-chart" viewBox="0 0 320 120" preserveAspectRatio="none">
+        <svg class="mj-ci-chart" id="ci-chart" viewBox="0 0 320 120" preserveAspectRatio="none">
           <defs>
-            <linearGradient id="mbg-ci-gradient" x1="0" y1="0" x2="1" y2="0">
+            <linearGradient id="mj-ci-gradient" x1="0" y1="0" x2="1" y2="0">
               <stop offset="0%" stop-color="#bc8cff"/>
               <stop offset="50%" stop-color="#58a6ff"/>
               <stop offset="100%" stop-color="#f0c040"/>
             </linearGradient>
-            <linearGradient id="mbg-ci-area-grad" x1="0" y1="0" x2="0" y2="1">
+            <linearGradient id="mj-ci-area-grad" x1="0" y1="0" x2="0" y2="1">
               <stop offset="0%" stop-color="#f0c040" stop-opacity="0.35"/>
               <stop offset="100%" stop-color="#f0c040" stop-opacity="0"/>
             </linearGradient>
           </defs>
-          <path class="mbg-ci-area" id="ci-area" />
-          <path class="mbg-ci-curve" id="ci-curve" />
-          <circle class="mbg-ci-current-dot" id="ci-dot" r="5"/>
+          <path class="mj-ci-area" id="ci-area" />
+          <path class="mj-ci-curve" id="ci-curve" />
+          <circle class="mj-ci-current-dot" id="ci-dot" r="5"/>
         </svg>
 
-        <div class="mbg-reveal" id="ci-reveal"></div>
+        <div class="mj-reveal" id="ci-reveal"></div>
       </div>
     `;
 
@@ -164,5 +164,5 @@
     update(DEFAULT_YEARS, false);
   }
 
-  window.MBGames.compound = { render };
+  window.MJGames.compound = { render };
 })();

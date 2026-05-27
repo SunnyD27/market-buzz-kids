@@ -12,10 +12,13 @@ import fs from 'fs';
 import { fileURLToPath } from 'url';
 import { generateDigest } from './generate.js';
 import { buildHTML } from './template.js';
+import { buildProgressHTML } from './progress-template.js';
 import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
 import { getTodaysDigest, todayNY } from './digest-store.js';
 import { requireAuth, setSession, clearSession } from './auth.js';
+import { getProgress, recordEvent } from './engagement.js';
+import { EVENT_TYPES } from './progression.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -107,11 +110,12 @@ app.get('/', (req, res) => {
 // their own name in the header).
 app.get('/digest', requireAuth, async (req, res) => {
   const kidName = req.user?.kid_first_name;
+  const digestDate = todayNY();
 
   try {
     const dbDigest = await getTodaysDigest();
     if (dbDigest?.content) {
-      const html = buildHTML(dbDigest.content, { kidName });
+      const html = buildHTML(dbDigest.content, { kidName, digestDate });
       return res.status(200).type('html').send(html);
     }
   } catch (err) {
@@ -125,10 +129,24 @@ app.get('/digest', requireAuth, async (req, res) => {
     const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
     const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
     content.isSample = true;
-    return res.status(200).type('html').send(buildHTML(content, { kidName }));
+    return res.status(200).type('html').send(buildHTML(content, { kidName, digestDate }));
   } catch (err) {
     console.error('[digest] sample fallback also failed:', err.message);
     return res.status(200).type('html').send(digestBrewingPage());
+  }
+});
+
+// `/progress` — kid's full engagement profile (Phase 11).
+// Gated by requireAuth. Server-renders per request from engagement.getProgress().
+// Linked from the Investor Profile bar in the digest header.
+app.get('/progress', requireAuth, async (req, res) => {
+  try {
+    const state = await getProgress(req.user.id);
+    const html = buildProgressHTML(state, { kidName: req.user.kid_first_name });
+    return res.status(200).type('html').send(html);
+  } catch (err) {
+    console.error('[progress] render failed:', err.message);
+    return res.status(500).type('html').send('<p>Progress page temporarily unavailable.</p>');
   }
 });
 
@@ -143,7 +161,7 @@ app.get('/sample', (req, res) => {
     const samplePath = path.join(__dirname, '..', 'public', 'data', 'sample-digest.json');
     const content = JSON.parse(fs.readFileSync(samplePath, 'utf-8'));
     content.isSample = true; // belt-and-suspenders — guarantee the banner shows
-    res.status(200).type('html').send(buildHTML(content));
+    res.status(200).type('html').send(buildHTML(content, { digestDate: todayNY(), isSample: true }));
   } catch (err) {
     console.error('[sample] failed to render:', err.message);
     res.status(500).type('html').send('<p>Sample temporarily unavailable.</p>');
@@ -360,6 +378,47 @@ app.post('/api/reset-password', async (req, res) => {
   } catch (err) {
     console.error('[reset-password] update failed:', err.message);
     return res.status(500).json({ error: 'Reset failed. Try again in a moment.' });
+  }
+});
+
+// ============================================================
+// API — engagement (Phase 11)
+// ============================================================
+// All engagement state lives behind requireAuth. The client hydrates
+// from /api/engagement/state on page load and round-trips every state
+// change through /api/engagement/track. localStorage is a write-through
+// cache only — server is the source of truth.
+
+app.get('/api/engagement/state', requireAuth, async (req, res) => {
+  try {
+    const state = await getProgress(req.user.id);
+    return res.json(state);
+  } catch (err) {
+    console.error('[engagement/state] failed:', err.message);
+    return res.status(500).json({ error: 'Engagement state unavailable.' });
+  }
+});
+
+app.post('/api/engagement/track', requireAuth, async (req, res) => {
+  const eventType = String(req.body?.eventType || '');
+  const eventData = req.body?.eventData;
+
+  if (!EVENT_TYPES.has(eventType)) {
+    return res.status(400).json({ error: 'Unknown event type.' });
+  }
+  if (eventData != null && typeof eventData !== 'object') {
+    return res.status(400).json({ error: 'eventData must be an object.' });
+  }
+
+  try {
+    const result = await recordEvent(req.user.id, eventType, eventData || {});
+    return res.json(result);
+  } catch (err) {
+    if (err.code === 'UNKNOWN_EVENT_TYPE') {
+      return res.status(400).json({ error: err.message });
+    }
+    console.error('[engagement/track] failed:', err.message);
+    return res.status(500).json({ error: 'Tracking failed.' });
   }
 });
 
@@ -986,6 +1045,76 @@ async function runBootMigrations() {
   } catch (err) {
     console.error('[migrations] Deletion-scrub ALTER failed (parent-initiated deletion will error until fixed):', err.message);
   }
+
+  // Phase 11 — server-side engagement tables. Drops the never-populated
+  // `engagement` placeholder from Phase 6.1 and creates user_progress +
+  // engagement_events + user_badges + personal_records. Standalone DDL
+  // lives in src/migrations/add-engagement-tables.sql.
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'user_progress'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Applying Phase 11 engagement schema (drop placeholder + 4 new tables)…');
+      await dbQuery(`
+        DROP TABLE IF EXISTS engagement;
+
+        CREATE TABLE IF NOT EXISTS user_progress (
+          user_id           UUID         PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          market_coins      INTEGER      NOT NULL DEFAULT 0,
+          current_streak    INTEGER      NOT NULL DEFAULT 0,
+          longest_streak    INTEGER      NOT NULL DEFAULT 0,
+          streak_shields    INTEGER      NOT NULL DEFAULT 0,
+          rank_key          VARCHAR(50)  NOT NULL DEFAULT 'rookie',
+          perfect_days      INTEGER      NOT NULL DEFAULT 0,
+          games_played      INTEGER      NOT NULL DEFAULT 0,
+          correct_answers   INTEGER      NOT NULL DEFAULT 0,
+          sunday_challenges INTEGER      NOT NULL DEFAULT 0,
+          weeks_active      INTEGER      NOT NULL DEFAULT 0,
+          words_learned     INTEGER      NOT NULL DEFAULT 0,
+          last_active_date  DATE,
+          last_streak_date  DATE,
+          last_iso_week     VARCHAR(8),
+          created_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          updated_at        TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+
+        CREATE TABLE IF NOT EXISTS engagement_events (
+          id          BIGSERIAL    PRIMARY KEY,
+          user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          event_type  VARCHAR(50)  NOT NULL,
+          event_data  JSONB        NOT NULL DEFAULT '{}',
+          created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_engagement_user_date
+          ON engagement_events (user_id, created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_engagement_type
+          ON engagement_events (event_type);
+
+        CREATE TABLE IF NOT EXISTS user_badges (
+          user_id      UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          badge_key    VARCHAR(50)  NOT NULL,
+          current_tier INTEGER      NOT NULL DEFAULT 0,
+          progress     INTEGER      NOT NULL DEFAULT 0,
+          unlocked_at  TIMESTAMPTZ,
+          updated_at   TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, badge_key)
+        );
+
+        CREATE TABLE IF NOT EXISTS personal_records (
+          user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          record_key  VARCHAR(50)  NOT NULL,
+          value       INTEGER      NOT NULL DEFAULT 0,
+          achieved_at DATE,
+          updated_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, record_key)
+        );
+      `);
+      console.log('[migrations] ✅ Phase 11 engagement schema applied.');
+    }
+  } catch (err) {
+    console.error('[migrations] Phase 11 engagement migration failed (engagement APIs will error until fixed):', err.message);
+  }
 }
 
 app.listen(PORT, () => {
@@ -993,6 +1122,7 @@ app.listen(PORT, () => {
   console.log(`   Landing:        /`);
   console.log(`   Login:          /login  (kid-facing, gates /digest)`);
   console.log(`   Digest:         /digest  (requires auth; fallback: /sample for un-generated days)`);
+  console.log(`   Progress:       /progress  (requires auth — full engagement profile)`);
   console.log(`   Sample:         /sample`);
   console.log(`   Privacy:        /privacy`);
   console.log(`   Delete data:    /parent/delete-data`);

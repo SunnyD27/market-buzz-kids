@@ -158,7 +158,7 @@ self.addEventListener('push', (event) => {
     body: payload.body || 'Open the digest to play today\'s games.',
     icon: '/icons/icon.svg',
     badge: '/icons/icon.svg',
-    tag: 'mb-daily', // collapses prior notifications onto this one
+    tag: 'mj-daily', // collapses prior notifications onto this one
     renotify: true,
     data: { url: payload.url || '/' },
   };

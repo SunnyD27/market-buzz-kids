@@ -19,7 +19,7 @@
  * can use smarter context-aware logic (Fed day → quiz override, etc.).
  *
  * Public API:
- *   window.MBGames.dailyChallenge = {
+ *   window.MJGames.dailyChallenge = {
  *     pickGamesForDate(yyyymmdd): string[3],   // returns today's game types
  *     render(host, dataBundle, opts),
  *   }
@@ -71,7 +71,7 @@
     opts = opts || {};
     const games = (dataBundle && dataBundle.games) || [];
     if (games.length !== 3) {
-      host.innerHTML = `<div class="mbg-card"><div class="mbg-title">Daily Challenge needs exactly 3 games (got ${games.length}).</div></div>`;
+      host.innerHTML = `<div class="mj-card"><div class="mj-title">Daily Challenge needs exactly 3 games (got ${games.length}).</div></div>`;
       return;
     }
 
@@ -94,7 +94,7 @@
       const meta = META[entry.type];
       if (!meta) {
         const errCard = document.createElement('div');
-        errCard.className = 'mbg-card';
+        errCard.className = 'mj-card';
         errCard.textContent = 'Unknown game type: ' + entry.type;
         grid.appendChild(errCard);
         return;
@@ -130,9 +130,9 @@
 
         // Lazy-render the underlying game into the body. The game module is
         // expected to already be loaded (the digest template loads all 6).
-        const renderer = (window.MBGames[entry.type] || {}).render;
+        const renderer = (window.MJGames[entry.type] || {}).render;
         if (typeof renderer !== 'function') {
-          body.innerHTML = `<div class="mbg-card" style="margin:0;"><div class="mbg-title">Game "${entry.type}" not loaded.</div></div>`;
+          body.innerHTML = `<div class="mj-card" style="margin:0;"><div class="mj-title">Game "${entry.type}" not loaded.</div></div>`;
           return;
         }
         // Only render the game once; re-expanding shouldn't re-trigger.
@@ -145,8 +145,16 @@
                 cta.textContent = '✓ Played';
                 cta.classList.add('dc-cta-played');
                 updateProgress();
-                if (window.MarketBuzz) {
-                  window.MarketBuzz.recordGamePlayed(entry.type, result || {});
+                // Phase 11 — server-tracked event. game-completed covers
+                // quiz too (it's just another game type from the picker's
+                // perspective). result may contain { correct: bool } from
+                // the game module; we forward as-is.
+                if (window.MarketJuice && window.MarketJuice.recordEvent) {
+                  window.MarketJuice.recordEvent('game-completed', {
+                    game: entry.type,
+                    correct: result && typeof result.correct === 'boolean' ? result.correct : null,
+                    digestDate: window.__digestDate || null,
+                  });
                 }
               }
             }
@@ -186,6 +194,6 @@
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   }
 
-  window.MBGames = window.MBGames || {};
-  window.MBGames.dailyChallenge = { pickGamesForDate, render, META };
+  window.MJGames = window.MJGames || {};
+  window.MJGames.dailyChallenge = { pickGamesForDate, render, META };
 })();

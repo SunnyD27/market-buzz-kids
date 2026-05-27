@@ -306,6 +306,17 @@ async function recordDeletionRequest(input) {
           WHERE id = $1`,
         [matched.id, input.reason || null]
       );
+
+      // Phase 11: scrub engagement tables in the same transaction.
+      // ON DELETE CASCADE on user_id would also handle this if we ever
+      // hard-deleted the user row, but the deletion model here is
+      // soft-delete + PII scrub, so the cascade never fires — we have to
+      // DELETE explicitly. Order doesn't matter (all keyed on user_id).
+      await client.query(`DELETE FROM engagement_events WHERE user_id = $1`, [matched.id]);
+      await client.query(`DELETE FROM user_badges       WHERE user_id = $1`, [matched.id]);
+      await client.query(`DELETE FROM personal_records  WHERE user_id = $1`, [matched.id]);
+      await client.query(`DELETE FROM user_progress     WHERE user_id = $1`, [matched.id]);
+
       matchedUserId = matched.id;
       processedAt = new Date();
       processedMethod = 'automatic';

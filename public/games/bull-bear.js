@@ -27,23 +27,23 @@
  */
 (function () {
   'use strict';
-  const SHARED = window.MBGames.shared;
+  const SHARED = window.MJGames.shared;
 
   function render(host, scenario, opts) {
     opts = opts || {};
     let answered = false;
 
     host.innerHTML = `
-      <div class="mbg-card" id="bb-card">
-        <div class="mbg-label">📊 Daily Challenge · Bull or Bear?</div>
-        <div class="mbg-title">What happened NEXT?</div>
-        <div class="mbg-prompt">
+      <div class="mj-card" id="bb-card">
+        <div class="mj-label">📊 Daily Challenge · Bull or Bear?</div>
+        <div class="mj-title">What happened NEXT?</div>
+        <div class="mj-prompt">
           Here's a real stock chart over the period leading up to a moment in history.
           Did it go <strong>up</strong> or <strong>down</strong> in the
           ${SHARED.escapeHTML(scenario.outcomeLabel.toLowerCase())} after this?
         </div>
 
-        <svg class="mbg-bb-chart" id="bb-chart" viewBox="0 0 400 200" preserveAspectRatio="none">
+        <svg class="mj-bb-chart" id="bb-chart" viewBox="0 0 400 200" preserveAspectRatio="none">
           <!-- Subtle gridlines: faint horizontal lines only, no labels. -->
           <line class="grid-line" x1="0" y1="50"  x2="400" y2="50"/>
           <line class="grid-line" x1="0" y1="100" x2="400" y2="100"/>
@@ -64,14 +64,14 @@
           ${SHARED.escapeHTML(scenario.contextLabel)}
         </div>
 
-        <div class="mbg-choice-pair">
-          <button type="button" class="mbg-btn mbg-bull" data-direction="up">📈 Bull · Went UP</button>
-          <button type="button" class="mbg-btn mbg-bear" data-direction="down">📉 Bear · Went DOWN</button>
+        <div class="mj-choice-pair">
+          <button type="button" class="mj-btn mj-bull" data-direction="up">📈 Bull · Went UP</button>
+          <button type="button" class="mj-btn mj-bear" data-direction="down">📉 Bear · Went DOWN</button>
         </div>
 
-        <div class="mbg-data-note">Chart shape uses real historical price movement, normalized for clarity. Real ticker and dates revealed after you guess.</div>
+        <div class="mj-data-note">Chart shape uses real historical price movement, normalized for clarity. Real ticker and dates revealed after you guess.</div>
 
-        <div class="mbg-reveal" id="bb-reveal"></div>
+        <div class="mj-reveal" id="bb-reveal"></div>
       </div>
     `;
 
@@ -105,7 +105,7 @@
     decisionLine.setAttribute('x2', decisionX.toFixed(1));
 
     // Wire buttons.
-    const buttons = Array.from(host.querySelectorAll('.mbg-choice-pair .mbg-btn'));
+    const buttons = Array.from(host.querySelectorAll('.mj-choice-pair .mj-btn'));
     buttons.forEach(btn => {
       btn.addEventListener('click', () => {
         if (answered) return;
@@ -115,8 +115,8 @@
 
         buttons.forEach(b => {
           b.disabled = true;
-          if (b.dataset.direction === scenario.actualDirection) b.classList.add('mbg-btn-correct');
-          else if (b === btn && !correct) b.classList.add('mbg-btn-wrong');
+          if (b.dataset.direction === scenario.actualDirection) b.classList.add('mj-btn-correct');
+          else if (b === btn && !correct) b.classList.add('mj-btn-wrong');
         });
 
         revealOutcome(host, scenario, correct);
@@ -179,5 +179,5 @@
     });
   }
 
-  window.MBGames['bull-bear'] = { render };
+  window.MJGames['bull-bear'] = { render };
 })();

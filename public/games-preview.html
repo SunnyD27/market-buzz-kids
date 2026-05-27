@@ -132,8 +132,8 @@
   }
 
   function refreshStateInfo() {
-    if (!window.MarketBuzz) return;
-    const s = window.MarketBuzz.getState();
+    if (!window.MarketJuice) return;
+    const s = window.MarketJuice.getState();
     document.getElementById('stateInfo').textContent =
       `XP ${s.xp} · 🔥 ${s.streak} · 🛡️ ${s.shields} · today's games: ${s.today.gamesPlayed.length}/3`;
   }
@@ -143,26 +143,26 @@
   const launchers = {
     'compound': async () => {
       await loadScript('/games/compound.js');
-      window.MBGames.compound.render(host, sampleCompound(), { onComplete });
+      window.MJGames.compound.render(host, sampleCompound(), { onComplete });
     },
     'match': async () => {
       await loadScript('/games/match.js');
       const data = await sampleMatch();
-      window.MBGames.match.render(host, data, { onComplete });
+      window.MJGames.match.render(host, data, { onComplete });
     },
     'time-machine': async () => {
       await loadScript('/games/time-machine.js');
       const data = await sampleTimeMachine();
-      window.MBGames['time-machine'].render(host, data, { onComplete });
+      window.MJGames['time-machine'].render(host, data, { onComplete });
     },
     'bull-bear': async () => {
       await loadScript('/games/bull-bear.js');
       const data = await sampleBullBear();
-      window.MBGames['bull-bear'].render(host, data, { onComplete });
+      window.MJGames['bull-bear'].render(host, data, { onComplete });
     },
     'price-is-right': async () => {
       await loadScript('/games/price-is-right.js');
-      window.MBGames['price-is-right'].render(host, samplePriceIsRight(), { onComplete });
+      window.MJGames['price-is-right'].render(host, samplePriceIsRight(), { onComplete });
     },
     'today': async () => {
       // Demonstrates the full Daily Challenge picker — today's 3 games
@@ -177,13 +177,13 @@
         loadScript('/games/price-is-right.js'),
       ]);
       const today = new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York' }).format(new Date());
-      const types = window.MBGames.dailyChallenge.pickGamesForDate(today);
+      const types = window.MJGames.dailyChallenge.pickGamesForDate(today);
       const games = [];
       for (const t of types) {
         const data = await sampleFor(t);
         games.push({ type: t, data });
       }
-      window.MBGames.dailyChallenge.render(host, { games }, {});
+      window.MJGames.dailyChallenge.render(host, { games }, {});
     },
   };
 
@@ -215,31 +215,31 @@
   // The Quiz module isn't a standalone game file yet (the existing quiz is
   // baked into the digest template). For the picker preview, we register a
   // minimal inline renderer that mirrors the template's logic.
-  window.MBGames = window.MBGames || {};
-  window.MBGames.quiz = window.MBGames.quiz || { render: renderInlineQuiz };
+  window.MJGames = window.MJGames || {};
+  window.MJGames.quiz = window.MJGames.quiz || { render: renderInlineQuiz };
   function renderInlineQuiz(host, data, opts) {
     let answered = false;
     host.innerHTML = `
-      <div class="mbg-card" id="qz-card">
-        <div class="mbg-label">🧠 Daily Challenge · The Quiz</div>
-        <div class="mbg-title">${esc(data.question)}</div>
+      <div class="mj-card" id="qz-card">
+        <div class="mj-label">🧠 Daily Challenge · The Quiz</div>
+        <div class="mj-title">${esc(data.question)}</div>
         <div id="qz-options" style="display:grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 12px;"></div>
-        <div class="mbg-reveal" id="qz-reveal"></div>
+        <div class="mj-reveal" id="qz-reveal"></div>
       </div>`;
     const optHost = host.querySelector('#qz-options');
     data.options.forEach((opt, i) => {
       const b = document.createElement('button');
-      b.type = 'button'; b.className = 'mbg-btn'; b.textContent = opt;
+      b.type = 'button'; b.className = 'mj-btn'; b.textContent = opt;
       b.addEventListener('click', () => {
         if (answered) return;
         answered = true;
         const correct = i === data.correctIndex;
         Array.from(optHost.children).forEach((bb, j) => {
           bb.disabled = true;
-          if (j === data.correctIndex) bb.classList.add('mbg-btn-correct');
-          else if (j === i && !correct) bb.classList.add('mbg-btn-wrong');
+          if (j === data.correctIndex) bb.classList.add('mj-btn-correct');
+          else if (j === i && !correct) bb.classList.add('mj-btn-wrong');
         });
-        window.MBGames.shared.renderReveal(host.querySelector('#qz-card'), {
+        window.MJGames.shared.renderReveal(host.querySelector('#qz-card'), {
           resultKind: correct ? 'correct' : 'wrong',
           resultLabel: correct ? '🎯 Correct!' : '🤔 Not quite',
           headline: 'The lesson',
@@ -254,8 +254,8 @@
   function esc(s){return String(s||'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));}
 
   function onComplete(result) {
-    if (window.MarketBuzz) {
-      window.MarketBuzz.recordGamePlayed(game, result || {});
+    if (window.MarketJuice) {
+      window.MarketJuice.recordGamePlayed(game, result || {});
     }
     refreshStateInfo();
   }
@@ -276,7 +276,7 @@
   async function sampleMatch() {
     const res = await fetch('/data/company-models.json');
     const all = await res.json();
-    const four = window.MBGames.shared.shuffle(all).slice(0, 4);
+    const four = window.MJGames.shared.shuffle(all).slice(0, 4);
     return { companies: four };
   }
 
@@ -342,26 +342,26 @@
   }
 
   window.resetEngagement = function () {
-    if (window.MarketBuzz) window.MarketBuzz._debugReset();
+    if (window.MarketJuice) window.MarketJuice._debugReset();
     refreshStateInfo();
     // Reload to clear any in-progress game state too.
     location.reload();
   };
   window.reloadSample = function () { location.reload(); };
 
-  // Wait for MarketBuzz init to register, then launch.
+  // Wait for MarketJuice init to register, then launch.
   function launch() {
     const fn = launchers[game];
     if (!fn) {
-      host.innerHTML = '<div class="mbg-card"><div class="mbg-title">Unknown game: ' + game + '</div></div>';
+      host.innerHTML = '<div class="mj-card"><div class="mj-title">Unknown game: ' + game + '</div></div>';
       return;
     }
     fn().catch(err => {
-      host.innerHTML = '<div class="mbg-card"><div class="mbg-title">Failed to load ' + game + '</div><pre style="color:var(--red); font-size:12px; white-space:pre-wrap;">' + (err && err.stack || err) + '</pre><p style="color:var(--text-dim); font-size:12px; margin-top:10px;">If a dataset is missing, that game just hasn\'t been built yet. Try another tab.</p></div>';
+      host.innerHTML = '<div class="mj-card"><div class="mj-title">Failed to load ' + game + '</div><pre style="color:var(--red); font-size:12px; white-space:pre-wrap;">' + (err && err.stack || err) + '</pre><p style="color:var(--text-dim); font-size:12px; margin-top:10px;">If a dataset is missing, that game just hasn\'t been built yet. Try another tab.</p></div>';
     });
   }
 
-  if (window.MarketBuzz) launch();
+  if (window.MarketJuice) launch();
   else document.addEventListener('DOMContentLoaded', launch);
 })();
 </script>
