@@ -72,27 +72,50 @@ body {
 @media (min-width: 880px) {
   .hero { grid-template-columns: 1.1fr 0.9fr; gap: 48px; padding: 56px 0 88px; }
 }
-/* ── Hero brand wordmark — the dominant visual on the page ──
-   "Market Juice" rendered at clamp(3rem, 8vw, 6rem) — ~48px on small
-   phones, ~96px on wide desktops. Two .brand-word spans inside the h1
-   let the words wrap to two lines on narrow viewports while preserving
-   the gradient on each word (gradients don't naturally span line breaks
-   so we put one on each word). Line-height tight so the stacked-words
-   case still feels like one wordmark, not a list. */
+/* ── Hero brand lockup — citrus mark + "Market Juice" wordmark ──
+   The wordmark is the dominant visual: clamp(3rem, 8vw, 6rem) — ~48px on
+   small phones, ~96px on wide desktops. Two .brand-word spans inside the
+   h1 let the words wrap to two lines on narrow viewports while preserving
+   the gradient on each word (gradients don't naturally span line breaks,
+   so each word owns its own gradient).
+   The .brand-mark SVG is the first flex child — sized to match the
+   wordmark cap-height so they feel like a coherent lockup. Aligned to
+   the top of the wordmark via align-items so it stays anchored to
+   "Market" when the wordmark wraps. */
 .hero-brand {
-  font-size: clamp(3rem, 8vw, 6rem);
+  /* Slightly smaller minimum than before (2.5rem vs 3rem) so the whole
+     lockup still fits on one line on narrow mobile viewports. The
+     no-wrap rule below is what forces the single line; this clamp
+     keeps that constraint achievable. */
+  font-size: clamp(2.5rem, 8vw, 6rem);
   line-height: 0.95;
   font-weight: 700;
   letter-spacing: -2px;
   margin: 0 0 16px;
-  /* Allow the two words to flow onto separate lines on narrow viewports
-     without forcing it on wider ones. */
   display: flex;
-  flex-wrap: wrap;
-  gap: 0 0.25em;
+  flex-wrap: nowrap;          /* lockup stays on a single line */
+  align-items: center;        /* mark vertically centered against the wordmark */
+  /* Tight gap — the mark and wordmark read as a single lockup, not
+     two separate elements with breathing room between them. */
+  gap: 0 clamp(0.15rem, 0.4vw, 0.3em);
+  /* Prevent the lockup from breaking the page layout on extreme narrow
+     viewports — let it shrink before forcing a wrap. */
+  min-width: 0;
 }
 .hero-brand .brand-word {
   display: inline-block;
+  white-space: nowrap;        /* "Market" and "Juice" never break internally */
+}
+.hero-brand .brand-mark {
+  /* The mark dominates the lockup — visually heavier than the wordmark
+     cap-height so it reads as the anchor of the brand. clamp scales
+     from ~88px on small phones to ~176px on wide desktops. */
+  width: clamp(5.5rem, 16vw, 11rem);
+  height: auto;
+  flex-shrink: 0;
+  display: block;
+  /* Subtle outer glow tying the mark into the page's dark theme. */
+  filter: drop-shadow(0 6px 18px rgba(188, 140, 255, 0.25));
 }
 @media (min-width: 880px) {
   .hero-brand { margin-bottom: 18px; }

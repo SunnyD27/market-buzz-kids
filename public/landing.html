@@ -31,11 +31,14 @@
   <!-- ============================================================ -->
   <section class="hero">
     <div class="hero-text">
-      <!-- Brand name AS the headline. Dropped the emoji at this scale —
-           the full-gradient wordmark is strong enough on its own and the
-           emoji at 96px competes for attention. On narrow viewports the
-           two words wrap naturally to two lines; that's intentional. -->
-      <h1 class="hero-brand"><span class="brand-word grad">Market</span> <span class="brand-word grad">Juice</span></h1>
+      <!-- Brand lockup: SVG mark + wordmark. The SVG sits in the same flex
+           container as the words so it stays anchored at the start when the
+           wordmark wraps on narrow viewports. alt="" because the wordmark
+           text supplies the brand name to screen readers. -->
+      <h1 class="hero-brand">
+        <img src="/icons/logo.png" alt="" class="brand-mark" width="200" height="200"/>
+        <span class="brand-word grad">Market</span> <span class="brand-word grad">Juice</span>
+      </h1>
       <p class="hero-tagline">Your daily squeeze of market smarts</p>
       <p class="hero-sub">Fresh market lessons, squeezed daily through games and stories. Built for kids ages 10&#x2011;14. <strong>100% free.</strong> 3 minutes a day.</p>
       <div class="hero-cta">
