@@ -317,6 +317,20 @@
         return null;
       }
       const result = await res.json();
+
+      // Duplicate gate (Phase 11): server returns mcAwarded: 0 + duplicate:
+      // true when this event was already counted today. Don't animate,
+      // don't update the bar, don't fire popups — just notify so the
+      // popup module can show a gentle "already earned" toast.
+      if (result.duplicate) {
+        try {
+          document.dispatchEvent(new CustomEvent('mj:duplicate-played', {
+            detail: { eventType, eventData },
+          }));
+        } catch (_) { /* CustomEvent unsupported — skip */ }
+        return result;
+      }
+
       if (result.mcAwarded > 0) floatMC(result.mcAwarded);
       mergeTrackResult(result);
       renderProfileBar();

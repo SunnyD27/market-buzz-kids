@@ -186,8 +186,10 @@ async function main() {
     last_active_date: yesterday,
     last_streak_date: yesterday,
   });
+  // Use a unique game name so the dedup gate (Section 11) doesn't
+  // intercept us — Section 2 already played 'match' today.
   const r6 = await recordEvent(u.id, 'game-completed', {
-    game: 'match', correct: true, digestDate: todayNY(),
+    game: 'streak-test-day6', correct: true, digestDate: todayNY(),
   });
   eq('streak advances 5 → 6',          r6.streakUpdate.current, 6);
   eq('longest follows to 6',           r6.streakUpdate.longest, 6);
@@ -210,7 +212,7 @@ async function main() {
   // recompute rank).
   await syncRank(u.id);
   const r7 = await recordEvent(u.id, 'game-completed', {
-    game: 'time-machine', correct: true, digestDate: todayNY(),
+    game: 'streak-test-day7', correct: true, digestDate: todayNY(),
   });
   eq('streak hits 7',                   r7.streakUpdate.current, 7);
   ok('shieldAwarded flag set',          r7.streakUpdate.shieldAwarded === true,
@@ -231,7 +233,7 @@ async function main() {
   });
   await syncRank(u.id);
   const r8 = await recordEvent(u.id, 'game-completed', {
-    game: 'compound', correct: false, digestDate: todayNY(),
+    game: 'streak-test-day8', correct: false, digestDate: todayNY(),
   });
   ok('shieldUsed=true',                 r8.streakUpdate.shieldUsed === true,
      `got streakUpdate=${JSON.stringify(r8.streakUpdate)}`);
@@ -250,7 +252,7 @@ async function main() {
   });
   await syncRank(u.id);
   const r9 = await recordEvent(u.id, 'game-completed', {
-    game: 'bull-bear', correct: true, digestDate: todayNY(),
+    game: 'streak-test-day9-reset', correct: true, digestDate: todayNY(),
   });
   eq('streak resets to 1',              r9.streakUpdate.current, 1);
   eq('longest preserved at 10',         r9.streakUpdate.longest, 10);
@@ -265,8 +267,57 @@ async function main() {
   }
   ok('throws UNKNOWN_EVENT_TYPE', rejected);
 
-  // -------- Section 11: PII deletion scrub clears engagement tables ----
-  console.log('\nSection 11 — deletion scrub clears all 4 tables');
+  // -------- Section 11: dedup gate — replay can't double-earn ----------
+  // Regression for the "play the same game 50 times" exploit.
+  // game-completed: first call earns MC, second is gated.
+  // word-learned + sunday-challenge: already fired earlier today in
+  // Section 5, so the next call must also be gated.
+  console.log('\nSection 11 — dedup gate blocks replay double-counting');
+
+  // Use a brand-new game name not played today so the FIRST call earns MC.
+  const dedupGame = 'dedup-test-game';
+  const stateBefore = await getProgress(u.id);
+  const mcBefore = stateBefore.progress.marketCoins;
+  const gamesPlayedBefore = stateBefore.progress.gamesPlayed;
+
+  const dup1 = await recordEvent(u.id, 'game-completed', {
+    game: dedupGame, correct: true, digestDate: todayNY(),
+  });
+  ok('first game-completed awards MC',         dup1.mcAwarded > 0,
+     `got mcAwarded=${dup1.mcAwarded}`);
+  ok('first game-completed NOT marked dup',    dup1.duplicate !== true);
+
+  const dup2 = await recordEvent(u.id, 'game-completed', {
+    game: dedupGame, correct: true, digestDate: todayNY(),
+  });
+  eq('second game-completed mcAwarded = 0',    dup2.mcAwarded, 0);
+  eq('second game-completed duplicate = true', dup2.duplicate, true);
+  eq('no badge unlocks on dup',                dup2.badgeUnlocks.length, 0);
+  eq('no new records on dup',                  dup2.newRecords.length, 0);
+
+  // Verify the canonical state didn't move on the dup.
+  const stateAfter = await getProgress(u.id);
+  eq('MC delta matches first award only',
+     stateAfter.progress.marketCoins - mcBefore,
+     dup1.mcAwarded);
+  eq('games_played incremented exactly once',
+     stateAfter.progress.gamesPlayed - gamesPlayedBefore,
+     1);
+
+  // word-learned was already fired in Section 5 — re-firing must dup.
+  const wordDup = await recordEvent(u.id, 'word-learned', { digestDate: todayNY() });
+  eq('word-learned replay mcAwarded = 0',      wordDup.mcAwarded, 0);
+  eq('word-learned replay duplicate = true',   wordDup.duplicate, true);
+
+  // sunday-challenge was already fired in Section 5 — re-firing must dup.
+  const sunDup = await recordEvent(u.id, 'sunday-challenge-completed', {
+    type: 'trading-floor', digestDate: todayNY(), bonus: true,
+  });
+  eq('sunday-challenge replay mcAwarded = 0',  sunDup.mcAwarded, 0);
+  eq('sunday-challenge replay duplicate=true', sunDup.duplicate, true);
+
+  // -------- Section 12: PII deletion scrub clears engagement tables ----
+  console.log('\nSection 12 — deletion scrub clears all 4 tables');
   // Use the real storage.recordDeletionRequest path so we test the
   // production code path, not just hard-delete.
   await storage.recordDeletionRequest({

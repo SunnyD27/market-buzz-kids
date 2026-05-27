@@ -290,6 +290,8 @@
 .mj-pop-toast-shield .mj-pop-toast-title { color: var(--orange); }
 .mj-pop-toast-shield-awarded { border-color: rgba(88,166,255,0.45); }
 .mj-pop-toast-shield-awarded .mj-pop-toast-title { color: var(--blue); }
+.mj-pop-toast-duplicate { border-color: rgba(139,148,158,0.35); }
+.mj-pop-toast-duplicate .mj-pop-toast-title { color: var(--text-dim); }
 
 /* ---- Badge unlock card (bottom slide-in) ---- */
 
