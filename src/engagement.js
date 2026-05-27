@@ -274,6 +274,69 @@ export async function getProgress(userId) {
   };
 }
 
+// ---- Duplicate detection ----------------------------------------------
+//
+// Prevents the "replay the same game 50 times" exploit. Daily-visit is
+// already idempotent via last_active_date so it's not gated here. The
+// other three event types are deduped against the engagement_events log:
+//
+//   game-completed              → (game, digestDate)
+//   word-learned                → (digestDate)
+//   sunday-challenge-completed  → (digestDate)
+//
+// Returns true when a non-duplicate prior event exists for the same key
+// (we only count rows where event_data.duplicate is not true, so a stack
+// of duplicate-marker rows can never become "the first award" by accident).
+//
+// `digestDate` falls back to server today if the client omitted it, so a
+// client that strips eventData can't bypass the gate by sending null.
+
+async function isDuplicate(client, userId, eventType, eventData, todayServer) {
+  const digestDate = (eventData?.digestDate || todayServer);
+  if (eventType === 'game-completed') {
+    const game = eventData?.game;
+    if (!game) return false; // no game name → can't dedup; rare, leave permissive
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'game-completed'
+          AND event_data->>'game' = $2
+          AND event_data->>'digestDate' = $3
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, game, digestDate],
+    );
+    return rows.length > 0;
+  }
+  if (eventType === 'word-learned') {
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'word-learned'
+          AND event_data->>'digestDate' = $2
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, digestDate],
+    );
+    return rows.length > 0;
+  }
+  if (eventType === 'sunday-challenge-completed') {
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'sunday-challenge-completed'
+          AND event_data->>'digestDate' = $2
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, digestDate],
+    );
+    return rows.length > 0;
+  }
+  // daily-visit is idempotent via last_active_date in applyDailyVisit;
+  // no gate needed here.
+  return false;
+}
+
 // ---- recordEvent ------------------------------------------------------
 
 /**
@@ -310,6 +373,49 @@ export async function recordEvent(userId, eventType, eventData = {}) {
     );
     const before = normalizeProgressRow(progRes.rows[0]);
     const today = todayNY();
+
+    // Normalize digestDate so the audit log and dedup lookups stay in sync
+    // regardless of whether the client passed one. (Server is authoritative
+    // for "today" — clients can't forge a different date to bypass dedup.)
+    if (eventData && !eventData.digestDate) eventData = { ...eventData, digestDate: today };
+    else if (!eventData) eventData = { digestDate: today };
+
+    // 1a. Duplicate gate — exit early without mutating state, but still
+    //     log the duplicate to engagement_events for visibility. The kid
+    //     can replay all they want; they just don't double-earn MC.
+    if (await isDuplicate(client, userId, eventType, eventData, today)) {
+      await client.query(
+        `INSERT INTO engagement_events (user_id, event_type, event_data)
+         VALUES ($1, $2, $3::jsonb)`,
+        [userId, eventType, JSON.stringify({
+          ...(eventData || {}),
+          duplicate: true,
+          mcAwarded: 0,
+        })],
+      );
+      // Build nextMilestones from the un-mutated state so the UI still
+      // gets a fresh pointer to the next rank/badge.
+      const allBadgeRowsRes = await client.query(
+        `SELECT badge_key, current_tier FROM user_badges WHERE user_id = $1`,
+        [userId],
+      );
+      const nextMilestones = buildNextMilestones(before, allBadgeRowsRes.rows);
+      await client.query('COMMIT');
+      return {
+        mcAwarded: 0,
+        newTotal: before.market_coins,
+        duplicate: true,
+        streakUpdate: {
+          current: before.current_streak,
+          longest: before.longest_streak,
+          shieldsRemaining: before.streak_shields,
+        },
+        rankUp: null,
+        badgeUnlocks: [],
+        newRecords: [],
+        nextMilestones,
+      };
+    }
 
     // Working copy of progress that we'll write back at the end.
     const after = { ...before };

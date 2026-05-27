@@ -341,6 +341,26 @@
     });
   });
 
+  // Duplicate replay — kid played the same game/word/sunday again today.
+  // Friendly low-key toast; no animation, no MC float, no badge updates
+  // (the server already gated all of that). Keep the hold short so a kid
+  // who's just messing around with the picker doesn't get spammed.
+  document.addEventListener('mj:duplicate-played', (e) => {
+    const evtType = e.detail?.eventType || '';
+    const subtitle = evtType === 'word-learned'
+      ? 'Word of the Day already revealed today.'
+      : evtType === 'sunday-challenge-completed'
+        ? "Sunday Challenge MC already earned this week."
+        : 'Play counted, but MC for this one is already in the bank.';
+    showToast({
+      icon: '✅',
+      kind: 'duplicate',
+      title: 'Already earned!',
+      subtitle,
+      holdMs: 2400,
+    });
+  });
+
   // ---- Helpers ---------------------------------------------------------
 
   function escapeHTML(s) {
@@ -385,6 +405,11 @@
     },
     shieldAwarded() {
       document.dispatchEvent(new CustomEvent('mj:shield-awarded', { detail: { shieldsRemaining: 1 } }));
+    },
+    duplicate(eventType) {
+      document.dispatchEvent(new CustomEvent('mj:duplicate-played', {
+        detail: { eventType: eventType || 'game-completed' },
+      }));
     },
   };
 })();
