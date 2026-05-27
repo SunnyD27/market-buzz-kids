@@ -97,7 +97,7 @@ export function buildHTML(content, opts = {}) {
   // Sunday Challenge — Sunday-only interactive game (4 rotating types).
   // The AI generates the content; public/games/sunday-challenge.js does
   // the rendering. Section header + container div; the inline script at
-  // the bottom of the page calls window.MBGames.sundayChallenge.render.
+  // the bottom of the page calls window.MJGames.sundayChallenge.render.
   //
   // Backward compat: if a digest row is from before the Sunday Challenge
   // launch it'll have `weeklyChallenge` instead — render the old card so
@@ -222,7 +222,18 @@ export function buildHTML(content, opts = {}) {
 <link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/engagement.css">
 <link rel="stylesheet" href="/games/styles.css">
+<script>
+  // Phase 11 — server-injected per-request hints consumed by engagement.js.
+  // __digestDate is the NY calendar date the digest is for (event tracking
+  // uses this for the daily-visit + game-completed event_data).
+  // __isSample tells engagement.js to render the teaser profile bar
+  // ("Sign up to start earning!") instead of fetching real state.
+  window.__digestDate = '${escapeHTML(opts.digestDate || '')}';
+  window.__isSample = ${opts.isSample ? 'true' : 'false'};
+</script>
+<script src="/progression-config.js"></script>
 <script src="/engagement.js" defer></script>
+<script src="/engagement-popups.js" defer></script>
 <script src="/pwa.js" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -791,7 +802,7 @@ export function buildHTML(content, opts = {}) {
     <div class="word-label">🔤 INVESTING VOCABULARY</div>
     <div class="the-word">${escapeHTML(wordOfDay.word)}</div>
     <div class="word-type">${escapeHTML(wordOfDay.type)} · ${escapeHTML(wordOfDay.context)}</div>
-    <button type="button" class="word-reveal-btn" id="wordRevealBtn" onclick="revealWord()">Tap to reveal definition (+5 XP)</button>
+    <button type="button" class="word-reveal-btn" id="wordRevealBtn" onclick="revealWord()">Tap to reveal definition</button>
     <div class="word-def word-def-hidden" id="wordDef">${escapeHTML(wordOfDay.definition)}</div>
   </div>
 
@@ -799,16 +810,14 @@ export function buildHTML(content, opts = {}) {
     <div class="rocket">🚀</div>
     <p style="margin-top: 6px;">Market Juice — Built for future investors</p>
     <p style="margin-top: 4px; font-size: 11px; color: #484f58;">Not financial advice. Just getting smarter every day.</p>
-    <!-- Scroll-to-bottom XP marker: engagement.js watches this with IntersectionObserver -->
-    <div id="mb-bottom-marker" aria-hidden="true" style="height:1px"></div>
   </div>
 
 </div>
 
 <!-- Phase 6.4: game modules. Loaded synchronously and in order before the
-     inline render call below so window.MBGames is fully populated.
+     inline render call below so window.MJGames is fully populated.
      shared.js is required by BOTH the Daily Challenge picker and the
-     Sunday Challenge (it provides MBGames.shared.PRINCIPLES used for
+     Sunday Challenge (it provides MJGames.shared.PRINCIPLES used for
      reveal-panel principle tags). We load it once when either is present. -->
 ${(hasDailyChallenge || hasSundayChallenge) ? `<script src="/games/shared.js"></script>` : ''}
 ${hasDailyChallenge ? `
@@ -834,10 +843,14 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
     starsEl.appendChild(star);
   }
 
-  // ---- Word of Day tap-to-reveal (+5 XP, once per day) ----
+  // ---- Word of Day tap-to-reveal — fires word-learned event ----
   function revealWord() {
     document.getElementById('word-card').classList.add('word-revealed');
-    if (window.MarketBuzz) window.MarketBuzz.recordWordRevealed();
+    if (window.MarketJuice && window.MarketJuice.recordEvent) {
+      window.MarketJuice.recordEvent('word-learned', {
+        digestDate: window.__digestDate || null,
+      });
+    }
   }
 
   // ---- Phase 7: logout link ----
@@ -859,33 +872,33 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
   // ---- Daily Challenge (Phase 6.4) -------------------------------------
   // Inline quiz renderer — the quiz module isn't a standalone file (its
   // original implementation lived inline in this template). Registering on
-  // window.MBGames.quiz so the picker can render quiz cards just like any
+  // window.MJGames.quiz so the picker can render quiz cards just like any
   // other game type. Mirrors public/games-preview.html's inline renderer.
-  window.MBGames = window.MBGames || {};
-  if (!window.MBGames.quiz) {
-    window.MBGames.quiz = { render: function (host, data, opts) {
+  window.MJGames = window.MJGames || {};
+  if (!window.MJGames.quiz) {
+    window.MJGames.quiz = { render: function (host, data, opts) {
       var answered = false;
       host.innerHTML =
-        '<div class="mbg-card" id="qz-card">' +
-          '<div class="mbg-label">🧠 Daily Challenge · The Quiz</div>' +
-          '<div class="mbg-title">' + esc(data.question) + '</div>' +
+        '<div class="mj-card" id="qz-card">' +
+          '<div class="mj-label">🧠 Daily Challenge · The Quiz</div>' +
+          '<div class="mj-title">' + esc(data.question) + '</div>' +
           '<div id="qz-options" style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:12px;"></div>' +
-          '<div class="mbg-reveal" id="qz-reveal"></div>' +
+          '<div class="mj-reveal" id="qz-reveal"></div>' +
         '</div>';
       var optHost = host.querySelector('#qz-options');
       data.options.forEach(function (opt, i) {
         var b = document.createElement('button');
-        b.type = 'button'; b.className = 'mbg-btn'; b.textContent = opt;
+        b.type = 'button'; b.className = 'mj-btn'; b.textContent = opt;
         b.addEventListener('click', function () {
           if (answered) return;
           answered = true;
           var correct = i === data.correctIndex;
           Array.from(optHost.children).forEach(function (bb, j) {
             bb.disabled = true;
-            if (j === data.correctIndex) bb.classList.add('mbg-btn-correct');
-            else if (j === i && !correct) bb.classList.add('mbg-btn-wrong');
+            if (j === data.correctIndex) bb.classList.add('mj-btn-correct');
+            else if (j === i && !correct) bb.classList.add('mj-btn-wrong');
           });
-          window.MBGames.shared.renderReveal(host.querySelector('#qz-card'), {
+          window.MJGames.shared.renderReveal(host.querySelector('#qz-card'), {
             resultKind: correct ? 'correct' : 'wrong',
             resultLabel: correct ? '🎯 Correct!' : '🤔 Not quite',
             headline: 'The lesson',
@@ -905,8 +918,8 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
   var __DC_BUNDLE = ${JSON.stringify({ games: dailyChallenge.games.map(g => ({ type: g.type, data: g.data })) })};
   (function () {
     var host = document.getElementById('daily-challenge-host');
-    if (!host || !window.MBGames || !window.MBGames.dailyChallenge) return;
-    window.MBGames.dailyChallenge.render(host, __DC_BUNDLE, {});
+    if (!host || !window.MJGames || !window.MJGames.dailyChallenge) return;
+    window.MJGames.dailyChallenge.render(host, __DC_BUNDLE, {});
   })();
   ` : ''}
 
@@ -917,8 +930,8 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
   var __SC_DATA = ${JSON.stringify(sundayChallenge)};
   (function () {
     var host = document.getElementById('sunday-challenge-host');
-    if (!host || !window.MBGames || !window.MBGames.sundayChallenge) return;
-    window.MBGames.sundayChallenge.render(host, __SC_DATA, {});
+    if (!host || !window.MJGames || !window.MJGames.sundayChallenge) return;
+    window.MJGames.sundayChallenge.render(host, __SC_DATA, {});
   })();
   ` : ''}
 </script>

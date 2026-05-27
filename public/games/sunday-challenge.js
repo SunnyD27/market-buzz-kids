@@ -2,7 +2,7 @@
  *
  * The Sunday Challenge — a longer, AI-generated weekly game that rotates
  * between 4 formats on a 4-week cycle. Registered as
- * window.MBGames.sundayChallenge.render(host, data, opts). Dispatches to
+ * window.MJGames.sundayChallenge.render(host, data, opts). Dispatches to
  * a sub-renderer based on data.type:
  *
  *   trading-floor  → 3-round portfolio sim with real historical prices
@@ -10,18 +10,18 @@
  *   investathon    → 10 rapid-fire questions with 8s timer
  *   dilemma        → 3 tradeoff scenarios with side-by-side math
  *
- * XP: awarded ONCE per Sunday via window.MarketBuzz.recordGamePlayed
- * (idempotent per-day in engagement.js). fullXP=50 baseline, fullXP=75
+ * MC: awarded ONCE per Sunday via window.MarketJuice.recordEvent
+ * ('sunday-challenge-completed'). Server treats bonus=true as the 50+25=75
  * for the bonus condition (beat S&P, perfect score, 8+/10, etc).
  *
  * Re-play: completion is tracked in localStorage at
- *   mb-sunday-challenge-<YYYY-MM-DD>
+ *   mj-sunday-challenge-<YYYY-MM-DD>
  * The XP grant is gated on this flag so replays don't re-award.
  */
 (function () {
   'use strict';
 
-  window.MBGames = window.MBGames || {};
+  window.MJGames = window.MJGames || {};
 
   // ── Shared helpers ───────────────────────────────────────────────────
   function escapeHTML(s) {
@@ -47,7 +47,7 @@
   }
 
   function completionKey() {
-    return 'mb-sunday-challenge-' + todayKey();
+    return 'mj-sunday-challenge-' + todayKey();
   }
 
   function alreadyCompleted() {
@@ -63,26 +63,32 @@
     } catch { /* localStorage may be disabled — silently noop */ }
   }
 
+  // Captured at render() time so awardXP knows which sub-game type to
+  // report. The 4 sub-renderers share this single module via closure.
+  let currentChallengeType = 'unknown';
+
   /**
-   * Award XP via the engagement system. Idempotent per day: engagement.js
-   * dedupes by gameType, AND we additionally gate on our localStorage
-   * flag so users get a clean "already played" state on replay.
+   * Award MC via the server-tracked engagement system. Phase 11 fires a
+   * 'sunday-challenge-completed' event; the server handles the 50/75 split
+   * via the bonus flag and is the canonical idempotency boundary. We
+   * additionally gate on a localStorage flag so kids see a clean
+   * "already played" state on replay without round-tripping to the server.
    */
   function awardXP(bonus) {
-    if (alreadyCompleted()) return; // replay → no double XP
+    if (alreadyCompleted()) return; // replay → no double-fire
     markCompleted(bonus);
-    if (window.MarketBuzz && window.MarketBuzz.recordGamePlayed) {
-      window.MarketBuzz.recordGamePlayed('sunday-challenge', {
-        correct: true,
-        fullXP: bonus ? 75 : 50,
-        attemptXP: 50,
+    if (window.MarketJuice && window.MarketJuice.recordEvent) {
+      window.MarketJuice.recordEvent('sunday-challenge-completed', {
+        type: currentChallengeType,
+        digestDate: window.__digestDate || null,
+        bonus: !!bonus,
       });
     }
   }
 
   /** Render a principle tag at the bottom of a reveal panel. */
   function principleTag(principleNum) {
-    const map = (window.MBGames.shared && window.MBGames.shared.PRINCIPLES) || {};
+    const map = (window.MJGames.shared && window.MJGames.shared.PRINCIPLES) || {};
     const label = map[principleNum] || '';
     return label
       ? `<div class="sc-principle-tag">${escapeHTML(label)}</div>`
@@ -571,6 +577,7 @@
   // ── Public entry point ───────────────────────────────────────────────
   function render(host, data, opts) {
     if (!host || !data || !data.type) return;
+    currentChallengeType = data.type;
     // If the kid already finished today, show a "completed" banner with
     // a replay link. XP won't re-award on replay (gated by completionKey).
     if (alreadyCompleted()) {
@@ -598,5 +605,5 @@
     }
   }
 
-  window.MBGames.sundayChallenge = { render };
+  window.MJGames.sundayChallenge = { render };
 })();

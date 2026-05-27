@@ -140,32 +140,32 @@
   }
 
   function buildBanner({ message, actionLabel, onAction, iconHint }) {
-    if (document.getElementById('mb-pwa-banner')) return;
+    if (document.getElementById('mj-pwa-banner')) return;
     const el = document.createElement('div');
-    el.id = 'mb-pwa-banner';
+    el.id = 'mj-pwa-banner';
     el.innerHTML = `
-      <div class="mb-pwa-banner-inner">
-        <div class="mb-pwa-banner-icon">${iconHint || '📲'}</div>
-        <div class="mb-pwa-banner-msg">${escapeHTML(message)}</div>
-        <button type="button" class="mb-pwa-banner-action" id="mb-pwa-action">${escapeHTML(actionLabel)}</button>
-        <button type="button" class="mb-pwa-banner-close" id="mb-pwa-close" aria-label="Dismiss">×</button>
+      <div class="mj-pwa-banner-inner">
+        <div class="mj-pwa-banner-icon">${iconHint || '📲'}</div>
+        <div class="mj-pwa-banner-msg">${escapeHTML(message)}</div>
+        <button type="button" class="mj-pwa-banner-action" id="mj-pwa-action">${escapeHTML(actionLabel)}</button>
+        <button type="button" class="mj-pwa-banner-close" id="mj-pwa-close" aria-label="Dismiss">×</button>
       </div>
     `;
     document.body.appendChild(el);
-    requestAnimationFrame(() => el.classList.add('mb-pwa-banner-show'));
-    document.getElementById('mb-pwa-action').addEventListener('click', () => {
+    requestAnimationFrame(() => el.classList.add('mj-pwa-banner-show'));
+    document.getElementById('mj-pwa-action').addEventListener('click', () => {
       try { onAction(); } catch (e) { console.warn('[PWA] banner action failed:', e); }
     });
-    document.getElementById('mb-pwa-close').addEventListener('click', () => {
+    document.getElementById('mj-pwa-close').addEventListener('click', () => {
       markDismissed();
       hideBanner();
     });
   }
 
   function hideBanner() {
-    const el = document.getElementById('mb-pwa-banner');
+    const el = document.getElementById('mj-pwa-banner');
     if (!el) return;
-    el.classList.remove('mb-pwa-banner-show');
+    el.classList.remove('mj-pwa-banner-show');
     setTimeout(() => el.remove(), 350);
   }
 

@@ -1,16 +1,17 @@
 /* public/games/shared.js
- * Shared helpers for all 6 daily games. Exposed as window.MBGames.shared.
+ * Shared helpers for all 6 daily games. Exposed as window.MJGames.shared.
  *
  * Conventions:
- *   - Each game module exposes window.MBGames[gameKey] with {render(host, data, opts)}.
+ *   - Each game module exposes window.MJGames[gameKey] with {render(host, data, opts)}.
  *   - opts.onComplete({correct?: boolean}) fires once when the kid finishes.
- *     The picker uses this to call MarketBuzz.recordGamePlayed.
+ *     The picker calls MarketJuice.recordEvent('game-completed', …) from
+ *     its onComplete handler.
  *   - Every reveal panel ends with the principle tag — enforced via renderReveal().
  */
 (function () {
   'use strict';
 
-  window.MBGames = window.MBGames || {};
+  window.MJGames = window.MJGames || {};
 
   const PRINCIPLES = {
     1: 'Principle 1 · Pay Yourself First',
@@ -48,18 +49,18 @@
    */
   function renderReveal(host, opts) {
     // opts: { resultKind: 'correct'|'wrong'|'neutral', resultLabel, headline, body (HTML), principle }
-    const el = host.querySelector('.mbg-reveal') || (() => {
+    const el = host.querySelector('.mj-reveal') || (() => {
       const d = document.createElement('div');
-      d.className = 'mbg-reveal';
+      d.className = 'mj-reveal';
       host.appendChild(d);
       return d;
     })();
     const principleLabel = PRINCIPLES[opts.principle] || '';
     el.innerHTML = `
-      ${opts.resultLabel ? `<div class="mbg-result ${opts.resultKind || 'neutral'}">${escapeHTML(opts.resultLabel)}</div>` : ''}
-      <div class="mbg-reveal-head">${escapeHTML(opts.headline || 'The lesson')}</div>
-      <div class="mbg-reveal-body">${opts.body || ''}</div>
-      ${principleLabel ? `<div class="mbg-reveal-principle">${escapeHTML(principleLabel)}</div>` : ''}
+      ${opts.resultLabel ? `<div class="mj-result ${opts.resultKind || 'neutral'}">${escapeHTML(opts.resultLabel)}</div>` : ''}
+      <div class="mj-reveal-head">${escapeHTML(opts.headline || 'The lesson')}</div>
+      <div class="mj-reveal-body">${opts.body || ''}</div>
+      ${principleLabel ? `<div class="mj-reveal-principle">${escapeHTML(principleLabel)}</div>` : ''}
     `;
     el.classList.add('show');
     // Smooth scroll into view (after layout) for mobile so the lesson lands.
@@ -115,7 +116,7 @@
     return a;
   }
 
-  window.MBGames.shared = {
+  window.MJGames.shared = {
     PRINCIPLES,
     escapeHTML,
     fmtMoney,

@@ -1,7 +1,7 @@
 /* public/games/styles.css — shared visual language for all 6 daily games. */
 
 /* ---- Game card shell ---- */
-.mbg-card {
+.mj-card {
   background: var(--card);
   border: 1px solid var(--card-border);
   border-radius: 18px;
@@ -11,7 +11,7 @@
   font-family: 'Fredoka', sans-serif;
   color: var(--text);
 }
-.mbg-label {
+.mj-label {
   font-family: 'Space Mono', monospace;
   font-size: 11px;
   letter-spacing: 2px;
@@ -19,14 +19,14 @@
   color: var(--purple);
   margin-bottom: 6px;
 }
-.mbg-title {
+.mj-title {
   font-size: 22px;
   font-weight: 700;
   color: var(--text-bright);
   line-height: 1.25;
   margin-bottom: 14px;
 }
-.mbg-prompt {
+.mj-prompt {
   font-size: 15px;
   color: var(--text);
   line-height: 1.6;
@@ -34,7 +34,7 @@
 }
 
 /* ---- Buttons ---- */
-.mbg-btn {
+.mj-btn {
   background: var(--card);
   border: 2px solid var(--card-border);
   border-radius: 14px;
@@ -48,27 +48,27 @@
   width: 100%;
   text-align: left;
 }
-.mbg-btn:hover { border-color: var(--purple); background: rgba(188,140,255,0.08); }
-.mbg-btn:active { transform: scale(0.98); }
-.mbg-btn.mbg-btn-correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
-.mbg-btn.mbg-btn-wrong   { border-color: var(--red);   background: var(--red-glow);   color: var(--red); opacity: 0.7; }
-.mbg-btn[disabled] { cursor: default; }
-.mbg-btn-primary {
+.mj-btn:hover { border-color: var(--purple); background: rgba(188,140,255,0.08); }
+.mj-btn:active { transform: scale(0.98); }
+.mj-btn.mj-btn-correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
+.mj-btn.mj-btn-wrong   { border-color: var(--red);   background: var(--red-glow);   color: var(--red); opacity: 0.7; }
+.mj-btn[disabled] { cursor: default; }
+.mj-btn-primary {
   background: linear-gradient(135deg, var(--purple), var(--blue));
   color: #fff;
   border-color: transparent;
   text-align: center;
 }
-.mbg-btn-primary:hover { transform: translateY(-1px); }
+.mj-btn-primary:hover { transform: translateY(-1px); }
 
 /* ---- Two-up choice grid (Bull/Bear, generic A/B) ---- */
-.mbg-choice-pair {
+.mj-choice-pair {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 12px;
   margin-bottom: 14px;
 }
-.mbg-choice-pair .mbg-btn {
+.mj-choice-pair .mj-btn {
   text-align: center;
   padding: 22px 16px;
   font-size: 19px;
@@ -78,15 +78,15 @@
   /* iPad-tactile: enlarges slightly on press, with a subtle shadow lift on hover */
   transition: transform 0.12s, border-color 0.15s, background 0.15s, box-shadow 0.15s;
 }
-.mbg-choice-pair .mbg-btn:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.3); transform: translateY(-2px); }
-.mbg-choice-pair .mbg-btn:active { transform: scale(0.97); }
-.mbg-choice-pair .mbg-bull { border-color: rgba(63,185,80,0.5); color: var(--green); background: rgba(63,185,80,0.06); }
-.mbg-choice-pair .mbg-bear { border-color: rgba(248,81,73,0.5); color: var(--red);   background: rgba(248,81,73,0.06); }
-.mbg-choice-pair .mbg-bull:hover { background: rgba(63,185,80,0.14); border-color: var(--green); }
-.mbg-choice-pair .mbg-bear:hover { background: rgba(248,81,73,0.14); border-color: var(--red); }
+.mj-choice-pair .mj-btn:hover { box-shadow: 0 6px 18px rgba(0,0,0,0.3); transform: translateY(-2px); }
+.mj-choice-pair .mj-btn:active { transform: scale(0.97); }
+.mj-choice-pair .mj-bull { border-color: rgba(63,185,80,0.5); color: var(--green); background: rgba(63,185,80,0.06); }
+.mj-choice-pair .mj-bear { border-color: rgba(248,81,73,0.5); color: var(--red);   background: rgba(248,81,73,0.06); }
+.mj-choice-pair .mj-bull:hover { background: rgba(63,185,80,0.14); border-color: var(--green); }
+.mj-choice-pair .mj-bear:hover { background: rgba(248,81,73,0.14); border-color: var(--red); }
 
 /* ---- Reveal panel (the lesson — every game ends here) ---- */
-.mbg-reveal {
+.mj-reveal {
   display: none;
   margin-top: 16px;
   padding: 16px;
@@ -96,21 +96,21 @@
   border-radius: 14px;
   animation: fadeIn 0.4s ease-out;
 }
-.mbg-reveal.show { display: block; }
-.mbg-reveal-head {
+.mj-reveal.show { display: block; }
+.mj-reveal-head {
   font-size: 14px;
   font-weight: 700;
   color: var(--blue);
   margin-bottom: 8px;
   letter-spacing: 0.3px;
 }
-.mbg-reveal-body {
+.mj-reveal-body {
   font-size: 15px;
   line-height: 1.65;
   color: var(--text);
 }
-.mbg-reveal-body strong { color: var(--text-bright); }
-.mbg-reveal-principle {
+.mj-reveal-body strong { color: var(--text-bright); }
+.mj-reveal-principle {
   display: inline-block;
   margin-top: 12px;
   padding: 6px 12px;
@@ -125,7 +125,7 @@
 }
 
 /* Result chip — correct/wrong banner at top of reveal */
-.mbg-result {
+.mj-result {
   display: inline-block;
   padding: 6px 14px;
   border-radius: 999px;
@@ -135,20 +135,20 @@
   font-weight: 700;
   margin-bottom: 10px;
 }
-.mbg-result.correct { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.35); }
-.mbg-result.wrong   { background: var(--red-glow);   color: var(--red);   border: 1px solid rgba(248,81,73,0.35); }
-.mbg-result.neutral { background: rgba(240,192,64,0.12); color: var(--yellow); border: 1px solid rgba(240,192,64,0.35); }
+.mj-result.correct { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.35); }
+.mj-result.wrong   { background: var(--red-glow);   color: var(--red);   border: 1px solid rgba(248,81,73,0.35); }
+.mj-result.neutral { background: rgba(240,192,64,0.12); color: var(--yellow); border: 1px solid rgba(240,192,64,0.35); }
 
 /* ---- Compound Interest Machine ---- */
-.mbg-ci-amount {
+.mj-ci-amount {
   text-align: center;
   margin: 10px 0 6px;
 }
-.mbg-ci-amount .principal {
+.mj-ci-amount .principal {
   font-size: 16px; color: var(--text-dim); letter-spacing: 1px;
   font-family: 'Space Mono', monospace;
 }
-.mbg-ci-amount .final {
+.mj-ci-amount .final {
   font-size: 56px;
   font-weight: 700;
   background: linear-gradient(135deg, var(--green), var(--yellow));
@@ -159,24 +159,24 @@
   line-height: 1.1;
   margin-top: 4px;
 }
-.mbg-ci-after {
+.mj-ci-after {
   font-size: 14px;
   color: var(--text-dim);
   margin-top: 4px;
   font-family: 'Space Mono', monospace;
 }
-.mbg-ci-slider-wrap {
+.mj-ci-slider-wrap {
   margin: 20px 4px 8px;
   /* Disable native scroll during touch drag so iPad slider feels responsive */
   touch-action: pan-y;
 }
-.mbg-ci-years-label {
+.mj-ci-years-label {
   display: flex; justify-content: space-between;
   font-family: 'Space Mono', monospace;
   font-size: 11px; color: var(--text-dim); letter-spacing: 1px;
   margin-bottom: 8px;
 }
-.mbg-ci-slider {
+.mj-ci-slider {
   -webkit-appearance: none; appearance: none;
   width: 100%; height: 14px;
   background: linear-gradient(90deg, var(--purple), var(--blue), var(--green), var(--yellow));
@@ -186,7 +186,7 @@
   touch-action: none;
 }
 /* Large thumb for iPad finger-friendliness */
-.mbg-ci-slider::-webkit-slider-thumb {
+.mj-ci-slider::-webkit-slider-thumb {
   -webkit-appearance: none; appearance: none;
   width: 32px; height: 32px;
   border-radius: 50%;
@@ -196,8 +196,8 @@
   cursor: grab;
   margin-top: -10px;
 }
-.mbg-ci-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.1); }
-.mbg-ci-slider::-moz-range-thumb {
+.mj-ci-slider::-webkit-slider-thumb:active { cursor: grabbing; transform: scale(1.1); }
+.mj-ci-slider::-moz-range-thumb {
   width: 32px; height: 32px;
   border-radius: 50%;
   background: #fff;
@@ -205,32 +205,32 @@
   box-shadow: 0 4px 14px rgba(0,0,0,0.35);
   cursor: grab;
 }
-.mbg-ci-chart { width: 100%; height: 120px; margin-top: 14px; }
-.mbg-ci-curve {
+.mj-ci-chart { width: 100%; height: 120px; margin-top: 14px; }
+.mj-ci-curve {
   fill: none;
-  stroke: url(#mbg-ci-gradient);
+  stroke: url(#mj-ci-gradient);
   stroke-width: 3;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mbg-ci-area {
-  fill: url(#mbg-ci-area-grad);
+.mj-ci-area {
+  fill: url(#mj-ci-area-grad);
   opacity: 0.5;
 }
-.mbg-ci-current-dot {
+.mj-ci-current-dot {
   fill: var(--yellow);
   stroke: #fff;
   stroke-width: 2;
 }
 
 /* ---- Match the Company ---- */
-.mbg-match-grid {
+.mj-match-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 14px;
 }
-.mbg-match-tile {
+.mj-match-tile {
   background: var(--card);
   border: 2px solid var(--card-border);
   border-radius: 14px;
@@ -241,14 +241,14 @@
   display: flex; align-items: center; justify-content: center;
   text-align: center;
 }
-.mbg-match-tile:active { transform: scale(0.98); }
-.mbg-match-tile.selected { border-color: var(--purple); background: rgba(188,140,255,0.10); }
-.mbg-match-tile.matched-correct { border-color: var(--green); background: var(--green-glow); }
-.mbg-match-tile.matched-wrong { border-color: var(--red); background: var(--red-glow); }
-.mbg-match-tile.dimmed { opacity: 0.35; pointer-events: none; }
-.mbg-match-company-name { font-size: 16px; font-weight: 700; color: var(--text-bright); }
-.mbg-match-revenue { font-size: 13px; line-height: 1.45; color: var(--text); }
-.mbg-match-instr {
+.mj-match-tile:active { transform: scale(0.98); }
+.mj-match-tile.selected { border-color: var(--purple); background: rgba(188,140,255,0.10); }
+.mj-match-tile.matched-correct { border-color: var(--green); background: var(--green-glow); }
+.mj-match-tile.matched-wrong { border-color: var(--red); background: var(--red-glow); }
+.mj-match-tile.dimmed { opacity: 0.35; pointer-events: none; }
+.mj-match-company-name { font-size: 16px; font-weight: 700; color: var(--text-bright); }
+.mj-match-revenue { font-size: 13px; line-height: 1.45; color: var(--text); }
+.mj-match-instr {
   text-align: center;
   font-family: 'Space Mono', monospace;
   font-size: 11px;
@@ -258,29 +258,29 @@
 }
 
 /* ---- Time Machine Trade ---- */
-.mbg-tm-header {
+.mj-tm-header {
   text-align: center;
   margin-bottom: 16px;
 }
-.mbg-tm-year {
+.mj-tm-year {
   font-family: 'Space Mono', monospace;
   font-size: 14px;
   color: var(--text-dim);
   letter-spacing: 1.5px;
 }
-.mbg-tm-budget {
+.mj-tm-budget {
   font-size: 26px;
   font-weight: 700;
   color: var(--yellow);
   margin-top: 4px;
 }
-.mbg-tm-choices {
+.mj-tm-choices {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 10px;
   margin-bottom: 14px;
 }
-.mbg-tm-pick {
+.mj-tm-pick {
   background: var(--card);
   border: 2px solid var(--card-border);
   border-radius: 14px;
@@ -289,57 +289,57 @@
   text-align: center;
   transition: transform 0.15s, border-color 0.15s;
 }
-.mbg-tm-pick:hover { border-color: var(--blue); }
-.mbg-tm-pick:active { transform: scale(0.98); }
-.mbg-tm-pick.picked { border-color: var(--yellow); background: rgba(240,192,64,0.10); }
-.mbg-tm-pick-name { font-size: 15px; font-weight: 700; color: var(--text-bright); margin-bottom: 2px; }
-.mbg-tm-pick-ticker { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
-.mbg-tm-pick-price { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--green); }
-.mbg-tm-result-row {
+.mj-tm-pick:hover { border-color: var(--blue); }
+.mj-tm-pick:active { transform: scale(0.98); }
+.mj-tm-pick.picked { border-color: var(--yellow); background: rgba(240,192,64,0.10); }
+.mj-tm-pick-name { font-size: 15px; font-weight: 700; color: var(--text-bright); margin-bottom: 2px; }
+.mj-tm-pick-ticker { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
+.mj-tm-pick-price { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--green); }
+.mj-tm-result-row {
   display: flex; justify-content: space-between; align-items: center;
   padding: 10px 12px; margin: 6px 0;
   background: rgba(255,255,255,0.03);
   border-radius: 10px;
   border-left: 3px solid var(--card-border);
 }
-.mbg-tm-result-row.winner { border-left-color: var(--yellow); background: rgba(240,192,64,0.10); }
-.mbg-tm-result-row.your-pick { border-left-color: var(--purple); background: rgba(188,140,255,0.10); }
-.mbg-tm-result-row.winner.your-pick { background: linear-gradient(135deg, rgba(240,192,64,0.12), rgba(188,140,255,0.10)); }
-.mbg-tm-result-name { font-weight: 700; color: var(--text-bright); font-size: 14px; }
-.mbg-tm-result-now { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; }
-.mbg-tm-result-now.gain { color: var(--green); }
-.mbg-tm-result-now.loss { color: var(--red); }
+.mj-tm-result-row.winner { border-left-color: var(--yellow); background: rgba(240,192,64,0.10); }
+.mj-tm-result-row.your-pick { border-left-color: var(--purple); background: rgba(188,140,255,0.10); }
+.mj-tm-result-row.winner.your-pick { background: linear-gradient(135deg, rgba(240,192,64,0.12), rgba(188,140,255,0.10)); }
+.mj-tm-result-name { font-weight: 700; color: var(--text-bright); font-size: 14px; }
+.mj-tm-result-now { font-family: 'Space Mono', monospace; font-size: 14px; font-weight: 700; }
+.mj-tm-result-now.gain { color: var(--green); }
+.mj-tm-result-now.loss { color: var(--red); }
 
 /* ---- Bull or Bear ---- */
-.mbg-bb-chart {
+.mj-bb-chart {
   width: 100%; height: 200px;
   background: rgba(255,255,255,0.02);
   border-radius: 12px;
   margin-bottom: 14px;
 }
-.mbg-bb-chart .grid-line {
+.mj-bb-chart .grid-line {
   stroke: rgba(255,255,255,0.05);
   stroke-width: 1;
 }
-.mbg-bb-chart .price-line {
+.mj-bb-chart .price-line {
   fill: none;
   stroke: var(--blue);
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.mbg-bb-chart .price-line.revealed.up { stroke: var(--green); }
-.mbg-bb-chart .price-line.revealed.down { stroke: var(--red); }
-.mbg-bb-chart .next-line {
+.mj-bb-chart .price-line.revealed.up { stroke: var(--green); }
+.mj-bb-chart .price-line.revealed.down { stroke: var(--red); }
+.mj-bb-chart .next-line {
   fill: none;
   stroke-width: 2.5;
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-dasharray: 6 4;
 }
-.mbg-bb-chart .next-line.up { stroke: var(--green); }
-.mbg-bb-chart .next-line.down { stroke: var(--red); }
-.mbg-bb-chart .label {
+.mj-bb-chart .next-line.up { stroke: var(--green); }
+.mj-bb-chart .next-line.down { stroke: var(--red); }
+.mj-bb-chart .label {
   fill: var(--text-dim);
   font-family: 'Space Mono', monospace;
   font-size: 10px;
@@ -347,26 +347,26 @@
 }
 
 /* ---- Price is Right ---- */
-.mbg-pir-company {
+.mj-pir-company {
   text-align: center;
   margin-bottom: 14px;
 }
-.mbg-pir-name {
+.mj-pir-name {
   font-size: 24px; font-weight: 700; color: var(--yellow);
 }
-.mbg-pir-ticker {
+.mj-pir-ticker {
   font-family: 'Space Mono', monospace; font-size: 11px;
   color: var(--text-dim); letter-spacing: 2px; margin-top: 2px;
 }
-.mbg-pir-options {
+.mj-pir-options {
   display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 10px;
   margin-bottom: 12px;
 }
 @media (max-width: 480px) {
-  .mbg-pir-options { grid-template-columns: 1fr; }
-  .mbg-tm-choices, .mbg-match-grid { grid-template-columns: 1fr; }
+  .mj-pir-options { grid-template-columns: 1fr; }
+  .mj-tm-choices, .mj-match-grid { grid-template-columns: 1fr; }
 }
-.mbg-pir-option {
+.mj-pir-option {
   background: var(--card);
   border: 2px solid var(--card-border);
   border-radius: 14px;
@@ -379,11 +379,11 @@
   font-weight: 700;
   color: var(--text-bright);
 }
-.mbg-pir-option:hover { border-color: var(--yellow); }
-.mbg-pir-option:active { transform: scale(0.98); }
-.mbg-pir-option.picked { border-color: var(--yellow); background: rgba(240,192,64,0.08); }
-.mbg-pir-option.correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
-.mbg-pir-option.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
+.mj-pir-option:hover { border-color: var(--yellow); }
+.mj-pir-option:active { transform: scale(0.98); }
+.mj-pir-option.picked { border-color: var(--yellow); background: rgba(240,192,64,0.08); }
+.mj-pir-option.correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
+.mj-pir-option.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
 
 /* ---- Daily Challenge picker ---- */
 .dc-wrap {
@@ -468,7 +468,7 @@
   border-top: 1px solid var(--card-border);
 }
 /* Remove the inner game-card margins so it nestles cleanly inside the parent. */
-.dc-card-body .mbg-card { margin: 12px 0 0; }
+.dc-card-body .mj-card { margin: 12px 0 0; }
 
 @media (max-width: 480px) {
   .dc-card-head { padding: 12px; gap: 10px; }
@@ -478,7 +478,7 @@
 }
 
 /* Honesty disclosure for Bull/Bear unlabeled charts */
-.mbg-data-note {
+.mj-data-note {
   margin-top: 12px;
   font-family: 'Space Mono', monospace;
   font-size: 10px;
