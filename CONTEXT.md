@@ -141,7 +141,9 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
 | `data/sample-digest.json` | Static curated sample. Served by `/sample`. Edit manually to refresh. |
 | `manifest.webmanifest` | PWA manifest, `start_url: /digest`. |
-| `sw.js` / `pwa.js` | Service worker + add-to-homescreen UX. Push notification placeholder in `pwa.js` (Phase 6.3 not done). |
+| `sw.js` / `pwa.js` | Service worker + add-to-homescreen UX. Push notification placeholder in `pwa.js` (Phase 6.3 not done). Cache prefix `mj-`, version `v2` (Phase 8 rebrand). |
+| `icons/logo.png` | Citrus + chart brand mark — transparent-bg PNG, 1024×1024. The hero lockup on `landing.html` references this directly via `<img src="/icons/logo.png">`. Sized in CSS, not pre-resized. |
+| `icons/icon.svg` / `icons/icon-maskable.svg` | PWA app icons (the chart-on-navy mark used on home screens). Separate from the brand mark — different concept, different use. |
 
 ### Scripts (`scripts/`)
 
@@ -490,6 +492,7 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 6.9 | Sunday Challenge — AI-generated weekly game, 4 rotating types (Trading Floor, CEO for a Day, Invest-a-Thon, Investor's Dilemma), `public/games/sunday-challenge.js` renderer, 4-week rotation derived from `edition.dateStr` | ✅ |
 | 7   | Kid-facing auth — username/password signup, bcrypt-hashed, `mj_session` signed httpOnly cookie (30d), `/digest` gated by `requireAuth`, parent-initiated password reset via existing Resend email pipeline. New: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html` + `forgot-password.html` + `reset-password.html` + `auth.css`. | ✅ |
 | 8   | Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com). New tagline: "Your daily squeeze of market smarts." All HTML pages, email templates, AI prompts, PWA manifest, privacy policy, and meta tags updated. Cookie renamed `mbk_session` → `mj_session`. Service worker cache prefix `mb-` → `mj-` + version bump to v2. No schema changes. | ✅ |
+| 9   | Hero restructure + brand lockup: "Market Juice" promoted to the page h1 with full gradient (was a small logo at top + separate headline). Tagline demoted to subtitle below. Citrus + chart logo mark added as `public/icons/logo.png` (transparent-bg PNG, 1024×1024) and inlined into the h1 flex container — tight gap with the wordmark so the two read as a single lockup. `flex-wrap: nowrap` keeps the lockup on one line; clamp-sized so it fits cleanly on narrow mobile down through wide desktop. | ✅ |
 
 ---
 
