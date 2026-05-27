@@ -64,6 +64,13 @@ function escapeHTML(s) {
  */
 function shell({ preheader, body }) {
   const deleteLink = appUrl('/parent/delete-data');
+  // Absolute URL — relative paths and localhost don't resolve in an
+  // inbox. In prod this points at themarketjuice.com; in local dev the
+  // email is stub-logged, so the broken localhost URL is harmless.
+  // alt="" matches the landing-page treatment: the wordmark text supplies
+  // the brand name to screen readers + acts as the visible fallback when
+  // an email client blocks remote images.
+  const logoUrl = appUrl('/icons/logo.png');
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${BRAND.name}</title></head>
@@ -76,7 +83,8 @@ function shell({ preheader, body }) {
 
         <tr><td style="background:${BRAND.primary};padding:20px 28px;color:#fff;">
           <div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;">
-            📈 ${BRAND.name}
+            <img src="${logoUrl}" alt="" width="32" height="32" style="vertical-align:middle;margin-right:10px;display:inline-block;border:0;">
+            <span style="vertical-align:middle;">${BRAND.name}</span>
           </div>
         </td></tr>
 
@@ -86,8 +94,8 @@ function shell({ preheader, body }) {
           You received this because someone signed your kid up for Market Juice.
           If that wasn't you, you can safely ignore this — no account will be created without your click.
           <br><br>
-          Questions or want to delete data? Reply to this email or visit
-          <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a>.
+          Questions or want to delete data? Reply to this email or
+          <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">delete your data here</a>.
         </td></tr>
 
       </table>
@@ -142,7 +150,7 @@ export function renderConsentEmail(user, link) {
         <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">Your rights</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>Request all of ${kid}'s data at any time (reply to this email)</li>
-          <li>Delete ${kid}'s account and ALL data at <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a></li>
+          <li><a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">Delete ${kid}'s account and ALL data</a> anytime</li>
           <li>Refuse further collection — we'll stop immediately if you ask</li>
         </ul>
       </td></tr>
@@ -209,8 +217,8 @@ export function renderVerifyEmail(user, link) {
     <p style="margin:0 0 22px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</p>
     <p style="margin:0;font-size:14px;color:#454a5b;">
       What we collect: ${kid}'s first name, age, and engagement data (XP, streak, quiz answers).
-      No selling, no sharing. Delete anytime at
-      <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};">/parent/delete-data</a>.
+      No selling, no sharing.
+      <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">Delete anytime</a>.
     </p>
     <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
       Link expires in 7 days. If you didn't sign up, ignore this email.
@@ -241,7 +249,7 @@ export function renderWelcomeEmail(user) {
   const username = escapeHTML(user.username || '');
   const digestLink = appUrl('/digest');
   const loginLink = appUrl('/login');
-  const subject = `${kid} is in! First digest arrives tomorrow at 7 AM`;
+  const subject = `${kid} is in — today's digest is live!`;
   const preheader = `Welcome to Market Juice — here's what to expect.`;
 
   // Phase 7: include kid's login credentials block when a username is on
@@ -264,25 +272,22 @@ export function renderWelcomeEmail(user) {
       🎉 ${kid} is in!
     </h1>
     <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
-      Welcome to <strong>Market Juice</strong>. Tomorrow at <strong>7 AM EST</strong>,
-      ${kid} will get the first daily digest: real market headlines, today's biggest mover,
-      and 3 short games that teach real investing principles.
+      Welcome to <strong>Market Juice</strong>! <strong>Today's digest is live now</strong>
+      with real market headlines, today's biggest mover, and 3 short games that teach real
+      investing principles. Fresh ones land daily at <strong>7 AM EST</strong>.
     </p>
     ${credentialsBlock}
-    <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
-      Want to peek before tomorrow's digest lands?
-    </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
       <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
         <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
-          See the digest →
+          See today's digest →
         </a>
       </td></tr>
     </table>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
            style="background:#f7f4ff;border:1px solid #e8defc;border-left:4px solid ${BRAND.accent};border-radius:8px;margin:0 0 8px 0;">
       <tr><td style="padding:14px 18px;color:#454a5b;font-size:14px;line-height:1.7;">
-        <strong>Quick tip:</strong> on iPhone, tap the share button in Safari and pick
+        <strong>Quick tip:</strong> on iPhone or iPad, tap the share button in Safari and pick
         "Add to Home Screen" so the digest opens like an app each morning.
       </td></tr>
     </table>
@@ -299,11 +304,11 @@ export function renderWelcomeEmail(user) {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `${kid} is in! First digest arrives tomorrow at 7 AM EST.`,
+      `${kid} is in! Today's digest is live now.`,
       credentialsText,
-      `Want to peek? ${digestLink}`,
+      `See today's digest: ${digestLink}`,
       '',
-      'On iPhone: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
+      'On iPhone or iPad: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
       '',
       'Reply to this email any time. We read every message.',
     ].join('\n'),

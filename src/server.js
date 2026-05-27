@@ -603,15 +603,17 @@ function activationPage({ ok, reason, action, user }) {
   const isOk = ok === true;
   let title, message, hint;
   if (isOk) {
+    // Both activation paths (parental consent / email verification) deliver
+    // the same "you're active — today's digest is live" message. Only the
+    // celebratory icon differs so the parent can tell which flow they're on.
+    const kid = escapeHTML(user.kid_first_name);
     if (action === 'consent_granted') {
-      title = "🎉 Consent confirmed!";
-      message = `Thanks. <strong>${escapeHTML(user.kid_first_name)}</strong>'s account is now active. The first daily digest arrives tomorrow at 7&nbsp;AM EST.`;
-      hint = 'You can request data deletion anytime at <a href="/parent/delete-data" style="color:#58a6ff;">/parent/delete-data</a>.';
+      title = `🎉 ${kid}'s account is active!`;
     } else {
-      title = "✅ Email confirmed!";
-      message = `Thanks. <strong>${escapeHTML(user.kid_first_name)}</strong>'s account is now active. The first daily digest arrives tomorrow at 7&nbsp;AM EST.`;
-      hint = 'You can request data deletion anytime at <a href="/parent/delete-data" style="color:#58a6ff;">/parent/delete-data</a>.';
+      title = `✅ ${kid}'s account is active!`;
     }
+    message = `Today's digest is ready and waiting for <strong>${kid}</strong>.`;
+    hint = 'Fresh digests land daily at 7&nbsp;AM EST. You can <a href="/parent/delete-data" style="color:#58a6ff;text-decoration:underline;">request data deletion</a> anytime.';
   } else {
     const reasons = {
       not_found:     'This activation link is invalid or has already been used.',
@@ -646,7 +648,7 @@ function activationPage({ ok, reason, action, user }) {
   <h1>${title}</h1>
   <p>${message}</p>
   <p class="hint">${hint}</p>
-  ${isOk ? '<a class="cta" href="/digest">See today\'s digest →</a>' : ''}
+  ${isOk ? '<a class="cta" href="/login">See today\'s digest →</a>' : ''}
 </div>
 </body></html>`;
 }
