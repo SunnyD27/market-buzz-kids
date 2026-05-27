@@ -72,27 +72,39 @@ body {
 @media (min-width: 880px) {
   .hero { grid-template-columns: 1.1fr 0.9fr; gap: 48px; padding: 56px 0 88px; }
 }
-/* ── Hero brand wordmark — the dominant visual on the page ──
-   "Market Juice" rendered at clamp(3rem, 8vw, 6rem) — ~48px on small
-   phones, ~96px on wide desktops. Two .brand-word spans inside the h1
-   let the words wrap to two lines on narrow viewports while preserving
-   the gradient on each word (gradients don't naturally span line breaks
-   so we put one on each word). Line-height tight so the stacked-words
-   case still feels like one wordmark, not a list. */
+/* ── Hero brand lockup — citrus mark + "Market Juice" wordmark ──
+   The wordmark is the dominant visual: clamp(3rem, 8vw, 6rem) — ~48px on
+   small phones, ~96px on wide desktops. Two .brand-word spans inside the
+   h1 let the words wrap to two lines on narrow viewports while preserving
+   the gradient on each word (gradients don't naturally span line breaks,
+   so each word owns its own gradient).
+   The .brand-mark SVG is the first flex child — sized to match the
+   wordmark cap-height so they feel like a coherent lockup. Aligned to
+   the top of the wordmark via align-items so it stays anchored to
+   "Market" when the wordmark wraps. */
 .hero-brand {
   font-size: clamp(3rem, 8vw, 6rem);
   line-height: 0.95;
   font-weight: 700;
   letter-spacing: -2px;
   margin: 0 0 16px;
-  /* Allow the two words to flow onto separate lines on narrow viewports
-     without forcing it on wider ones. */
   display: flex;
   flex-wrap: wrap;
-  gap: 0 0.25em;
+  align-items: center;
+  gap: 0 clamp(0.5rem, 1.5vw, 0.75em);
 }
 .hero-brand .brand-word {
   display: inline-block;
+}
+.hero-brand .brand-mark {
+  /* Slightly larger than the cap-height so the mark reads as the
+     "anchor" of the lockup rather than as a glyph. */
+  width: clamp(3.5rem, 9vw, 6.5rem);
+  height: auto;
+  flex-shrink: 0;
+  display: block;
+  /* Subtle outer glow tying the mark into the page's dark theme. */
+  filter: drop-shadow(0 6px 18px rgba(188, 140, 255, 0.25));
 }
 @media (min-width: 880px) {
   .hero-brand { margin-bottom: 18px; }
