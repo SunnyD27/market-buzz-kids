@@ -47,6 +47,33 @@ body {
   z-index: 1;
 }
 
+/* ---- Top nav — returning-user login link ----
+   Sits at the very top of the page, right-aligned. Visually secondary to
+   the hero's signup CTA — text link only, no filled background, so it
+   doesn't compete with "Sign up your kid →". Visible at all viewport
+   widths (no hamburger needed — it's the only top-level link). */
+.top-nav {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  padding: 4px 0 0;
+  min-height: 32px;
+}
+.top-nav-login {
+  font-family: 'Fredoka', sans-serif;
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--text);
+  text-decoration: none;
+  padding: 8px 14px;
+  border-radius: 999px;
+  transition: color 0.15s, background 0.2s;
+}
+.top-nav-login:hover {
+  color: var(--bright);
+  background: rgba(255,255,255,0.06);
+}
+
 /* ---- Logo / nav ---- */
 .logo {
   display: inline-flex; align-items: center; gap: 8px;
@@ -433,6 +460,25 @@ section h2 {
 .optional-fields[open] > summary { border-bottom: 1px solid var(--border); margin-bottom: 12px; }
 .optional-fields .form-row { margin: 0 14px 12px; }
 .optional-fields .form-row:last-child { margin-bottom: 14px; }
+
+/* Helper link under the signup submit button — points returning users to
+   /login. Centered, smaller than body text, styled as a quiet helper rather
+   than a CTA so it doesn't pull attention away from the primary submit. */
+.signup-alt-login {
+  text-align: center;
+  font-size: 14px;
+  color: var(--dim);
+  margin-top: 14px;
+}
+.signup-alt-login a {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+.signup-alt-login a:hover {
+  color: var(--bright);
+  text-decoration: underline;
+}
 
 .legal {
   font-size: 12px; color: var(--dim);
