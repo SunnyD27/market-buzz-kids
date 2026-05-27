@@ -442,3 +442,15 @@ Removed the unused `public/icons/logo-mark.svg` (my earlier SVG interpretation).
 - **TODO:** Build scheduled job for 12-month inactivity auto-delete (mentioned in privacy policy §4 "When we delete"). Blocked on server-side engagement persistence — XP/streaks are still localStorage as of Phase 9, so there's no "last activity" signal beyond `signup_at` until that lands.
 - **TODO:** Build scheduled job for 7-day incomplete-consent cleanup (also mentioned in privacy policy §4). Find users with `consent_required = TRUE AND consent_given = FALSE AND created_at < NOW() - INTERVAL '7 days'`, run them through `storage.recordDeletionRequest()` with `processed_method = 'automatic-consent-expired'`. Both TODO comments live in `src/server.js` just above `bootstrapTodaysDigest`.
 - **Out of scope but worth knowing:** `signup_ip`, `consent_ip`, `user_agent`, `device_type`, `timezone`, and `utm_*` columns are NOT scrubbed today. The spec didn't list them and they're arguably operational/audit metadata, but IPs in particular are PII under stricter privacy regimes (GDPR, parts of CCPA). Revisit if regulatory posture tightens.
+
+### Follow-up (same PR): Phase 10 out-of-scope fields addressed
+
+The Phase 10 follow-up extended the PII scrub in `storage.recordDeletionRequest()` to cover the fingerprintable signup-time metadata that the original cut explicitly punted on:
+
+- `signup_ip`, `consent_ip` (both `INET`)
+- `user_agent`, `device_type`, `timezone`
+- `utm_source`, `utm_medium`, `utm_campaign`
+
+All eight columns were already nullable — no schema change needed, no boot migration required. Live-tested against Neon: backfilled non-null values, ran the scrub, all eight columns came back `NULL`, and the core identity scrub (`parent_email`, `kid_age`, etc.) still works.
+
+Two utm_* columns deliberately kept populated: `utm_content` and `utm_term` — they're tail attribution data, not PII on their own once the identifying fields are gone, and they're useful for product analytics on aggregate signups. Same reasoning for the optional survey fields `invest_experience` and `referral_source`.

@@ -272,10 +272,17 @@ async function recordDeletionRequest(input) {
       // deleted_at IS NULL respectively) — see src/schema.sql. So the
       // same email or username can be re-used by a fresh signup.
       //
-      // NOTE — fields NOT scrubbed here that may still be considered PII
-      // depending on jurisdiction: signup_ip, consent_ip, user_agent,
-      // device_type, timezone, utm_*. Spec'd as out of scope for now;
-      // revisit if regulatory posture tightens.
+      // Fingerprintable signup-time metadata is scrubbed in the same pass
+      // as the core identity fields: IPs (signup + consent), user agent,
+      // device type, timezone, and the three UTM fields a signup URL most
+      // commonly carries (source/medium/campaign). All eight columns were
+      // already nullable in the schema — no migration needed for this set.
+      //
+      // Two utm_* columns (utm_content, utm_term) and the survey columns
+      // (invest_experience, referral_source) stay populated. They're not
+      // PII on their own, they're useful for product analytics on
+      // aggregate signups, and they don't reconstruct back to a person
+      // once the identity fields above are gone.
       await client.query(
         `UPDATE users
             SET deleted_at = NOW(),
@@ -287,6 +294,14 @@ async function recordDeletionRequest(input) {
                 username = NULL,
                 password_hash = NULL,
                 push_subscription = NULL,
+                signup_ip = NULL,
+                consent_ip = NULL,
+                user_agent = NULL,
+                device_type = NULL,
+                timezone = NULL,
+                utm_source = NULL,
+                utm_medium = NULL,
+                utm_campaign = NULL,
                 updated_at = NOW()
           WHERE id = $1`,
         [matched.id, input.reason || null]
