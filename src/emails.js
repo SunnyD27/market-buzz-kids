@@ -64,6 +64,13 @@ function escapeHTML(s) {
  */
 function shell({ preheader, body }) {
   const deleteLink = appUrl('/parent/delete-data');
+  // Absolute URL — relative paths and localhost don't resolve in an
+  // inbox. In prod this points at themarketjuice.com; in local dev the
+  // email is stub-logged, so the broken localhost URL is harmless.
+  // alt="" matches the landing-page treatment: the wordmark text supplies
+  // the brand name to screen readers + acts as the visible fallback when
+  // an email client blocks remote images.
+  const logoUrl = appUrl('/icons/logo.png');
   return `<!DOCTYPE html>
 <html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>${BRAND.name}</title></head>
@@ -76,7 +83,8 @@ function shell({ preheader, body }) {
 
         <tr><td style="background:${BRAND.primary};padding:20px 28px;color:#fff;">
           <div style="font-size:20px;font-weight:700;letter-spacing:-0.3px;">
-            📈 ${BRAND.name}
+            <img src="${logoUrl}" alt="" width="32" height="32" style="vertical-align:middle;margin-right:10px;display:inline-block;border:0;">
+            <span style="vertical-align:middle;">${BRAND.name}</span>
           </div>
         </td></tr>
 
