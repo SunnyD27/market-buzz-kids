@@ -254,11 +254,54 @@ async function recordDeletionRequest(input) {
     let processedMethod = null;
 
     if (matched) {
+      // COPPA deletion: scrub PII in the same transaction as the
+      // soft-delete. The row itself stays as an operational tombstone
+      // (id + deleted_at + is_active + created_at + email_verified /
+      // consent_* metadata for compliance audits), but every identifying
+      // field is overwritten so the row can't be reconstructed back into
+      // a person.
+      //
+      // kid_first_name gets the sentinel 'deleted' rather than NULL —
+      // the column is NOT NULL and a few code paths read it without a
+      // null guard; this keeps them from crashing if they ever fire
+      // against a tombstone row (in practice they shouldn't, since all
+      // active-user queries filter on deleted_at IS NULL).
+      //
+      // username + parent_email NULL out cleanly because the unique
+      // indexes on those columns are partial (username IS NOT NULL /
+      // deleted_at IS NULL respectively) — see src/schema.sql. So the
+      // same email or username can be re-used by a fresh signup.
+      //
+      // Fingerprintable signup-time metadata is scrubbed in the same pass
+      // as the core identity fields: IPs (signup + consent), user agent,
+      // device type, timezone, and the three UTM fields a signup URL most
+      // commonly carries (source/medium/campaign). All eight columns were
+      // already nullable in the schema — no migration needed for this set.
+      //
+      // Two utm_* columns (utm_content, utm_term) and the survey columns
+      // (invest_experience, referral_source) stay populated. They're not
+      // PII on their own, they're useful for product analytics on
+      // aggregate signups, and they don't reconstruct back to a person
+      // once the identity fields above are gone.
       await client.query(
         `UPDATE users
             SET deleted_at = NOW(),
                 deletion_reason = $2,
                 is_active = FALSE,
+                kid_first_name = 'deleted',
+                kid_age = NULL,
+                parent_email = NULL,
+                username = NULL,
+                password_hash = NULL,
+                push_subscription = NULL,
+                signup_ip = NULL,
+                consent_ip = NULL,
+                user_agent = NULL,
+                device_type = NULL,
+                timezone = NULL,
+                utm_source = NULL,
+                utm_medium = NULL,
+                utm_campaign = NULL,
                 updated_at = NOW()
           WHERE id = $1`,
         [matched.id, input.reason || null]

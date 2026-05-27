@@ -86,7 +86,7 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `GET /api/check-username?username=…` | none | Real-time availability check for the signup form. Returns `{ available }`. |
 | `POST /api/forgot-password` | parent email in body | Always returns 200. If the email matches a user, emails a 1-hour reset link. |
 | `POST /api/reset-password` | token + password in body | Validates token, bcrypt-hashes password, marks token used. |
-| `POST /api/delete-data` | email in body | Soft-delete user data, sends deletion acknowledgment email. |
+| `POST /api/delete-data` | email in body | **PII scrub + soft-delete** (COPPA compliance). If the parent email matches an active user, the `users` row is updated in one transaction: `deleted_at = NOW()`, `is_active = FALSE`, and the PII columns (`kid_first_name='deleted'`, `kid_age`/`username`/`password_hash`/`parent_email`/`push_subscription` → NULL) are overwritten. The `deletion_requests` audit table keeps the original parent email as proof the request was made. Sends a deletion-acknowledgment email. |
 | `POST /api/cron/send-digest` | `X-Cron-Secret` header | External trigger for daily teaser fan-out. |
 | `GET /generate?key=<ADMIN_KEY>` | query param | Manually triggers `generateDigest()`. |
 | `GET /api/health` | none | DB connectivity check. |
@@ -113,7 +113,7 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `template.js` | Builds digest HTML. `buildHTML(content, opts)` — `opts.kidName` (Phase 7) drives a personalized greeting + Log out pill in the header. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
 | `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
 | `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
-| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. `createUserFromSignup` accepts `username` + `password_hash` (Phase 7). |
+| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. `createUserFromSignup` accepts `username` + `password_hash` (Phase 7). `recordDeletionRequest` scrubs PII columns on the matched `users` row in the same transaction as the soft-delete (Phase 10 — COPPA compliance). |
 | `migrations/add-auth-columns.sql` | Phase 7 forward-only migration: adds `username` + `password_hash` columns to `users`, partial unique index on `LOWER(username)`, expands `verification_tokens.purpose` CHECK to include `password_reset`. server.js runs this on boot if the columns are missing — also kept here for manual one-shots. |
 | `content-history.js` | Word-of-Day + Did-You-Know rotation guard. Generic `getRecent(kind)` / `record(kind)` backed by `state/content-history.json`. 30-day window. |
 | `emails.js` | Email renderers (pure) + `sendEmail` (Resend SDK). Five types: verify, consent, welcome, deletion-ack, daily teaser. Stub-mode fallback if `RESEND_API_KEY` is missing. |
@@ -460,6 +460,9 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 - **Engagement persistence** — hybrid PostHog (web analytics) + custom `/api/track` endpoint writing to the `engagement` table in Neon. Table placeholder exists in `schema.sql`. Needed before parent dashboard.
 - **Anti-spam on signup** — no rate limiting or captcha on `/api/signup` or `/api/delete-data`. Add Cloudflare Turnstile or rate-limit before scaling.
 - **Custom domain** — currently on `railway.app` subdomain. Need a branded domain before public launch.
+- **Retention-cleanup jobs** (privacy policy §4 promises these — Phase 10 added the TODO comments in `src/server.js` near the cron block; the jobs themselves aren't built):
+  - **12-month inactivity sweep.** Find users with no recent activity and run them through `storage.recordDeletionRequest()`. Blocked on server-side engagement persistence (no "last activity" signal until XP/streaks move off localStorage).
+  - **7-day incomplete-consent cleanup.** Drop users whose consent token expired without being clicked.
 
 ### Known warts
 
@@ -493,6 +496,7 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 7   | Kid-facing auth — username/password signup, bcrypt-hashed, `mj_session` signed httpOnly cookie (30d), `/digest` gated by `requireAuth`, parent-initiated password reset via existing Resend email pipeline. New: `src/auth.js`, `src/migrations/add-auth-columns.sql`, `public/login.html` + `forgot-password.html` + `reset-password.html` + `auth.css`. | ✅ |
 | 8   | Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com). New tagline: "Your daily squeeze of market smarts." All HTML pages, email templates, AI prompts, PWA manifest, privacy policy, and meta tags updated. Cookie renamed `mbk_session` → `mj_session`. Service worker cache prefix `mb-` → `mj-` + version bump to v2. No schema changes. | ✅ |
 | 9   | Hero restructure + brand lockup: "Market Juice" promoted to the page h1 with full gradient (was a small logo at top + separate headline). Tagline demoted to subtitle below. Citrus + chart logo mark added as `public/icons/logo.png` (transparent-bg PNG, 1024×1024) and inlined into the h1 flex container — tight gap with the wordmark so the two read as a single lockup. `flex-wrap: nowrap` keeps the lockup on one line; clamp-sized so it fits cleanly on narrow mobile down through wide desktop. | ✅ |
+| 10  | COPPA deletion compliance + data retention policy. `storage.recordDeletionRequest()` now scrubs PII (`kid_first_name='deleted'`, NULLs `kid_age`/`username`/`password_hash`/`parent_email`/`push_subscription`) in the same transaction as the soft-delete. Required dropping NOT NULL on `users.parent_email` + `users.kid_age` (boot migration in `src/migrations/relax-notnull-for-deletion-scrub.sql`, applied automatically by `runBootMigrations` when it detects the columns are still NOT NULL). Deletion-ack email + `public/privacy.html` rewritten — new §4 "Data retention" with retention table, deletion triggers, and "how we delete" copy. Two TODO comments added in `src/server.js` for the 12-month inactivity sweep + 7-day incomplete-consent cleanup that the new privacy section promises (not yet built). | ✅ |
 
 ---
 

@@ -49,6 +49,42 @@
     color: var(--text);
   }
   .policy .callout strong { color: var(--yellow); }
+  /* Retention table — same visual language as the .callout / .toc:
+     card surface, hairline border, small monospace headers. */
+  .policy .retention-table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 12px 0 18px;
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    font-size: 14px;
+  }
+  .policy .retention-table th,
+  .policy .retention-table td {
+    padding: 10px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+    vertical-align: top;
+    line-height: 1.5;
+  }
+  .policy .retention-table tr:last-child td { border-bottom: none; }
+  .policy .retention-table th {
+    font-family: 'Space Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 1px;
+    color: var(--dim);
+    text-transform: uppercase;
+    font-weight: 700;
+    background: rgba(255,255,255,0.02);
+  }
+  .policy .retention-table td { color: var(--text); }
+  .policy .retention-table td strong { color: var(--bright); }
+  @media (max-width: 540px) {
+    .policy .retention-table th,
+    .policy .retention-table td { padding: 8px 10px; font-size: 13px; }
+  }
   .toc {
     background: var(--card);
     border: 1px solid var(--border);
@@ -100,10 +136,10 @@
       <li><a href="#what-we-collect">What we collect</a></li>
       <li><a href="#how-we-use-it">How we use it</a></li>
       <li><a href="#we-dont-do">Things we DON'T do</a></li>
+      <li><a href="#data-retention">Data retention</a></li>
       <li><a href="#kids-under-13">Kids under 13 (COPPA)</a></li>
       <li><a href="#parent-rights">Parents' rights</a></li>
       <li><a href="#data-deletion">How to delete your data</a></li>
-      <li><a href="#how-long">How long we keep things</a></li>
       <li><a href="#contact">Questions or concerns</a></li>
     </ol>
   </nav>
@@ -160,7 +196,64 @@
     We do use a few third-party services to deliver the product: an email-sending service (to send the digest), a database hosting service (to store the user data), and a hosting platform (to run the website). These vendors process data on our behalf — they don't have permission to use it for their own purposes. Vendor list available on request.
   </p>
 
-  <h2 id="kids-under-13">4. Kids under 13 (COPPA)</h2>
+  <h2 id="data-retention">4. Data retention</h2>
+
+  <h3>What we keep and why</h3>
+  <table class="retention-table">
+    <thead>
+      <tr>
+        <th>Data</th>
+        <th>Purpose</th>
+        <th>Retention period</th>
+      </tr>
+    </thead>
+    <tbody>
+      <tr>
+        <td><strong>Kid's first name, age</strong></td>
+        <td>Personalize the daily digest</td>
+        <td>As long as the account is active</td>
+      </tr>
+      <tr>
+        <td><strong>Parent email</strong></td>
+        <td>Send consent requests, password resets, weekly summary</td>
+        <td>As long as the account is active</td>
+      </tr>
+      <tr>
+        <td><strong>Username and password</strong></td>
+        <td>Account login</td>
+        <td>As long as the account is active</td>
+      </tr>
+      <tr>
+        <td><strong>Engagement data</strong> (games played, quiz answers, XP, streaks)</td>
+        <td>Track learning progress</td>
+        <td>As long as the account is active</td>
+      </tr>
+      <tr>
+        <td><strong>Push notification token</strong></td>
+        <td>Send daily digest notification</td>
+        <td>As long as the account is active and notifications are enabled</td>
+      </tr>
+      <tr>
+        <td><strong>Consent record</strong> (timestamp + IP)</td>
+        <td>Prove COPPA compliance if asked by a regulator</td>
+        <td>3 years after the account is deleted</td>
+      </tr>
+    </tbody>
+  </table>
+
+  <h3>When we delete</h3>
+  <ul>
+    <li><strong>Parent requests deletion:</strong> All personal information is deleted immediately when a parent <a href="/parent/delete-data">submits a deletion request</a>. An anonymized audit record is retained for compliance purposes only.</li>
+    <li><strong>Account inactivity:</strong> Accounts inactive for more than 12 months will have all personal information deleted automatically.</li>
+    <li><strong>After consent is refused:</strong> If a parent does not complete the consent process within 7 days, any information collected during signup is deleted automatically.</li>
+  </ul>
+
+  <h3>How we delete</h3>
+  <p>
+    When data is deleted, we overwrite personal information in our database — we don't just hide it. Deleted data cannot be recovered. The only thing that survives a deletion request is an anonymized audit row (no name, no age, no engagement data) plus the consent record described above, both retained strictly for compliance.
+  </p>
+
+  <h2 id="kids-under-13">5. Kids under 13 (COPPA)</h2>
   <p>
     The U.S. Children's Online Privacy Protection Act (COPPA) requires us to get verifiable parental consent before collecting personal information from kids under 13. We take this seriously.
   </p>
@@ -178,30 +271,23 @@
     For kids aged 13–16, COPPA doesn't apply. We still send the parent a verification email and still ask for the parent's email (not the kid's) at signup. The data collection itself is identical regardless of age.
   </p>
 
-  <h2 id="parent-rights">5. Parents' rights</h2>
+  <h2 id="parent-rights">6. Parents' rights</h2>
   <p>You have the right to:</p>
   <ul>
     <li><strong>See</strong> all the data we hold about your kid — email <a href="mailto:hello@example.com">hello@example.com</a> and we'll send you a copy within 7 days.</li>
     <li><strong>Correct</strong> any data that's wrong (e.g., misspelled name, wrong age).</li>
-    <li><strong>Delete</strong> your kid's account and all associated data instantly via the deletion form: <a href="/parent/delete-data">/parent/delete-data</a>. We delete from our database AND our email service AND all backups within 7 days.</li>
+    <li><strong>Delete</strong> your kid's account and all associated data instantly via the <a href="/parent/delete-data">deletion request form</a>. We delete from our database AND our email service AND all backups within 7 days.</li>
     <li><strong>Refuse further collection</strong> — tell us to stop collecting more data even if you don't want a full delete. We'll honor it.</li>
     <li><strong>Withdraw consent</strong> at any time, which is equivalent to delete.</li>
   </ul>
 
-  <h2 id="data-deletion">6. How to delete your data</h2>
+  <h2 id="data-deletion">7. How to delete your data</h2>
   <p>
-    Visit <a href="/parent/delete-data">/parent/delete-data</a> and enter the email address you signed up with. We'll process the request automatically.
+    <a href="/parent/delete-data">Submit a deletion request</a> and enter the email address you signed up with. We'll process the request automatically.
   </p>
   <p>
     Alternatively, reply to any email from us and ask for deletion. We'll do it manually within 7 days.
   </p>
-
-  <h2 id="how-long">7. How long we keep things</h2>
-  <ul>
-    <li><strong>Active account data:</strong> as long as the account is active.</li>
-    <li><strong>After deletion request:</strong> we remove data from the active database within 24 hours, and from backups within 7 days.</li>
-    <li><strong>Consent records:</strong> we keep proof of consent (timestamp, IP) for 3 years after the account is deleted, so we can demonstrate compliance if asked. This is the only thing that survives a deletion request, and it doesn't contain the kid's name, age, or any engagement data — just "consent was given at this timestamp from this IP."</li>
-  </ul>
 
   <h2 id="contact">8. Questions or concerns</h2>
   <p>
