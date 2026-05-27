@@ -12,9 +12,15 @@ CREATE TABLE IF NOT EXISTS users (
   id                  UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
 
   -- Identity (signup form)
-  parent_email        VARCHAR(255) NOT NULL,
+  -- parent_email + kid_age are nullable so storage.recordDeletionRequest()
+  -- can scrub them when a parent requests deletion (COPPA compliance).
+  -- The partial index `users_parent_email_active` (deleted_at IS NULL) means
+  -- a NULLed-out deleted row never blocks the same email from re-signing up.
+  -- kid_first_name stays NOT NULL — the scrub writes the sentinel 'deleted'
+  -- so any downstream null-deref doesn't blow up.
+  parent_email        VARCHAR(255),
   kid_first_name      VARCHAR(100) NOT NULL,
-  kid_age             INT          NOT NULL CHECK (kid_age BETWEEN 10 AND 16),
+  kid_age             INT          CHECK (kid_age BETWEEN 10 AND 16),
 
   -- Optional onboarding questions
   -- invest_experience: 'not_yet' | 'index_funds' | 'individual_stocks' | 'crypto' | 'not_sure'

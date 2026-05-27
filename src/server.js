@@ -869,6 +869,32 @@ cron.schedule('0 7 * * *', async () => {
 });
 
 // ============================================================
+// TODO — scheduled retention-cleanup jobs (privacy policy §4)
+// ============================================================
+// The privacy page promises two automatic deletions that aren't built
+// yet. Both should run on a daily cron alongside the 7 AM digest job
+// and reuse storage.recordDeletionRequest() so the PII scrub +
+// audit-row pattern stays uniform.
+//
+//   1. **12-month inactivity sweep.** Find users where
+//      (is_active = TRUE AND deleted_at IS NULL) AND no engagement
+//      activity in the last 365 days, then scrub each one and log a
+//      deletion_request with processed_method='automatic-inactivity'.
+//      Requires server-side engagement persistence first — XP/streaks
+//      are still localStorage as of Phase 9, so "last activity" can
+//      only mean signup_at or email-open events until that lands.
+//
+//   2. **7-day incomplete-consent cleanup.** Find users where
+//      consent_required = TRUE AND consent_given = FALSE AND
+//      created_at < NOW() - INTERVAL '7 days'. The consent token row
+//      already expires at 7 days, so these users are permanently
+//      stuck inactive — drop them. Use processed_method='automatic-
+//      consent-expired' on the audit row.
+//
+// Both are referenced in public/privacy.html §4 "When we delete" and
+// in HANDOFF.md. Build before the next public-launch push.
+
+// ============================================================
 // Boot-time digest bootstrap (Phase 6.7)
 // ============================================================
 // Now that generateDigest() is itself idempotent (it checks the
@@ -935,6 +961,30 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] Failed (auth routes may not work until fixed):', err.message);
+  }
+
+  // COPPA deletion scrub: storage.recordDeletionRequest now NULLs PII
+  // columns (parent_email, kid_age, …) on the user row when a parent
+  // requests deletion. Both columns started life as NOT NULL — drop those
+  // constraints so the scrub can run. See src/migrations/relax-notnull-
+  // for-deletion-scrub.sql for the standalone file + rationale.
+  try {
+    const { rows } = await dbQuery(`
+      SELECT column_name, is_nullable
+        FROM information_schema.columns
+       WHERE table_name = 'users' AND column_name IN ('parent_email', 'kid_age')
+    `);
+    const stillNotNull = rows.some(r => r.is_nullable === 'NO');
+    if (stillNotNull) {
+      console.log('[migrations] Relaxing NOT NULL on users.parent_email + users.kid_age for COPPA deletion scrub…');
+      await dbQuery(`
+        ALTER TABLE users ALTER COLUMN parent_email DROP NOT NULL;
+        ALTER TABLE users ALTER COLUMN kid_age      DROP NOT NULL;
+      `);
+      console.log('[migrations] ✅ Deletion-scrub migration applied.');
+    }
+  } catch (err) {
+    console.error('[migrations] Deletion-scrub ALTER failed (parent-initiated deletion will error until fixed):', err.message);
   }
 }
 

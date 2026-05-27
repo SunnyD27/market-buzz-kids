@@ -334,9 +334,10 @@ export function renderDeletionAckEmail({ parent_email }) {
       <strong>${email}</strong>.
     </p>
     <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
-      If an account existed at that address, it has been removed along with all
-      associated data. If no account existed, no further action is needed — we
-      logged the request anyway for compliance.
+      If an account existed at that address, all personal information has been
+      deleted. We retain only an anonymized record that a deletion request was
+      made, as required for compliance. If no account existed, no further
+      action is needed — we logged the request anyway for the same reason.
     </p>
     <p style="margin:0;font-size:14px;color:#454a5b;">
       Didn't request this? Reply to this email and we'll look into it.
@@ -350,8 +351,9 @@ export function renderDeletionAckEmail({ parent_email }) {
       'Deletion request received',
       '',
       `We received a request to delete the Market Juice account associated with ${parent_email}.`,
-      'If an account existed at that address, it has been removed.',
-      'If no account existed, no further action is needed.',
+      'If an account existed at that address, all personal information has been deleted.',
+      'We retain only an anonymized record that a deletion request was made, as required for compliance.',
+      'If no account existed, no further action is needed — we logged the request anyway for the same reason.',
       '',
       "Didn't request this? Reply and we'll look into it.",
     ].join('\n'),

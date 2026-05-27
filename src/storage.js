@@ -254,11 +254,39 @@ async function recordDeletionRequest(input) {
     let processedMethod = null;
 
     if (matched) {
+      // COPPA deletion: scrub PII in the same transaction as the
+      // soft-delete. The row itself stays as an operational tombstone
+      // (id + deleted_at + is_active + created_at + email_verified /
+      // consent_* metadata for compliance audits), but every identifying
+      // field is overwritten so the row can't be reconstructed back into
+      // a person.
+      //
+      // kid_first_name gets the sentinel 'deleted' rather than NULL —
+      // the column is NOT NULL and a few code paths read it without a
+      // null guard; this keeps them from crashing if they ever fire
+      // against a tombstone row (in practice they shouldn't, since all
+      // active-user queries filter on deleted_at IS NULL).
+      //
+      // username + parent_email NULL out cleanly because the unique
+      // indexes on those columns are partial (username IS NOT NULL /
+      // deleted_at IS NULL respectively) — see src/schema.sql. So the
+      // same email or username can be re-used by a fresh signup.
+      //
+      // NOTE — fields NOT scrubbed here that may still be considered PII
+      // depending on jurisdiction: signup_ip, consent_ip, user_agent,
+      // device_type, timezone, utm_*. Spec'd as out of scope for now;
+      // revisit if regulatory posture tightens.
       await client.query(
         `UPDATE users
             SET deleted_at = NOW(),
                 deletion_reason = $2,
                 is_active = FALSE,
+                kid_first_name = 'deleted',
+                kid_age = NULL,
+                parent_email = NULL,
+                username = NULL,
+                password_hash = NULL,
+                push_subscription = NULL,
                 updated_at = NOW()
           WHERE id = $1`,
         [matched.id, input.reason || null]

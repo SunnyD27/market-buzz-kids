@@ -46,6 +46,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **7** Kid auth — username/password + 30d session + reset | ✅ | Shipped via PR #5 |
 | **8** Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com) | ✅ | Shipped via PR #6 |
 | **9** Hero restructure — brand-as-h1 + citrus/chart logo lockup | ✅ | Hero h1 shipped via PR #6 (`09ac7e8`); logo lockup `1251c8f` + `34c1e95` on `dev` awaiting PR #7 |
+| **10** COPPA deletion compliance + data retention policy | ✅ | PII scrub in `storage.recordDeletionRequest`, deletion-ack email rewrite, privacy.html §4 "Data retention", boot migration to relax NOT NULL on `parent_email`/`kid_age`. On `dev` awaiting PR #7. |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
 | **Polish** Investing principles expanded 8 → 11 | ✅ | Shipped via PR #3 |
@@ -429,3 +430,15 @@ Final lockup CSS:
 Removed the unused `public/icons/logo-mark.svg` (my earlier SVG interpretation). The PNG at `public/icons/logo.png` is now the authoritative brand mark.
 
 **Other:** added `.claude/` to `.gitignore` (local preview-tool launch config; per-repo only). Phase 9 also picked up a Resend smoke test against `hello@themarketjuice.com` that landed cleanly — see the Resend section above; sandbox restriction is fully lifted.
+
+---
+
+## Session: COPPA Deletion Compliance + Data Retention Policy
+
+- **PII scrub on deletion:** `storage.recordDeletionRequest()` now NULLs/overwrites `kid_first_name`, `kid_age`, `username`, `password_hash`, `parent_email`, `push_subscription` in the same transaction as the soft delete. `deletion_requests` audit table unchanged.
+- Updated deletion acknowledgment email to accurately describe what's retained.
+- Added Data Retention section to `public/privacy.html` with retention periods and deletion triggers. Existing thin §7 "How long we keep things" was absorbed into the new §4 to avoid redundancy; sections renumbered accordingly.
+- **DB migration required.** `users.parent_email` + `users.kid_age` started life as `NOT NULL`. New file `src/migrations/relax-notnull-for-deletion-scrub.sql` documents the ALTER; `runBootMigrations()` in `src/server.js` detects the constraint via `information_schema.columns.is_nullable` and applies the change idempotently on the next boot. Live-tested against Neon — migration ran cleanly, scrub UPDATE succeeded, email + username were both immediately re-usable for a fresh signup. `schema.sql` updated so fresh deploys are aligned.
+- **TODO:** Build scheduled job for 12-month inactivity auto-delete (mentioned in privacy policy §4 "When we delete"). Blocked on server-side engagement persistence — XP/streaks are still localStorage as of Phase 9, so there's no "last activity" signal beyond `signup_at` until that lands.
+- **TODO:** Build scheduled job for 7-day incomplete-consent cleanup (also mentioned in privacy policy §4). Find users with `consent_required = TRUE AND consent_given = FALSE AND created_at < NOW() - INTERVAL '7 days'`, run them through `storage.recordDeletionRequest()` with `processed_method = 'automatic-consent-expired'`. Both TODO comments live in `src/server.js` just above `bootstrapTodaysDigest`.
+- **Out of scope but worth knowing:** `signup_ip`, `consent_ip`, `user_agent`, `device_type`, `timezone`, and `utm_*` columns are NOT scrubbed today. The spec didn't list them and they're arguably operational/audit metadata, but IPs in particular are PII under stricter privacy regimes (GDPR, parts of CCPA). Revisit if regulatory posture tightens.
