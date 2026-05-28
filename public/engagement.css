@@ -573,3 +573,67 @@ body.mj-rank-gold-theme .investor-profile {
   .mj-pop-modal-rank-badge { font-size: 60px; }
   .mj-pop-modal-rank-name { font-size: 22px; }
 }
+
+/* ============================================================
+ * Phase 12 — "Ask my parent" button + sent confirmation
+ * Small, unobtrusive — sits below content sections without competing
+ * with game CTAs. Hidden on /sample (server-side; no DOM rendered).
+ * ============================================================ */
+
+/* Pre-tap: quiet inline text affordance. No chip, no border, no fill —
+   the 💬 emoji + the slightly-dim text reads as a soft link that blends
+   into the card. Hover/focus lifts it gently into the purple accent so
+   it's still discoverable as tappable. */
+.mj-ask-parent-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 2px 0;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-dim);
+  background: transparent;
+  border: none;
+  border-radius: 0;
+  cursor: pointer;
+  opacity: 0.7;
+  transition: color 0.2s, opacity 0.2s;
+  -webkit-tap-highlight-color: transparent;
+}
+.mj-ask-parent-btn:hover,
+.mj-ask-parent-btn:focus-visible {
+  color: var(--purple);
+  opacity: 1;
+  text-decoration: underline;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+  outline: none;
+}
+.mj-ask-parent-btn:active {
+  opacity: 0.85;
+}
+
+/* Post-tap: confirmation chip. THIS one gets the soft purple background
+   because it's an affirmative state — the kid did the thing, this is a
+   little celebration of it. */
+.mj-ask-parent-sent {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  font-family: 'Fredoka', sans-serif;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--purple);
+  background: rgba(188, 140, 255, 0.08);
+  border: 1px solid rgba(188, 140, 255, 0.25);
+  border-radius: 999px;
+  opacity: 0.92;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-ask-parent-btn { transition: none; }
+}

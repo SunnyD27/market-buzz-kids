@@ -39,6 +39,19 @@ export function buildHTML(content, opts = {}) {
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
 
+  // Phase 12 — "Ask my parent" buttons. One-tap flag per section (no
+  // free-text from kids — COPPA). Hidden on /sample since unauthenticated
+  // visitors have no parent email to deliver to. `section` is the dedup
+  // key consumed by the evening recap email; `topic` is the display label
+  // for the email body.
+  function askParentBtn(section, topic) {
+    if (opts.isSample) return '';
+    return `<button type="button" class="mj-ask-parent-btn"
+              data-section="${escapeHTML(section)}"
+              data-topic="${escapeHTML(topic)}"
+              onclick="MarketJuice.askParent(this)">💬 Ask my parent about this</button>`;
+  }
+
   // Story-section heading varies by edition. Weekly Wrap recaps the past
   // 5 trading days; Week Ahead previews upcoming events; standard editions
   // cover the previous trading day.
@@ -59,6 +72,7 @@ export function buildHTML(content, opts = {}) {
       <div class="why-it-matters">
         <strong>💡 Why it matters:</strong> ${escapeHTML(story.whyItMatters)}
       </div>
+      ${askParentBtn(`story-${i}`, story.title)}
     </div>
   `).join('');
 
@@ -787,6 +801,7 @@ export function buildHTML(content, opts = {}) {
       <h3>The Big Picture</h3>
     </div>
     <p>${escapeHTML(bigPicture)}</p>
+    ${askParentBtn('big-picture', "Today's Big Picture")}
   </div>
 
   <div class="section-header">
@@ -807,6 +822,7 @@ export function buildHTML(content, opts = {}) {
     <div class="dyk-label">🧠 ${escapeHTML(didYouKnow?.category || 'mind-blowing numbers')}</div>
     <div class="dyk-fact">${escapeHTML(didYouKnow?.fact || '')}</div>
     ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
+    ${askParentBtn('did-you-know', `Did You Know: ${didYouKnow?.category || 'today’s fact'}`)}
   </div>
 
   ${sundayChallengeHTML}
@@ -825,6 +841,7 @@ export function buildHTML(content, opts = {}) {
     <div class="word-type">${escapeHTML(wordOfDay.type)} · ${escapeHTML(wordOfDay.context)}</div>
     <button type="button" class="word-reveal-btn" id="wordRevealBtn" onclick="revealWord()">Tap to reveal definition</button>
     <div class="word-def word-def-hidden" id="wordDef">${escapeHTML(wordOfDay.definition)}</div>
+    ${askParentBtn('word-of-day', `Word of the Day: ${wordOfDay.word}`)}
   </div>
 
   <div class="footer">
@@ -926,6 +943,23 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
             body: '<p>' + esc(data.explanation || '') + '</p>',
             principle: data.principle || 7,
           });
+          // Phase 12: inject the 💬 ask-parent button into the reveal panel
+          // after answering. Skip on /sample (no parent email to deliver to).
+          if (!window.__isSample) {
+            var rev = host.querySelector('#qz-card .mj-reveal');
+            if (rev) {
+              var ap = document.createElement('button');
+              ap.type = 'button';
+              ap.className = 'mj-ask-parent-btn';
+              ap.dataset.section = 'quiz';
+              // dataset assigns raw strings; the browser handles attribute
+              // serialization, so no HTML-escape needed here.
+              ap.dataset.topic = "Today's quiz question";
+              ap.textContent = '💬 Ask my parent about this';
+              ap.onclick = function () { window.MarketJuice && window.MarketJuice.askParent(ap); };
+              rev.appendChild(ap);
+            }
+          }
           if (opts && opts.onComplete) opts.onComplete({ correct: correct });
         });
         optHost.appendChild(b);

@@ -15,9 +15,9 @@ import { buildHTML } from './template.js';
 import { buildProgressHTML } from './progress-template.js';
 import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
-import { getTodaysDigest, todayNY } from './digest-store.js';
+import { getTodaysDigest, getDigestForDate, todayNY } from './digest-store.js';
 import { requireAuth, setSession, clearSession } from './auth.js';
-import { getProgress, recordEvent } from './engagement.js';
+import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate } from './engagement.js';
 import { EVENT_TYPES } from './progression.js';
 import {
   renderConsentEmail,
@@ -25,6 +25,7 @@ import {
   renderWelcomeEmail,
   renderDeletionAckEmail,
   renderDailyTeaserEmail,
+  renderEveningRecap,
   renderPasswordResetEmail,
   sendEmail,
 } from './emails.js';
@@ -928,6 +929,142 @@ cron.schedule('0 7 * * *', async () => {
 });
 
 // ============================================================
+// Phase 12 — Evening parent recap / nudge
+// ============================================================
+// Fires every hour UTC. For each tick, finds users whose local time is
+// 7 PM (per their stored IANA timezone; NULL falls back to NY) and either:
+//   - sends the recap variant (kid engaged today), or
+//   - sends the nudge variant (kid didn't engage AND streak ≥ 3), or
+//   - skips silently (no engagement AND streak < 3 — don't nag fresh signups).
+//
+// At prelaunch scale we accept that a server restart mid-loop could skip
+// a few sends. No dedup audit table — Q11 in the spec.
+
+async function sendEveningRecaps() {
+  const started_at = new Date().toISOString();
+
+  // Find users whose LOCAL hour is currently 19 (7 PM). Postgres handles
+  // the timezone conversion server-side per row — no JS date math needed.
+  let users;
+  try {
+    const result = await dbQuery(`
+      SELECT u.id, u.kid_first_name, u.parent_email, u.timezone
+        FROM users u
+       WHERE u.is_active = TRUE
+         AND u.deleted_at IS NULL
+         AND u.parent_email IS NOT NULL
+         AND EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(u.timezone, 'America/New_York')) = 19
+    `);
+    users = result.rows;
+  } catch (err) {
+    console.error('[evening-recap] DB query failed:', err.message);
+    return { ok: false, status: 'db_error', started_at, finished_at: new Date().toISOString(), error: err.message };
+  }
+
+  if (users.length === 0) {
+    return { ok: true, status: 'ok', sent: 0, skipped: 0, failed: 0, total: 0, started_at, finished_at: new Date().toISOString() };
+  }
+
+  // Pull today's digest content once — all users at this UTC hour share
+  // the same digest content payload (parentExplainer fields live here).
+  const digestDate = todayNY();
+  let digestContent;
+  try {
+    const row = await getDigestForDate(digestDate);
+    digestContent = row?.content || null;
+  } catch (err) {
+    console.error('[evening-recap] digest lookup failed:', err.message);
+    digestContent = null;
+  }
+  if (!digestContent) {
+    // No digest today — bail. The morning teaser email would have already
+    // skipped, so something is up. Don't send anything that references a
+    // digest that doesn't exist.
+    console.warn('[evening-recap] no digest content for', digestDate, '— skipping all sends');
+    return { ok: true, status: 'no_content', sent: 0, skipped: users.length, failed: 0, total: users.length, started_at, finished_at: new Date().toISOString() };
+  }
+
+  console.log(`[evening-recap] starting · ${users.length} user(s) at 7 PM local`);
+
+  let sent = 0, skipped = 0, failed = 0;
+  for (const u of users) {
+    try {
+      const summary = await getDailyEngagementSummary(u.id, digestDate);
+      const progress = await getProgress(u.id);
+      const currentStreak = progress?.progress?.currentStreak ?? 0;
+
+      // Variant fork — Q4 in the spec. Brand-new users (streak 0, no
+      // engagement) get nothing. Don't nag fresh signups.
+      let variant = null;
+      if (summary.engaged) variant = 'recap';
+      else if (currentStreak >= 3) variant = 'nudge';
+
+      if (!variant) {
+        skipped++;
+        continue;
+      }
+
+      const parentQuestions = variant === 'recap'
+        ? await getParentQuestionsForDate(u.id, digestDate)
+        : [];
+
+      const rendered = renderEveningRecap({
+        kidName: u.kid_first_name,
+        engagement: summary,
+        digestContent,
+        progress,
+        parentQuestions,
+        digestDate,
+        variant,
+      });
+
+      const result = await sendEmail({ to: u.parent_email, ...rendered });
+      if (result.ok) sent++;
+      else failed++;
+    } catch (err) {
+      console.error(`[evening-recap] user ${u.id} failed:`, err.message);
+      failed++;
+    }
+    // Stay under Resend's 10 req/sec free-tier limit. Matches the 7 AM
+    // teaser cron's pacing.
+    await new Promise(r => setTimeout(r, 100));
+  }
+
+  const finished_at = new Date().toISOString();
+  console.log(`[evening-recap] done · sent=${sent} skipped=${skipped} failed=${failed} total=${users.length}`);
+  return { ok: true, status: 'ok', sent, skipped, failed, total: users.length, started_at, finished_at };
+}
+
+// External trigger — same pattern as POST /api/cron/send-digest. Useful
+// for testing the recap pipeline on demand or running from an external
+// scheduler if the in-process cron is ever disabled.
+app.post('/api/cron/send-evening-recap', async (req, res) => {
+  const expected = process.env.CRON_SECRET || '';
+  const got = req.header('x-cron-secret') || '';
+  if (!expected || got !== expected) {
+    return res.status(401).json({ ok: false, message: 'Unauthorized.' });
+  }
+  const result = await sendEveningRecaps();
+  const httpStatus = result.status === 'ok' ? 200
+    : result.status === 'no_content' ? 503
+    : 500;
+  return res.status(httpStatus).json(result);
+});
+
+// Hourly UTC cron. The SQL gate inside sendEveningRecaps() filters to
+// users at 7 PM LOCAL on each tick, so we sweep every timezone over a
+// 24-hour day.
+cron.schedule('0 * * * *', async () => {
+  try {
+    await sendEveningRecaps();
+  } catch (err) {
+    console.error('[Cron] Evening recap threw:', err.message);
+  }
+}, {
+  timezone: 'UTC',
+});
+
+// ============================================================
 // TODO — scheduled retention-cleanup jobs (privacy policy §4)
 // ============================================================
 // The privacy page promises two automatic deletions that aren't built
@@ -1130,6 +1267,7 @@ app.listen(PORT, () => {
   console.log(`   Login API:      POST /api/login`);
   console.log(`   Delete API:     POST /api/delete-data`);
   console.log(`   Teaser fan-out: POST /api/cron/send-digest (X-Cron-Secret)`);
+  console.log(`   Evening recap: POST /api/cron/send-evening-recap (X-Cron-Secret) + hourly UTC sweep at 7 PM local`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
 

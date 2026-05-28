@@ -162,6 +162,9 @@ export const EVENT_TYPES = new Set([
   'game-completed',
   'sunday-challenge-completed',
   'word-learned',
+  // Phase 12 — kid flags a section to discuss with parent. Awards no MC,
+  // no progression. Logged for the evening recap email to pick up.
+  'parent-question',
 ]);
 
 // Helpers — useful on both server and client (re-implemented in the client

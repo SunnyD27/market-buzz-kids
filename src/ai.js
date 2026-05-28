@@ -178,6 +178,18 @@ WORD OF THE DAY:
 ${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
 - Investing has hundreds of teachable terms — dividend, P/E ratio, ticker, bull market, bear market, volatility, ETF, index, market cap, short squeeze, options, futures, yield, basis point, recession, inflation, deflation, hedge, diversification, compounding, principal, capital gains, etc. Use the breadth.
 
+PARENT EXPLAINER RULES (Phase 12):
+- Every content section listed in the JSON schema below MUST include a "parentExplainer" object with two string fields:
+  - "summary": 1 sentence in plain adult language explaining the concept. No jargon, no kid-speak — this is for the parent. Max 30 words.
+  - "conversationStarter": 1 question the parent can ask the kid at dinner to start a real conversation. Frame it as "Ask [kid] ..." (literal placeholder — the email substitutes the kid's first name). Max 25 words.
+- CRITICAL: the conversationStarter MUST reference the specific content from TODAY'S digest — the actual company, event, number, or concept covered. It should feel like a follow-up to what the kid just read, not a generic finance question.
+  - GOOD: "Ask [kid] why they think Nike's stock dropped when they sold fewer shoes than expected." (references today's specific story)
+  - GOOD: "Ask [kid] if they think $3.5 trillion is a lot for one company to be worth." (references today's specific market cap figure)
+  - BAD: "Ask [kid] what they think happens when a company misses earnings." (generic, doesn't reference today's content)
+  - BAD: "Ask [kid] if they know what market cap means." (yes/no question, doesn't spark discussion)
+- The conversationStarter should test understanding or spark curiosity using today's specifics. The parent should be able to say "I saw you learned about Nike today..." and have the question flow naturally.
+- The summary should give the parent enough context to actually have the conversation even if they don't know finance well themselves.
+
 TODAY'S DATE: ${dateStr}
 TRADING DAY: Data is from ${tradingDayLabel}'s market close.
 
@@ -202,6 +214,10 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
   "vibeEmoji": "appropriate emoji",
   "vibeSummary": "One fun sentence summarizing the overall market day AND a plain-English why-it-moved hint (Fed, earnings, oil, jobs, etc.).",
   "bigPicture": "3-4 sentences casually catching the reader up on what's going on in the world that's affecting markets, with explicit cause-and-effect connections. See the BIG PICTURE rules above.",
+  "bigPictureParentExplainer": {
+    "summary": "1 sentence for the parent describing what today's Big Picture covered. See PARENT EXPLAINER RULES.",
+    "conversationStarter": "Ask [kid] ... 1 question referencing the SPECIFIC topic/event from today's Big Picture."
+  },
   "scoreboard": {
     "sp500":  { "price": "formatted price", "change": "+X.XX%", "direction": "up/down", "vibe": "short fun comment" },
     "nasdaq": { "price": "formatted price", "change": "+X.XX%", "direction": "up/down", "vibe": "short fun comment" },
@@ -222,28 +238,44 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "title": "Catchy headline a kid would click on",
       "body": "2-4 sentences explaining the story simply",
       "whyItMatters": "2-3 sentences connecting this to one of the 11 investing principles. Show the cause-and-effect chain.",
-      "principle": 1
+      "principle": 1,
+      "parentExplainer": {
+        "summary": "1 sentence for the parent recapping THIS story's specific company/event/number. See PARENT EXPLAINER RULES.",
+        "conversationStarter": "Ask [kid] ... 1 question referencing THIS story's specifics."
+      }
     }
   ],
   "didYouKnow": {
     "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
     "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
     "connection": "1-2 sentences explicitly tying the fact back to one of the 11 investing principles.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing today's fun fact. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific fact."
+    }
   },
   "quiz": {
     "question": "A fun question related to today's news or a basic investing concept",
     "options": ["Option A", "Option B", "Option C", "Option D"],
     "correctIndex": 0,
     "explanation": "2-3 sentences explaining the answer, teaching the concept, and ending with a sentence that ties to one of the 11 principles.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing what today's quiz tested. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific quiz concept."
+    }
   },
   "wordOfDay": {
     "word": "A financial/investing term",
     "type": "noun/verb/etc",
     "context": "what it relates to from today's news",
     "definition": "Fun, clear explanation with an analogy a 10-14 year-old gets. End with one sentence showing how to use this concept — tied to a principle when natural.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent defining today's term in plain language. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + today's news context."
+    }
   }
 }
 
@@ -416,6 +448,15 @@ WORD OF THE DAY — WEEKLY EDITION:
 - DO NOT pick any of the following words — used in the last 30 days. Pick something genuinely different (not a near-synonym, not a singular/plural variant):
 ${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
 - Use a kid-friendly analogy. End with a sentence showing how to use the concept, tied to a principle when natural.
+
+PARENT EXPLAINER RULES (Phase 12):
+- Every content section listed in the JSON schema below MUST include a "parentExplainer" object with two string fields:
+  - "summary": 1 sentence in plain adult language explaining the concept. No jargon, no kid-speak — this is for the parent. Max 30 words.
+  - "conversationStarter": 1 question the parent can ask the kid at dinner. Frame it as "Ask [kid] ..." (literal placeholder — the email substitutes the kid's first name). Max 25 words.
+- CRITICAL: the conversationStarter MUST reference the specific content from THIS WEEK's recap — actual companies, events, numbers covered. It should feel like a follow-up to what the kid just read, not a generic finance question.
+  - GOOD: "Ask [kid] why they think Nike's stock dropped 8% this week after the earnings miss."
+  - BAD: "Ask [kid] what they think about stock market drops." (generic)
+- The summary should give the parent enough context to actually have the conversation even if they don't know finance well themselves.
 
 SUNDAY CHALLENGE — THE WEEKLY GAME
 
@@ -655,6 +696,10 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
   "vibeEmoji": "appropriate emoji",
   "vibeSummary": "One fun sentence summarizing how the WEEK went and the headline reason (Fed, earnings, oil, jobs, etc.).",
   "bigPicture": "3-4 sentences recapping the week's biggest themes with cause-and-effect.",
+  "bigPictureParentExplainer": {
+    "summary": "1 sentence for the parent describing what this week's Big Picture covered. See PARENT EXPLAINER RULES.",
+    "conversationStarter": "Ask [kid] ... 1 question referencing THIS WEEK's specific Big Picture themes."
+  },
   "scoreboard": {
     "sp500":  { "price": "Friday's close", "change": "+X.XX% on the week", "direction": "up/down", "vibe": "week-narrative comment" },
     "nasdaq": { "price": "Friday's close", "change": "+X.XX% on the week", "direction": "up/down", "vibe": "week-narrative comment" },
@@ -675,7 +720,11 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "title": "Catchy headline summarizing the #1 story of the past week",
       "body": "2-4 sentences explaining the week's arc, not a single moment",
       "whyItMatters": "2-3 sentences connecting the theme to one of the 11 principles. Show cause-and-effect.",
-      "principle": 1
+      "principle": 1,
+      "parentExplainer": {
+        "summary": "1 sentence for the parent recapping THIS story's specifics. See PARENT EXPLAINER RULES.",
+        "conversationStarter": "Ask [kid] ... 1 question referencing THIS story's specifics."
+      }
     },
     {
       "badge": "hot/new/money/world/brain",
@@ -683,28 +732,44 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "title": "Secondary headline",
       "body": "2-4 sentences",
       "whyItMatters": "2-3 sentences tied to a principle",
-      "principle": 2
+      "principle": 2,
+      "parentExplainer": {
+        "summary": "1 sentence for the parent recapping THIS story's specifics. See PARENT EXPLAINER RULES.",
+        "conversationStarter": "Ask [kid] ... 1 question referencing THIS story's specifics."
+      }
     }
   ],
   "didYouKnow": {
     "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
     "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
     "connection": "1-2 sentences tying the fact back to a principle.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing this week's fun fact. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific fact."
+    }
   },
   "quiz": {
     "question": "A weekly review question referencing something from THIS WEEK's news",
     "options": ["A", "B", "C", "D"],
     "correctIndex": 0,
     "explanation": "2-3 sentences teaching the concept, ending with a tie to a principle.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing what this week's quiz tested. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing this week's specific quiz concept."
+    }
   },
   "wordOfDay": {
     "word": "A slightly more advanced financial term",
     "type": "noun/verb/etc",
     "context": "what this term relates to from THIS WEEK",
     "definition": "Fun kid-friendly explanation with an analogy. End with how to use it, tied to a principle when natural.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent defining this week's term in plain language. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing this week's specific word + recent news context."
+    }
   },
   ${sundayChallengeSchemaSnippet}
 }
@@ -792,6 +857,15 @@ WORD OF THE DAY — FORWARD-LOOKING:
 ${recentWords.length ? recentWords.map(w => `  - ${w}`).join('\n') : '  (none yet — this is the first generation)'}
 - Definition uses a kid-friendly analogy. The "context" field should reference the week ahead.
 
+PARENT EXPLAINER RULES (Phase 12):
+- Every content section listed in the JSON schema below MUST include a "parentExplainer" object with two string fields:
+  - "summary": 1 sentence in plain adult language. No jargon, no kid-speak — for the parent. Max 30 words.
+  - "conversationStarter": 1 question framed as "Ask [kid] ..." (literal placeholder — email substitutes the kid's first name). Max 25 words.
+- CRITICAL: the conversationStarter MUST reference the specific content from TODAY's preview — actual companies, upcoming events, specific days mentioned. It should feel like a follow-up to what the kid just read, not a generic finance question.
+  - GOOD: "Ask [kid] what they predict will happen if Nvidia beats their earnings on Wednesday."
+  - BAD: "Ask [kid] what they think about earnings reports." (generic)
+- The summary should give the parent enough context to have the conversation even if they don't know finance well themselves.
+
 (NO sundayChallenge field — that's Sunday-only.)
 
 TODAY'S DATE: ${dateStr}
@@ -815,6 +889,10 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
   "vibeEmoji": "appropriate emoji",
   "vibeSummary": "${edition.reason === 'post-holiday' ? `Open with "Hope you had a great ${edition.holidayName}!" then ` : ''}One fun sentence setting the mood for the week ahead.",
   "bigPicture": "3-4 sentences previewing the week's biggest themes (earnings, Fed, data, IPOs).",
+  "bigPictureParentExplainer": {
+    "summary": "1 sentence for the parent previewing what's coming this week. See PARENT EXPLAINER RULES.",
+    "conversationStarter": "Ask [kid] ... 1 question referencing THIS WEEK's specific upcoming events."
+  },
   "scoreboard": {
     "sp500":  { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
     "nasdaq": { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
@@ -835,7 +913,11 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "title": "Forward-looking headline — what's coming",
       "body": "2-4 sentences on the upcoming event/earnings/data, including the day it drops",
       "whyItMatters": "2-3 sentences on potential market impact, tied to a principle",
-      "principle": 1
+      "principle": 1,
+      "parentExplainer": {
+        "summary": "1 sentence for the parent recapping THIS upcoming event. See PARENT EXPLAINER RULES.",
+        "conversationStarter": "Ask [kid] ... 1 question referencing THIS story's specific upcoming event."
+      }
     },
     {
       "badge": "hot/new/money/world/brain",
@@ -843,28 +925,44 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "title": "Secondary watch-item headline",
       "body": "2-4 sentences",
       "whyItMatters": "2-3 sentences tied to a principle",
-      "principle": 2
+      "principle": 2,
+      "parentExplainer": {
+        "summary": "1 sentence for the parent recapping THIS upcoming event. See PARENT EXPLAINER RULES.",
+        "conversationStarter": "Ask [kid] ... 1 question referencing THIS story's specific upcoming event."
+      }
     }
   ],
   "didYouKnow": {
     "fact": "One mind-blowing investing/money/business fact, 1-2 sentences.",
     "category": "compound interest | famous investors | company origins | market history | global economy | mind-blowing numbers",
     "connection": "1-2 sentences tying the fact back to a principle.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing today's fun fact. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific fact."
+    }
   },
   "quiz": {
     "question": "A general investing question or a callback to last week",
     "options": ["A", "B", "C", "D"],
     "correctIndex": 0,
     "explanation": "2-3 sentences teaching the concept, ending with a tie to a principle.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent describing what today's quiz tested. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific quiz concept."
+    }
   },
   "wordOfDay": {
     "word": "A forward-looking financial term",
     "type": "noun/verb/etc",
     "context": "what this term relates to from the week ahead",
     "definition": "Fun kid-friendly explanation with an analogy. End with how to use it, tied to a principle when natural.",
-    "principle": 1
+    "principle": 1,
+    "parentExplainer": {
+      "summary": "1 sentence for the parent defining today's term in plain language. See PARENT EXPLAINER RULES.",
+      "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + week-ahead context."
+    }
   }
 }
 

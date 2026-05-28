@@ -88,6 +88,10 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `POST /api/reset-password` | token + password in body | Validates token, bcrypt-hashes password, marks token used. |
 | `POST /api/delete-data` | email in body | **PII scrub + soft-delete** (COPPA compliance). If the parent email matches an active user, the `users` row is updated in one transaction: `deleted_at = NOW()`, `is_active = FALSE`, and the PII columns (`kid_first_name='deleted'`, `kid_age`/`username`/`password_hash`/`parent_email`/`push_subscription` → NULL) are overwritten. The `deletion_requests` audit table keeps the original parent email as proof the request was made. Sends a deletion-acknowledgment email. |
 | `POST /api/cron/send-digest` | `X-Cron-Secret` header | External trigger for daily teaser fan-out. |
+| `POST /api/cron/send-evening-recap` | `X-Cron-Secret` header | External trigger for the Phase 12 parent recap / nudge fan-out. Same pattern as send-digest. The in-process hourly UTC cron also fires this. |
+| `GET /progress` | session cookie | Phase 11 — kid's full engagement profile (rank ladder, badge grid, personal records, Emergency Fund). Server-rendered per request via `src/progress-template.js`. |
+| `GET /api/engagement/state` | session cookie | Phase 11 — returns the full server-side engagement state (MC, streak, rank, badges, records, nextRank) for the logged-in user. Consumed by `public/engagement.js` on page load. |
+| `POST /api/engagement/track` | session cookie | Phase 11 — records an engagement event. Body: `{ eventType, eventData }`. Validated against the EVENT_TYPES allow-list. Server is the source of truth for MC + progression. Includes duplicate-detection per event type. |
 | `GET /generate?key=<ADMIN_KEY>` | query param | Manually triggers `generateDigest()`. |
 | `GET /api/health` | none | DB connectivity check. |
 
@@ -107,16 +111,20 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `auth.js` | Phase 7 session helpers. `requireAuth` middleware (looks up user by signed cookie, attaches `req.user`, redirects to `/login` on miss), `setSession`/`clearSession` cookie writers. 30-day expiry. |
 | `generate.js` | **Idempotent** digest generator. Checks `daily_digests` DB first; if today's row exists, writes to disk and returns. Otherwise: full pipeline → INSERT → disk. |
 | `data.js` | FMP `/stable/` API client. `fetchMarketData`, `fetchNews`, `fetchMovers`, `fetchTopMover`, `fetchQuotes`. All ticker fetches use **per-ticker fan-out** (FMP free tier doesn't support multi-ticker batch). Tolerates `changePercentage` ↔ `changesPercentage` field rename. |
-| `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). `generateContent` routes between three internal prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) based on `opts.edition.editionType` from calendar.js. **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. |
+| `ai.js` | Claude API calls. Three exports: `generateContent` (main digest with web_search), `reframeBullBear` (bull-bear narrative), `reframeTimeMachine` (time-machine framing). `generateContent` routes between three internal prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) based on `opts.edition.editionType` from calendar.js. **Lazy client init** (deferred `new Anthropic()` so dotenv has run). Includes `PROFANITY_RULE` in all prompts + `scrubProfanity()` regex pass on all output. Phase 12 added `PARENT EXPLAINER RULES` to each builder — every content section (stories, bigPicture, wordOfDay, didYouKnow, quiz) carries a `parentExplainer: { summary, conversationStarter }` object consumed by the evening parent recap email. |
 | `calendar.js` | Edition type resolver. NYSE holiday calendar, day-of-week detection, `DATE_OVERRIDE` env-var support for testing. Exports `getEditionType()`, `getEditionDate()`, `isMarketHoliday()`, `getLastTradingDay()`, `getHolidayName()`, plus `MARKET_HOLIDAYS` for 2026–2027. |
 | `games.js` | Daily Challenge orchestrator. Deterministic 8-day rotation picker, per-game hydrators, falls back to canned content on AI/FMP failure. Two AI calls max per day (bull-bear + time-machine reframers, in parallel). |
-| `template.js` | Builds digest HTML. `buildHTML(content, opts)` — `opts.kidName` (Phase 7) drives a personalized greeting + Log out pill in the header. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
+| `template.js` | Builds digest HTML. `buildHTML(content, opts)` — `opts.kidName` (Phase 7) drives a personalized greeting + Log out pill in the header. `opts.digestDate` (Phase 11) injects `window.__digestDate` for event tracking. `opts.isSample` (Phase 12) suppresses the 💬 "Ask my parent" buttons on `/sample`. Renders Daily Challenge picker, handles `isSample` flag (gold SAMPLE banner + chip), renders `editionLabel` subtitle for Weekly Wrap / Week Ahead editions. Brand-mark PNG lockup in the header (Phase 12 follow-up). 💬 buttons inserted after stories, big-picture, did-you-know, word-of-day (server-rendered) + quiz (client-injected post-answer). On Sunday, mounts the Sunday Challenge container + loads `public/games/sunday-challenge.js`; falls back to the deprecated `weeklyChallenge` card if a cached row predates the Sunday Challenge launch. |
+| `progress-template.js` | Phase 11. `buildProgressHTML(state, opts)` renders the `/progress` page — 6 sections: profile header, How Market Coins Work explainer, 12-rank ladder, 6-family badge grid, 4 personal records, Emergency Fund status. Pure function, no DB access — caller supplies the state from `engagement.getProgress()`. Inline CSS, matches digest design system (Fredoka + Space Mono). |
+| `engagement.js` | Phase 11 — **server-side engagement engine**. Exports `ensureProgress(userId)` (idempotent row creation), `getProgress(userId)` (full state for the API + `/progress`), `recordEvent(userId, eventType, eventData)` (the single mutation entry point — handles streak progression, Perfect Day, rank-up detection, badge tier checks, personal record updates, all in one transaction). Phase 12 added the dedup gate (`isDuplicate` — extended for `parent-question`), the `parent-question` event-type fall-through (0 MC, no progression mutations, just logs), and read helpers `getDailyEngagementSummary(userId, digestDate)` + `getParentQuestionsForDate(userId, digestDate)` for the evening recap email. |
+| `progression.js` | Phase 11 — canonical constants (RANKS, MC_AWARDS, BADGE_FAMILIES, PERSONAL_RECORDS, SHIELD_CONFIG, EVENT_TYPES). Server is canonical; `public/progression-config.js` mirrors. Helpers `rankForCoins(mc)`, `shieldsUnlocked(rankKey)`. Phase 12 added `'parent-question'` to EVENT_TYPES. |
 | `db.js` | pg Pool, **lazy-initialized** (same dotenv timing pattern). Exports `pool` (Proxy), `query`, `getClient`, `healthCheck`. |
 | `digest-store.js` | `todayNY()`, `getDigestForDate()`, `getTodaysDigest()`, `saveDigest()`. The `saveDigest` helper is the immutability lock — `INSERT … ON CONFLICT DO NOTHING` ensures today's row can never be overwritten. |
-| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. `createUserFromSignup` accepts `username` + `password_hash` (Phase 7). `recordDeletionRequest` scrubs PII columns on the matched `users` row in the same transaction as the soft-delete (Phase 10 — COPPA compliance). |
+| `storage.js` | Postgres-backed user/token/deletion helpers. Async throughout. `createUserFromSignup` accepts `username` + `password_hash` (Phase 7). `recordDeletionRequest` scrubs PII columns on the matched `users` row in the same transaction as the soft-delete (Phase 10 — COPPA compliance). Phase 11 extended the transaction to also DELETE from `user_progress`, `engagement_events`, `user_badges`, `personal_records` (covers `parent-question` rows too — no separate Phase 12 scrub needed). |
 | `migrations/add-auth-columns.sql` | Phase 7 forward-only migration: adds `username` + `password_hash` columns to `users`, partial unique index on `LOWER(username)`, expands `verification_tokens.purpose` CHECK to include `password_reset`. server.js runs this on boot if the columns are missing — also kept here for manual one-shots. |
+| `migrations/add-engagement-tables.sql` | Phase 11 forward-only migration: drops the never-populated `engagement` placeholder; creates `user_progress`, `engagement_events`, `user_badges`, `personal_records`. server.js' `runBootMigrations()` applies idempotently when it detects `user_progress` is missing. |
 | `content-history.js` | Word-of-Day + Did-You-Know rotation guard. Generic `getRecent(kind)` / `record(kind)` backed by `state/content-history.json`. 30-day window. |
-| `emails.js` | Email renderers (pure) + `sendEmail` (Resend SDK). Five types: verify, consent, welcome, deletion-ack, daily teaser. Stub-mode fallback if `RESEND_API_KEY` is missing. |
+| `emails.js` | Email renderers (pure) + `sendEmail` (Resend SDK). Seven types: verify, consent, welcome, deletion-ack, daily teaser, password-reset, **Phase 12 evening recap** (`renderEveningRecap` with `recap` + `nudge` variants). Private helpers `getExplainerForSection`, `fillKidName`, `pickTonightStarters`, `gameLabel`. Stub-mode fallback if `RESEND_API_KEY` is missing. |
 | `companies.js` | 75-company curated kid-recognizable list with `lookupCompany(ticker)` helper. |
 | `schema.sql` | Neon DDL. Apply with `scripts/run-schema.js`. Idempotent (uses `IF NOT EXISTS`). |
 
@@ -131,11 +139,13 @@ After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 | `parent-delete-data.html` | Data deletion request UI. |
 | `index.html` | Generated daily digest (**gitignored** — rebuilt from DB on each boot). |
 | `digest-data.json` | JSON payload consumed by template (**gitignored** — same lifecycle). |
-| `engagement.js` / `engagement.css` | XP/rank/streak/shield engine. Fully client-side localStorage. |
+| `engagement.js` / `engagement.css` | Phase 11 rewrite — **server-synced** engagement client. `MarketJuice.init()` clears legacy `mb_*`/`mbg_*` localStorage, hydrates from `GET /api/engagement/state`, renders the Investor Profile bar, fires `daily-visit` once per page load. `MarketJuice.recordEvent(eventType, eventData)` is the single mutation entry point — POSTs to `/api/engagement/track`, animates MC float, dispatches CustomEvents (`mj:rank-up`, `mj:badges-unlocked`, `mj:new-records`, `mj:shield-used`, `mj:shield-awarded`, `mj:duplicate-played`). Offline queue. `MarketJuice.askParent(btn)` (Phase 12) handles the 💬 button taps. `restoreAskParentState()` reattaches sent-state chips on page load from localStorage. CSS hosts profile-bar styles, MC float animation, popup layer, rank-tier cosmetic accents (gold accent at Market Strategist+, gold theme at Market Master+), and the 💬 quiet-link / sent-chip styling. |
+| `engagement-popups.js` | Phase 11 — celebration layer. Listens on `document` for the `mj:*` CustomEvents dispatched by engagement.js and renders the matching popup or toast (rank-up modal with focus trap, badge unlock cards queued one-at-a-time, record + shield toasts, friendly "Already earned!" toast on duplicate replays). `window.MJPopupsDebug` exposes manual fire helpers. |
+| `progression-config.js` | Phase 11 — client mirror of `src/progression.js`. Loaded via `<script>` tag in the digest template before `engagement.js`. Exposes `window.MJProgression` with RANKS, MC_AWARDS, BADGE_FAMILIES, PERSONAL_RECORDS, SHIELD_CONFIG + `rankForCoins` / `shieldsUnlocked` helpers. Must stay in sync with the server file. |
 | `games-preview.html` | Standalone game test harness. |
 | `games/*.js` | 5 game modules (quiz is inline in the template). |
 | `games/daily-challenge.js` | Picker UI + 8-day rotation. **Rotation logic is duplicated in `src/games.js` — keep both in sync.** |
-| `games/sunday-challenge.js` | Sunday Challenge renderer. Single entry point (`window.MBGames.sundayChallenge.render`) dispatches to 4 sub-renderers (trading-floor, ceo, investathon, dilemma) based on `data.type`. Reads `sundayChallenge` from the digest JSON, calls `MarketBuzz.recordGamePlayed('sunday-challenge', {fullXP:50 or 75})` on completion. Replay-safe via `mb-sunday-challenge-<date>` localStorage flag. |
+| `games/sunday-challenge.js` | Sunday Challenge renderer. Single entry point (`window.MJGames.sundayChallenge.render`) dispatches to 4 sub-renderers (trading-floor, ceo, investathon, dilemma) based on `data.type`. Reads `sundayChallenge` from the digest JSON, calls `MarketJuice.recordEvent('sunday-challenge-completed', {type, digestDate, bonus})` on completion. Replay-safe via `mj-sunday-challenge-<date>` localStorage flag. |
 | `data/company-models.json` | 37 companies for Match + Price-is-Right. |
 | `data/time-machine-prices.json` | 7 verified Time Machine scenarios. |
 | `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
@@ -315,21 +325,40 @@ Self-contained: all CSS inline, Google Fonts (`Fredoka` + `Space Mono`), interac
 
 ## The engagement system
 
-Fully client-side (localStorage). No server-side identity yet.
+Phase 11 moved engagement entirely server-side. The server is the source of truth; `public/engagement.js` is a thin sync client.
 
-- **XP** — earned from quiz answers and game participation (25 XP correct, 15 XP participation)
-- **Ranks** — Stock Scout → Trading Cadet → Market Analyst → ... (progressive thresholds)
-- **Streaks** — consecutive days of engagement, displayed with 🔥
-- **Shields** — protect streaks from breaking (earned at milestones)
-- **Perfect Day** — bonus for completing all 3 daily games
+**Storage** — four Postgres tables (see `src/migrations/add-engagement-tables.sql`):
 
-Kids who clear browser data or switch devices start fresh. Moving to server-side requires identity wiring (user slugs), which also unlocks parent dashboard, push targeting, cross-device sync, and leaderboards.
+| Table | Role |
+|---|---|
+| `user_progress` | One row per user. The canonical state — `market_coins`, `current_streak`, `longest_streak`, `streak_shields`, `rank_key`, lifetime counters (`games_played`, `correct_answers`, `perfect_days`, `sunday_challenges`, `weeks_active`, `words_learned`), `last_active_date`, `last_streak_date`, `last_iso_week`. |
+| `engagement_events` | Append-only audit log. Every `recordEvent()` call writes one row with server-enriched `event_data` (mcAwarded, perfectDay, shieldUsed, shieldAwarded, streakAfter, rankAfter, duplicate flag). The evening recap email queries this table. |
+| `user_badges` | One row per (user, badge family). 6 families × up to 10 tiers each. `current_tier`, `progress`, `unlocked_at`. |
+| `personal_records` | One row per (user, record_key). 4 records — best-day-mc, best-week-mc, longest-streak, best-perfect-week. Persists across streak resets. |
+
+**Mechanics:**
+
+- **Market Coins (MC)** — earned per game (25 correct / 15 participation), streak bonus `min(streakDays × 2, 30)`, Perfect Day +25, Word of Day +5, Sunday Challenge 50–75.
+- **12-rank linear-progressive ladder** — Rookie (0) → Market Watcher (50) → Stock Scout (150) → Trading Cadet (350) → Market Analyst (650) → Wall Street Rookie (1,100) → Portfolio Builder (1,700) → Market Strategist (2,500) → Investment Pro (3,500) → Fund Manager (5,000) → Market Master (7,000) → Wall Street Legend (10,000). Each rank-up triggers a full-screen ceremony with rank-specific unlock copy.
+- **6 badge families × 10 tiers** — streak / games / perfectDays / quizzes / consistency / sunday. First tier of each is reachable in week 1; final tier is rare. Multi-tier crossings (e.g. streak that jumps two tiers from a shield rescue) queue badge cards one-at-a-time.
+- **4 personal records** — auto-tracked bests. Survive streak resets.
+- **Emergency Fund (formerly Shields)** — streak protection. 1 awarded per 7-day streak milestone, capped at 3, gated by Stock Scout rank. Auto-consumed on a single missed day (2-day gap); 3+ day gap resets the streak.
+- **Dedup gate** — `recordEvent` checks `engagement_events` for prior same-day events per type (`(game, digestDate)` for games, `(digestDate)` for word-learned / sunday-challenge / parent-question). Re-taps return `{ duplicate: true, mcAwarded: 0 }` and trigger a friendly "Already earned!" toast.
+
+**Phase 12 — Parent recap pipeline:**
+
+Each digest section carries a `parentExplainer: { summary, conversationStarter }` object generated by Claude at digest time. Kids tap 💬 buttons under sections they want to discuss with a parent — that fires a `parent-question` event (0 MC, deduped by section). Every hour UTC, a cron sweep finds users whose local time is 7 PM and sends one of two emails:
+
+- **Recap** (kid engaged today) — session summary + game brief + per-section parent explainers for the 💬 taps + "Talk About It Tonight" picker (always present, 2-3 conversation starters from confirmed-engagement sections, skipping anything already in the 💬 block).
+- **Nudge** (kid didn't engage AND streak ≥ 3) — light tease of today's digest contents + streak-at-risk language scaled to streak length. Skipped entirely if streak < 3 (don't nag fresh signups).
+
+**Phase 11 carry-overs**: cross-device sync is real now (the server is authoritative). Old localStorage state is wiped on first load (`clearLegacyStorage()`) — no migration. The `/progress` page surfaces the full state at `/progress` (kid auth required).
 
 ---
 
 ## Email pipeline
 
-Five email types, all via Resend (`src/emails.js`):
+Seven email types, all via Resend (`src/emails.js`):
 
 | Email | Trigger | Purpose |
 |---|---|---|
@@ -338,8 +367,12 @@ Five email types, all via Resend (`src/emails.js`):
 | Welcome | `GET /api/consent` (after click) | Account activated, what to expect |
 | Daily teaser | 7 AM cron or `POST /api/cron/send-digest` | Preview of today's digest + link |
 | Deletion ack | `POST /api/delete-data` | Confirms data removal |
+| Password reset | `POST /api/forgot-password` (Phase 7) | 1-hour token + reset link |
+| Evening recap / nudge | hourly UTC cron at user's 7 PM local or `POST /api/cron/send-evening-recap` (Phase 12) | Recap of what the kid learned, OR a streak-at-risk nudge. Variant picked per-user from engagement state. |
 
 Stub-mode fallback: if `RESEND_API_KEY` is missing, emails log to console instead of sending. Useful for local development.
+
+**Evening recap details (Phase 12):** the hourly cron query (`EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(u.timezone, 'America/New_York')) = 19`) sweeps every IANA timezone over a 24-hour day. Per-user fork: `engaged → recap` / `!engaged && streak >= 3 → nudge` / otherwise skip. The recap pulls today's digest content from `daily_digests` (one DB read per cron tick, shared across users) and the per-user engagement summary from `engagement_events`. Each section's `parentExplainer.conversationStarter` is filled with the kid's name (replacing the literal `[kid]` placeholder Claude emits). At prelaunch scale a server restart mid-loop could skip a few sends — we don't track an `evening_emails_sent` audit table.
 
 ---
 
@@ -456,13 +489,13 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 ### Not yet built
 
 - **Push notifications (Phase 6.3)** — VAPID key placeholder in `pwa.js`. Email-only MVP works fine.
-- **Server-side engagement** — XP/streaks/ranks are localStorage only. No cross-device sync, no parent dashboard, no leaderboards. Requires identity wiring (user slugs in URL).
-- **Engagement persistence** — hybrid PostHog (web analytics) + custom `/api/track` endpoint writing to the `engagement` table in Neon. Table placeholder exists in `schema.sql`. Needed before parent dashboard.
 - **Anti-spam on signup** — no rate limiting or captcha on `/api/signup` or `/api/delete-data`. Add Cloudflare Turnstile or rate-limit before scaling.
-- **Custom domain** — currently on `railway.app` subdomain. Need a branded domain before public launch.
+- **Leaderboards** — Phase 11 moved engagement server-side and ranks are real; ladder pools / weekly seasons are still on the wish list. Spec'd in `market-juice-engagement-research.md` (Part F).
+- **Parent dashboard** — current evening recap email is the parent-facing surface. A weekly web dashboard with engagement history would be the next step.
 - **Retention-cleanup jobs** (privacy policy §4 promises these — Phase 10 added the TODO comments in `src/server.js` near the cron block; the jobs themselves aren't built):
-  - **12-month inactivity sweep.** Find users with no recent activity and run them through `storage.recordDeletionRequest()`. Blocked on server-side engagement persistence (no "last activity" signal until XP/streaks move off localStorage).
+  - **12-month inactivity sweep.** Find users with no recent activity (now derivable from `user_progress.last_active_date` since Phase 11) and run them through `storage.recordDeletionRequest()`. Unblocked by Phase 11 — just needs the cron written.
   - **7-day incomplete-consent cleanup.** Drop users whose consent token expired without being clicked.
+- **Evening-recap dedup audit table.** A server restart mid-cron could skip a few sends. At prelaunch scale (< 50 users) we accept the risk; add a simple `evening_emails_sent` ledger when traffic justifies it.
 
 ### Known warts
 
@@ -497,17 +530,20 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 | 8   | Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com). New tagline: "Your daily squeeze of market smarts." All HTML pages, email templates, AI prompts, PWA manifest, privacy policy, and meta tags updated. Cookie renamed `mbk_session` → `mj_session`. Service worker cache prefix `mb-` → `mj-` + version bump to v2. No schema changes. | ✅ |
 | 9   | Hero restructure + brand lockup: "Market Juice" promoted to the page h1 with full gradient (was a small logo at top + separate headline). Tagline demoted to subtitle below. Citrus + chart logo mark added as `public/icons/logo.png` (transparent-bg PNG, 1024×1024) and inlined into the h1 flex container — tight gap with the wordmark so the two read as a single lockup. `flex-wrap: nowrap` keeps the lockup on one line; clamp-sized so it fits cleanly on narrow mobile down through wide desktop. | ✅ |
 | 10  | COPPA deletion compliance + data retention policy. `storage.recordDeletionRequest()` now scrubs PII (`kid_first_name='deleted'`, NULLs `kid_age`/`username`/`password_hash`/`parent_email`/`push_subscription`) in the same transaction as the soft-delete. Required dropping NOT NULL on `users.parent_email` + `users.kid_age` (boot migration in `src/migrations/relax-notnull-for-deletion-scrub.sql`, applied automatically by `runBootMigrations` when it detects the columns are still NOT NULL). Deletion-ack email + `public/privacy.html` rewritten — new §4 "Data retention" with retention table, deletion triggers, and "how we delete" copy. Two TODO comments added in `src/server.js` for the 12-month inactivity sweep + 7-day incomplete-consent cleanup that the new privacy section promises (not yet built). | ✅ |
+| 11  | **Server-side engagement overhaul.** XP renamed to Market Coins (MC). Four new Postgres tables (`user_progress`, `engagement_events`, `user_badges`, `personal_records`) + boot migration that drops the empty `engagement` placeholder. New `src/engagement.js` engine: ensureProgress / getProgress / recordEvent with full streak/rank/badge/record logic in one transaction, plus dedup gate (`isDuplicate`) preventing replay double-earning of MC. 12-rank linear-progressive ladder, 6 badge families × 10 tiers, 4 personal records, Emergency Fund (renamed shields, max 3, rank-gated). New routes: `GET /api/engagement/state`, `POST /api/engagement/track`, `GET /progress`. `public/engagement.js` fully rewritten — server-synced thin client with offline queue. Celebration popups (`engagement-popups.js`) — rank-up modal with focus trap, badge unlock queue, record/shield toasts, friendly "Already earned!" toast. Rank-tier cosmetic accents (gold accent at Market Strategist+, gold theme at Market Master+). `/progress` page (`src/progress-template.js`) — 6 sections: profile header, How MC Works, rank ladder, badge grid, records, Emergency Fund. Full namespace sweep: `MarketBuzz`/`MBGames`/`mb-*`/`mbg-*` → `MarketJuice`/`MJGames`/`mj-*` (83 distinct identifiers). Passive XP removed — Word-of-Day reveal kept at 5 MC. COPPA deletion scrub extended to all 4 new tables. 49-assertion smoke test (`scripts/test-engagement.js`). | ✅ |
+| 12  | **"Ask My Parent" + Evening Parent Recap Email.** Each digest section carries a `parentExplainer: { summary, conversationStarter }` generated by Claude at digest time (PARENT EXPLAINER RULES in all 3 prompt builders). 💬 buttons on `/digest` (hidden on `/sample`) — stories, big-picture, did-you-know, word-of-day server-rendered; quiz client-injected post-answer. Tap → optimistic UI swap to "Your parent will see this tonight!" + server-logged `parent-question` event (0 MC, deduped per `(section, digestDate)`). localStorage persistence across reload. New evening recap email (`renderEveningRecap`) with two variants: **recap** (kid engaged today — game brief + 💬 explainers + always-present "Talk About It Tonight" picker) and **nudge** (kid idle AND streak ≥ 3 — light tease + streak-at-risk language). Hourly UTC cron + `POST /api/cron/send-evening-recap` external trigger; PostgreSQL `EXTRACT(HOUR FROM NOW() AT TIME ZONE …) = 19` gate sweeps every IANA timezone over a 24-hour day; NULL timezone falls back to America/New_York. New helpers: `getDailyEngagementSummary` + `getParentQuestionsForDate` in `src/engagement.js`. 73-assertion smoke test (`scripts/test-evening-email.js`) covers 6 scenarios incl. legacy backward-compat + variant-fork decision matrix. | ✅ |
 
 ---
 
-## Future roadmap (post-Phase 6)
+## Future roadmap
 
-- **User slugs + digest gating** — permanent slug per user, `/digest/k/:slug`, no tokens/cookies
-- **Engagement persistence** — PostHog + `/api/track` + Neon `engagement` table
-- **Parent dashboard** — weekly email with engagement stats
+- **Push notifications (Phase 6.3)** — VAPID keys, `/api/push/subscribe`, daily fan-out alongside the 7 AM teaser
+- **Leaderboards / weekly seasons** — Duolingo-style ~30-user weekly pool with promotion/demotion. Spec'd in `market-juice-engagement-research.md` Part F. Needs enough active users to fill pools.
+- **Parent web dashboard** — beyond the evening recap email; weekly view with engagement history, badge unlock timeline
 - **Expanded game datasets** — 30+ bull-bear, 20+ time-machine scenarios
 - **Content-history to Postgres** — survive Railway restarts
-- **Per-user content rotation** — requires identity wiring
+- **Per-user content rotation** — pick word/fact differently per user
+- **Retention cleanup jobs** — 12-month inactivity sweep (now unblocked by Phase 11's `last_active_date`) + 7-day incomplete-consent cleanup, promised in privacy policy §4
 - **Premium tier** — personalized portfolio, paper trading, ad-free deep dives ($5-8/month)
 - **Referral program** — badge/reward unlocks for sharing
 - **School partnerships** — curriculum supplement (26 states mandate financial literacy)

@@ -534,3 +534,433 @@ export async function sendEmail({ to, subject, html, text, from }) {
     return { ok: false, error: err.message };
   }
 }
+
+// ============================================================
+// 7) Evening parent recap / nudge (Phase 12)
+// ============================================================
+// Fires at 7 PM local-to-each-user. Two variants:
+//   - 'recap': kid engaged today → game summary + conversation starters
+//   - 'nudge': kid didn't engage but streak ≥ 3 → light tease + link to /digest
+// Cron-side (src/server.js#sendEveningRecaps) picks the variant; renderer
+// just builds the email.
+//
+// Tone: restrained, clean. The kid email is playful; this one is for the
+// parent. Plain uppercase eyebrow labels, typographic dashes, the rank
+// emoji in the footer + 💬 only next to kid-flagged items. No exclamation
+// stacks, no gamification language.
+
+/**
+ * Map a section key ("story-0", "big-picture", "word-of-day", "did-you-know",
+ * "quiz") to the corresponding parentExplainer object on a digest content
+ * payload. Returns null for legacy digests that pre-date Phase 12 — the
+ * caller renders a graceful fallback in that case.
+ */
+function getExplainerForSection(digestContent, section) {
+  if (!digestContent || !section) return null;
+  if (section.startsWith('story-')) {
+    const idx = parseInt(section.split('-')[1], 10);
+    const story = digestContent.stories?.[idx];
+    return story?.parentExplainer || null;
+  }
+  const map = {
+    'big-picture':  digestContent.bigPictureParentExplainer,
+    'word-of-day':  digestContent.wordOfDay?.parentExplainer,
+    'did-you-know': digestContent.didYouKnow?.parentExplainer,
+    'quiz':         digestContent.quiz?.parentExplainer,
+  };
+  return map[section] || null;
+}
+
+/**
+ * Replace the literal "[kid]" placeholder Claude emits in
+ * parentExplainer.conversationStarter with the actual kid's first name.
+ * Belt-and-suspenders escape so a stray HTML char in the kid's name
+ * doesn't leak into the email body.
+ */
+function fillKidName(starter, kidName) {
+  if (!starter) return '';
+  return starter.replace(/\[kid\]/g, kidName);
+}
+
+/**
+ * "Talk About It Tonight" picker. Always emits 2-3 starters from sections
+ * the kid likely engaged with today, skipping anything already shown in
+ * the kid-flagged 💬 block above.
+ *
+ * Order (per Sunny's Q1):
+ *   1. Quiz       — if the kid played the quiz today (confirmed)
+ *   2. Word       — if word-learned fired (confirmed)
+ *   3. Backfill   — stories[0..n], big-picture, did-you-know in that order
+ * Caps at 3.
+ */
+function pickTonightStarters({ engagement, digestContent, parentQuestions, kidName, cap }) {
+  cap = cap || 3;
+  const taken = new Set((parentQuestions || []).map(q => q.section));
+  const out = [];
+
+  function add(section) {
+    if (out.length >= cap) return;
+    if (taken.has(section)) return;
+    const ex = getExplainerForSection(digestContent, section);
+    if (!ex || !ex.conversationStarter) return;
+    taken.add(section);
+    out.push({ section, starter: fillKidName(ex.conversationStarter, kidName) });
+  }
+
+  // Confirmed engagement first.
+  const quizPlayed = (engagement?.games || []).some(g => g.game === 'quiz');
+  if (quizPlayed) add('quiz');
+  if (engagement?.wordLearned) add('word-of-day');
+
+  // Backfill — stories, then big-picture, then did-you-know.
+  const storyCount = digestContent?.stories?.length || 0;
+  for (let i = 0; i < storyCount && out.length < cap; i++) add(`story-${i}`);
+  add('big-picture');
+  add('did-you-know');
+  return out;
+}
+
+/**
+ * Pretty label for a game key. Falls back to the raw key (e.g. unknown
+ * game type from a future version) so we never render "undefined".
+ */
+const GAME_LABELS = {
+  'quiz':           'The Quiz',
+  'bull-bear':      'Bull or Bear?',
+  'price-is-right': 'Price is Right',
+  'compound':       'Compound Machine',
+  'match':          'Match the Company',
+  'time-machine':   'Time Machine Trade',
+};
+function gameLabel(key) {
+  return GAME_LABELS[key] || key || 'Game';
+}
+
+/**
+ * Friendly date label for the email subject + header. Falls back to the
+ * raw digestDate string on parse failure.
+ */
+function formatDigestDate(digestDate) {
+  if (!digestDate) return '';
+  try {
+    return new Date(digestDate + 'T12:00:00Z')
+      .toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric', timeZone: 'America/New_York' });
+  } catch (_) {
+    return String(digestDate);
+  }
+}
+
+/**
+ * Main renderer. Caller picks the variant; this just builds subject +
+ * html + text. Returns the same shape as the other render* functions.
+ */
+export function renderEveningRecap({
+  kidName,
+  engagement,
+  digestContent,
+  progress,
+  parentQuestions,
+  digestDate,
+  variant,
+}) {
+  const safeKid = escapeHTML(kidName || 'your kid');
+  if (variant === 'nudge') {
+    return renderNudge({ kidName: safeKid, digestContent, progress, digestDate });
+  }
+  return renderRecap({
+    kidName: safeKid,
+    engagement: engagement || {},
+    digestContent: digestContent || {},
+    progress: progress || {},
+    parentQuestions: parentQuestions || [],
+    digestDate,
+  });
+}
+
+// ---- Recap variant (kid engaged today) ---------------------------------
+
+function renderRecap({ kidName, engagement, digestContent, progress, parentQuestions, digestDate }) {
+  const dateLabel = formatDigestDate(digestDate);
+  const subject = `${kidName}'s Daily Squeeze — ${dateLabel}`;
+  const preheader = `Here's what ${kidName} learned today.`;
+
+  // --- Session summary line ---
+  const gameWord = engagement.gamesPlayed === 1 ? 'game' : 'games';
+  const sessionBits = [
+    `Played ${engagement.gamesPlayed} ${gameWord}`,
+    `Earned ${engagement.totalMC} Market Coins`,
+  ];
+  if (engagement.perfectDay) sessionBits.push('Perfect Day');
+  const sessionLine = sessionBits.join(' · ');
+
+  // --- Per-game brief (text-only — bulleted list) ---
+  // Non-quiz games don't have parentExplainer in the digest schema; we
+  // just list them with correct/participated. Quiz brief shows the
+  // parentExplainer.summary since that section DOES carry one.
+  const gameRows = (engagement.games || []).map(g => {
+    const label = gameLabel(g.game);
+    const outcomeRaw = typeof g.correct === 'boolean'
+      ? (g.correct ? 'Correct' : 'Played')
+      : 'Played';
+    let detailLine = '';
+    if (g.game === 'quiz') {
+      const ex = getExplainerForSection(digestContent, 'quiz');
+      if (ex?.summary) {
+        detailLine = `<div style="font-size:13px;color:#6b7280;margin-top:2px;line-height:1.5;">${escapeHTML(ex.summary)}</div>`;
+      }
+    }
+    return `
+      <div style="padding:8px 0;border-bottom:1px solid #eef0f4;">
+        <div style="font-size:14px;color:#1c2030;font-weight:600;">${escapeHTML(label)} <span style="color:#8b91a3;font-weight:400;">— ${escapeHTML(outcomeRaw)}</span></div>
+        ${detailLine}
+      </div>`;
+  }).join('');
+
+  // --- Word of the Day brief ---
+  let wordBlock = '';
+  if (engagement.wordLearned && digestContent.wordOfDay) {
+    const ex = getExplainerForSection(digestContent, 'word-of-day');
+    wordBlock = `
+      <div style="padding:8px 0;border-bottom:1px solid #eef0f4;">
+        <div style="font-size:14px;color:#1c2030;font-weight:600;">Word of the Day: ${escapeHTML(digestContent.wordOfDay.word)}</div>
+        ${ex?.summary ? `<div style="font-size:13px;color:#6b7280;margin-top:2px;line-height:1.5;">${escapeHTML(ex.summary)}</div>` : ''}
+      </div>`;
+  }
+
+  // --- Sunday Challenge brief ---
+  let sundayBlock = '';
+  if (engagement.sundayChallenge) {
+    const type = engagement.sundayChallenge.type || 'challenge';
+    const bonus = engagement.sundayChallenge.bonus ? ' · with bonus' : '';
+    sundayBlock = `
+      <div style="padding:8px 0;border-bottom:1px solid #eef0f4;">
+        <div style="font-size:14px;color:#1c2030;font-weight:600;">Sunday Challenge: ${escapeHTML(type)}<span style="color:#8b91a3;font-weight:400;">${escapeHTML(bonus)}</span></div>
+      </div>`;
+  }
+
+  // --- "RILEY WANTS TO TALK ABOUT" block — kid 💬 taps ---
+  let kidFlaggedBlock = '';
+  if (parentQuestions.length > 0) {
+    const items = parentQuestions.map(q => {
+      const ex = getExplainerForSection(digestContent, q.section);
+      const topic = q.topic || q.section;
+      // Backward-compat: legacy digest rows lack parentExplainer.
+      // Show topic + a gentle prompt so the row still has substance.
+      const detail = ex?.summary
+        ? escapeHTML(ex.summary)
+        : `${escapeHTML(kidName)} was curious about this — ask them what they remember.`;
+      const starter = ex?.conversationStarter
+        ? `<div style="margin-top:6px;font-size:14px;color:#454a5b;font-style:italic;">— ${escapeHTML(fillKidName(ex.conversationStarter, kidName))}</div>`
+        : '';
+      return `
+        <div style="padding:12px 0;border-bottom:1px solid #eef0f4;">
+          <div style="font-size:14px;color:#1c2030;font-weight:600;">💬 ${escapeHTML(topic)}</div>
+          <div style="font-size:13px;color:#6b7280;margin-top:4px;line-height:1.5;">${detail}</div>
+          ${starter}
+        </div>`;
+    }).join('');
+    kidFlaggedBlock = `
+      <div style="margin-top:24px;">
+        <div style="font-size:11px;letter-spacing:1.5px;color:${BRAND.accent};font-weight:700;text-transform:uppercase;margin-bottom:10px;">${escapeHTML(kidName)} wants to talk about</div>
+        ${items}
+      </div>`;
+  }
+
+  // --- "TALK ABOUT IT TONIGHT" block — always present ---
+  const tonight = pickTonightStarters({
+    engagement,
+    digestContent,
+    parentQuestions,
+    kidName,
+    cap: 3,
+  });
+  let tonightBlock = '';
+  if (tonight.length > 0) {
+    const items = tonight.map(t =>
+      `<li style="font-size:14px;color:#454a5b;margin:0 0 10px 0;line-height:1.55;padding-left:0;">— ${escapeHTML(t.starter)}</li>`
+    ).join('');
+    tonightBlock = `
+      <div style="margin-top:24px;">
+        <div style="font-size:11px;letter-spacing:1.5px;color:${BRAND.accent};font-weight:700;text-transform:uppercase;margin-bottom:10px;">Talk about it tonight</div>
+        <ul style="margin:0;padding:0;list-style:none;">
+          ${items}
+        </ul>
+      </div>`;
+  }
+
+  // --- Footer chip: streak / MC / rank ---
+  const rank = progress?.progress?.rank || { name: 'Rookie', badge: '🟢' };
+  const streak = progress?.progress?.currentStreak ?? 0;
+  const mc = progress?.progress?.marketCoins ?? 0;
+  const footerChip = `
+    <div style="margin-top:24px;padding-top:18px;border-top:1px solid #e8eaf0;font-size:13px;color:#6b7280;line-height:1.7;">
+      Streak: <strong style="color:#1c2030;">${streak} day${streak === 1 ? '' : 's'}</strong>
+      · <strong style="color:#1c2030;">${mc} MC</strong>
+      · ${escapeHTML(rank.badge)} <strong style="color:#1c2030;">${escapeHTML(rank.name)}</strong>
+    </div>`;
+
+  const body = `
+    <p style="margin:0 0 6px 0;font-size:15px;color:#454a5b;">Hey there,</p>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">Here's what ${kidName} learned on Market Juice today.</p>
+
+    <div style="font-size:11px;letter-spacing:1.5px;color:${BRAND.accent};font-weight:700;text-transform:uppercase;margin-bottom:8px;">Today's session</div>
+    <div style="font-size:14px;color:#1c2030;margin-bottom:14px;">${escapeHTML(sessionLine)}</div>
+
+    <div>${gameRows}${wordBlock}${sundayBlock}</div>
+
+    ${kidFlaggedBlock}
+    ${tonightBlock}
+    ${footerChip}
+
+    <p style="margin:22px 0 0 0;font-size:12px;color:#8b91a3;">
+      Market Juice — your daily squeeze of market smarts.
+    </p>
+  `;
+
+  // ---- Plain-text fallback ----
+  const textLines = [
+    `Hey there,`,
+    `Here's what ${kidName} learned on Market Juice today.`,
+    '',
+    `TODAY'S SESSION`,
+    sessionLine,
+    '',
+  ];
+  (engagement.games || []).forEach(g => {
+    const outcomeRaw = typeof g.correct === 'boolean' ? (g.correct ? 'Correct' : 'Played') : 'Played';
+    textLines.push(`- ${gameLabel(g.game)} — ${outcomeRaw}`);
+    if (g.game === 'quiz') {
+      const ex = getExplainerForSection(digestContent, 'quiz');
+      if (ex?.summary) textLines.push(`  ${ex.summary}`);
+    }
+  });
+  if (engagement.wordLearned && digestContent.wordOfDay) {
+    const ex = getExplainerForSection(digestContent, 'word-of-day');
+    textLines.push(`- Word of the Day: ${digestContent.wordOfDay.word}`);
+    if (ex?.summary) textLines.push(`  ${ex.summary}`);
+  }
+  if (engagement.sundayChallenge) {
+    textLines.push(`- Sunday Challenge: ${engagement.sundayChallenge.type}${engagement.sundayChallenge.bonus ? ' (with bonus)' : ''}`);
+  }
+  if (parentQuestions.length > 0) {
+    textLines.push('', `${kidName.toUpperCase()} WANTS TO TALK ABOUT`);
+    parentQuestions.forEach(q => {
+      const ex = getExplainerForSection(digestContent, q.section);
+      textLines.push(`- ${q.topic || q.section}`);
+      if (ex?.summary) textLines.push(`  ${ex.summary}`);
+      if (ex?.conversationStarter) textLines.push(`  — ${fillKidName(ex.conversationStarter, kidName)}`);
+    });
+  }
+  if (tonight.length > 0) {
+    textLines.push('', `TALK ABOUT IT TONIGHT`);
+    tonight.forEach(t => textLines.push(`- ${t.starter}`));
+  }
+  textLines.push('', `Streak: ${streak} day${streak === 1 ? '' : 's'} · ${mc} MC · ${rank.name}`);
+  textLines.push('', 'Market Juice — your daily squeeze of market smarts.');
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: textLines.join('\n'),
+  };
+}
+
+// ---- Nudge variant (kid didn't engage, streak ≥ 3) ---------------------
+
+function renderNudge({ kidName, digestContent, progress, digestDate }) {
+  const subject = `${kidName}'s streak is at risk`;
+  const preheader = `${kidName} hasn't squeezed today's juice yet.`;
+
+  const topMover = digestContent?.scoreboard?.topMover;
+  const moverLine = topMover
+    ? `${escapeHTML(topMover.name)} ${escapeHTML(topMover.direction === 'down' ? 'fell' : 'jumped')} ${escapeHTML(topMover.change)}`
+    : null;
+  const word = digestContent?.wordOfDay?.word;
+  const gameCount = digestContent?.dailyChallenge?.games?.length || 3;
+
+  const streak = progress?.progress?.currentStreak ?? 0;
+  const rank = progress?.progress?.rank || { name: 'Rookie', badge: '🟢' };
+  const mc = progress?.progress?.marketCoins ?? 0;
+  const shields = progress?.progress?.streakShields ?? 0;
+
+  const streakMessage = streak >= 7
+    ? `${kidName} has a <strong>${streak}-day streak</strong> going — that's ${mc} Market Coins of progress. ${shields > 0 ? 'Missing today will use an Emergency Fund to save it.' : 'Missing today will break it.'}`
+    : streak >= 3
+      ? `${kidName}'s <strong>${streak}-day streak</strong> is building. A quick 3-minute session keeps it alive.`
+      : `${kidName} hasn't built a streak yet — today's a good day to start.`;
+
+  const digestLink = appUrl('/digest');
+
+  const teaseBits = [];
+  if (moverLine) teaseBits.push(`<strong>${moverLine}</strong>`);
+  if (word) teaseBits.push(`what "<strong>${escapeHTML(word)}</strong>" means`);
+  teaseBits.push(`${gameCount} games to play`);
+  const teaseSentence = teaseBits.length > 1
+    ? `Today's digest covers ${teaseBits.slice(0, -1).join(', ')}, plus ${teaseBits[teaseBits.length - 1]}.`
+    : `Today's digest is ready.`;
+
+  const body = `
+    <p style="margin:0 0 6px 0;font-size:15px;color:#454a5b;">Hey there,</p>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">${kidName} hasn't opened today's Market Juice yet.</p>
+
+    <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;line-height:1.6;">${teaseSentence}</p>
+
+    <p style="margin:0 0 22px 0;font-size:14px;color:#454a5b;line-height:1.6;">${streakMessage}</p>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;">
+          View today's digest →
+        </a>
+      </td></tr>
+    </table>
+
+    <p style="margin:14px 0 0 0;font-size:13px;color:#8b91a3;">
+      There's still time — tomorrow's edition drops at 7 AM EST.
+    </p>
+
+    <div style="margin-top:24px;padding-top:18px;border-top:1px solid #e8eaf0;font-size:13px;color:#6b7280;line-height:1.7;">
+      Streak: <strong style="color:#1c2030;">${streak} day${streak === 1 ? '' : 's'}</strong>
+      · <strong style="color:#1c2030;">${mc} MC</strong>
+      · ${escapeHTML(rank.badge)} <strong style="color:#1c2030;">${escapeHTML(rank.name)}</strong>
+    </div>
+
+    <p style="margin:22px 0 0 0;font-size:12px;color:#8b91a3;">
+      Market Juice — your daily squeeze of market smarts.
+    </p>
+  `;
+
+  const moverLineText = topMover
+    ? `${topMover.name} ${topMover.direction === 'down' ? 'fell' : 'jumped'} ${topMover.change}`
+    : null;
+  const teaseTextBits = [];
+  if (moverLineText) teaseTextBits.push(moverLineText);
+  if (word) teaseTextBits.push(`what "${word}" means`);
+  teaseTextBits.push(`${gameCount} games to play`);
+  const teaseText = teaseTextBits.length > 1
+    ? `Today's digest covers ${teaseTextBits.slice(0, -1).join(', ')}, plus ${teaseTextBits[teaseTextBits.length - 1]}.`
+    : `Today's digest is ready.`;
+
+  const streakText = streak >= 7
+    ? `${kidName} has a ${streak}-day streak going — that's ${mc} Market Coins of progress. ${shields > 0 ? 'Missing today will use an Emergency Fund to save it.' : 'Missing today will break it.'}`
+    : streak >= 3
+      ? `${kidName}'s ${streak}-day streak is building. A quick 3-minute session keeps it alive.`
+      : `${kidName} hasn't built a streak yet — today's a good day to start.`;
+
+  const text = [
+    `Hey there,`,
+    `${kidName} hasn't opened today's Market Juice yet.`,
+    '',
+    teaseText,
+    '',
+    streakText,
+    '',
+    `View today's digest: ${digestLink}`,
+    '',
+    `Streak: ${streak} day${streak === 1 ? '' : 's'} · ${mc} MC · ${rank.name}`,
+    '',
+    'Market Juice — your daily squeeze of market smarts.',
+  ].join('\n');
+
+  return { subject, html: shell({ preheader, body }), text };
+}
