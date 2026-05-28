@@ -49,6 +49,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **10** COPPA deletion compliance + data retention policy | ✅ | PII scrub in `storage.recordDeletionRequest`, deletion-ack email rewrite, privacy.html §4 "Data retention", boot migration to relax NOT NULL on `parent_email`/`kid_age`. Shipped via PR #12. |
 | **11** Server-side engagement overhaul — Market Coins, 4 new tables, 12-rank ladder, 6 badge families, personal records, Emergency Fund, unlock popups, `/progress` page, full namespace sweep `MB*`→`MJ*`. | ✅ | Shipped via PR #13 (`3b4ae9c`). Dedup-gate security fix (replay attack) shipped as follow-up commit `6b78f97` — landed in `dev` after merge. |
 | **12** "Ask My Parent" buttons + Evening Parent Recap email — `parentExplainer` on every digest section, 💬 button per section (hidden on `/sample`), evening cron with timezone-bucketed recap/nudge variants. | ✅ | On `dev` awaiting next PR (4 commits: Batch A prompts, Batch B UI, Batch C email pipeline, Batch D polish + docs). |
+| **13** Multi-kid support — one parent email, up to 5 children. Dropped the unique parent-email index; known-parent abbreviated consent flow; teaser dedup; consolidated reset email; 2-step deletion picker. | ✅ | On `dev` awaiting next PR. 51 assertions green. Fast-follows: evening-recap dedup, email-gated deletion. |
 | **Polish** Logo PNG on digest header (was 📈 emoji) | ✅ | On `dev` (`206bae9`). |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
@@ -518,3 +519,32 @@ Cron: hourly UTC sweep + `POST /api/cron/send-evening-recap` external trigger (m
 - Push notifications (Phase 6.3) still TODO — email-only MVP works.
 - 12-month inactivity auto-delete is now unblocked by Phase 11's `last_active_date` but the cron itself isn't built yet.
 - Evening-recap dedup ledger — not built; accept the risk at prelaunch scale.
+
+---
+
+## Session: Multi-Kid Support (one parent email, up to 5 children)
+
+Lets a single parent email register multiple children (siblings). Five batches.
+
+**The blocker (caught at read-time):** Phase 5/7 enforced one active user per parent email via a partial UNIQUE index `users_parent_email_active`. The original spec's migration didn't drop it — the second sibling's INSERT would have thrown `23505` in production. Migration `src/migrations/add-multi-kid-support.sql` drops it, adds a non-unique `idx_users_parent_email`, and expands `verification_tokens.purpose` with `add_child_consent`. Boot migration in `runBootMigrations()` detects the still-unique index via `pg_index.indisunique` and swaps it idempotently.
+
+**Spec-vs-schema corrections:** the spec referenced a `parent_consent` column (doesn't exist — it's `consent_given`) and used case-sensitive `parent_email = $1` matching (must be `LOWER()` both sides). Both fixed throughout.
+
+**Signup paths** (`isKnownConsentedParent` = has an active, `email_verified` child — deliberately NOT requiring `consent_given`, since 13–16 kids never have it):
+- New parent → full flow, unchanged.
+- Known parent → abbreviated: row created `email_verified=true`, `add_child_consent` token, **emailed** consent link (decision D3(b) — keeps consent email-gated at the same proof level as kid #1; only skips the redundant re-verification step). On click: `consent_method='known_parent_click'`, activate, welcome email (with a "didn't set this up?" safety line). 5-child cap enforced at the signup route.
+
+**Email dedup:** morning teaser groups recipients by `LOWER(parent_email)` → one email per parent naming all kids (`joinNames` helper). Password reset → one consolidated email with a per-kid reset link (`renderMultiKidPasswordResetEmail`). Deletion-ack names the deleted kids.
+
+**Deletion:** `recordDeletionRequest` now takes an optional `userId` (ownership-scoped — re-verifies the id belongs to the submitted email; a forged id can't delete another family's kid). The deletion page is a 2-step picker: enter email → `POST /api/delete-data/children` returns the kid list (first name + age, **never usernames**) → checkboxes + two-click confirm → `POST /api/delete-data` with `userIds[]`.
+
+**Deviations from the spec (all approved by Sunny):**
+- forgot-password: **no in-browser kid-selection screen** — it would regress the endpoint's deliberate no-account-existence-leak property. Consolidated email instead.
+- delete-data selection shows **first name + age, not usernames** (a username is half a login credential).
+- morning teaser **subject stays date-based** (`🟡 Today's Juice: May 27`); kid names go in the greeting, not the subject.
+
+**Tests:** `scripts/test-multi-kid.js` (24 assertions — known-parent detection, abbreviated signup round-trip, two active kids coexisting under one email [proves the unique index is gone], 5-child cap, abandoned-kid-#1 + all-kids-deleted edge cases) + `scripts/test-multi-kid-emails.js` (27 assertions — teaser dedup greeting, consolidated reset email, deletion-ack name lists, per-kid deletion with sibling intact, **cross-parent delete refused**). All 51 green.
+
+**Fast-follows (HARDENING — do before scaling past soft launch):**
+1. **Email-gate deletion.** Deletion is currently gated *only* by knowing the parent email — no token/ownership proof (pre-existing, not introduced here; multi-kid surfaces the child list). Add a confirm-link token to the deletion flow, same pattern as consent. Near-zero risk at ~30 families; required before scaling.
+2. **Evening-recap dedup.** The Phase 12 evening recap cron (`sendEveningRecaps`) still sends one email PER KID. Apply the same parent-email grouping as the morning teaser — one evening email per parent with per-kid sections (engaged → recap, idle → nudge). TODO comment is in `src/server.js` near `sendDailyTeasers`.

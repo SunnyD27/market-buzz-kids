@@ -417,6 +417,9 @@ section h2 {
   color: var(--red); font-size: 13px; margin-top: 4px;
   min-height: 18px;
 }
+.field-hint {
+  color: var(--dim); font-size: 12px; margin-top: 5px; line-height: 1.4;
+}
 .field-note {
   background: rgba(240,192,64,0.10);
   border: 1px solid rgba(240,192,64,0.3);

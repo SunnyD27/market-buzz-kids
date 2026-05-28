@@ -57,6 +57,14 @@
   .deletion-success .icon { font-size: 56px; margin-bottom: 10px; }
   .deletion-success h3 { font-size: 22px; color: var(--bright); margin-bottom: 8px; }
   .deletion-success p { font-size: 15px; color: var(--text); margin-bottom: 8px; }
+
+  .kid-row {
+    display: flex; align-items: center; gap: 10px;
+    padding: 12px 2px; font-size: 15px; color: var(--text);
+    cursor: pointer;
+  }
+  .kid-row input { width: 18px; height: 18px; flex-shrink: 0; cursor: pointer; }
+  .kid-row .kid-age { color: var(--dim); font-size: 13px; }
 </style>
 </head>
 <body>
@@ -68,22 +76,23 @@
 
   <h1>Delete your kid's data</h1>
   <p>
-    Enter the parent email you signed up with. We'll match it to the account and delete everything — instantly, no follow-up email required.
+    Enter the parent email you signed up with. We'll show the accounts under that email so you can choose which to delete.
   </p>
 
   <div class="what-happens">
-    <h3>What happens when you submit</h3>
+    <h3>What happens when you delete</h3>
     <ul>
-      <li>Your kid's account is deactivated immediately</li>
-      <li>Their name, age, engagement data (XP, streak, quiz answers, etc.) — all gone</li>
+      <li>The selected account is deactivated immediately</li>
+      <li>Name, age, engagement data (Market Coins, streak, quiz answers, etc.) — all gone</li>
       <li>Removed from the daily digest send list</li>
       <li>Push notifications stop</li>
       <li>Within 7 days: removed from all backups too</li>
     </ul>
   </div>
 
+  <!-- Step 1 — find accounts under this email -->
   <div class="deletion-form" id="form-card">
-    <form id="delete-form" novalidate>
+    <form id="lookup-form" novalidate>
       <div class="form-row">
         <label for="parent_email">Parent email <span class="req">*</span></label>
         <input type="email" id="parent_email" name="parent_email"
@@ -104,8 +113,8 @@
         </select>
       </div>
 
-      <button type="submit" id="submit-btn" class="btn btn-primary btn-block">
-        Delete my kid's data
+      <button type="submit" id="lookup-btn" class="btn btn-primary btn-block">
+        Find accounts
       </button>
 
       <p class="legal" style="margin-top: 14px;">
@@ -115,12 +124,28 @@
     </form>
   </div>
 
+  <!-- Step 2 — choose which account(s) to delete -->
+  <div class="deletion-form" id="select-card" hidden>
+    <h3 style="font-size:18px;color:var(--bright);margin-bottom:6px;">Which account(s) do you want to delete?</h3>
+    <p style="font-size:13px;color:var(--dim);margin-bottom:14px;">This permanently deletes the selected account(s) and all their progress. This can't be undone.</p>
+    <div id="kid-list"></div>
+    <label class="kid-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px;">
+      <input type="checkbox" id="select-all"> <span><strong>Delete ALL accounts</strong></span>
+    </label>
+    <button type="button" id="delete-btn" class="btn btn-primary btn-block" style="margin-top:16px;" disabled>
+      Delete selected accounts
+    </button>
+    <button type="button" id="back-btn" class="btn btn-block" style="margin-top:10px;background:transparent;border:1px solid var(--border);color:var(--text);">
+      ← Use a different email
+    </button>
+  </div>
+
   <div class="deletion-success" id="success-card" hidden>
     <div class="icon">✅</div>
     <h3>Request received</h3>
     <p id="success-message"></p>
     <p style="font-size: 13px; color: var(--dim); margin-top: 16px;">
-      You'll receive a confirmation email shortly. If you don't, your email may not have matched an account — that's also fine, nothing to do.
+      You'll receive a confirmation email shortly.
     </p>
   </div>
 </div>
@@ -140,65 +165,142 @@
     }
   })();
 
-  // Deletion form handling
+  // Two-step deletion: (1) look up accounts under the parent email,
+  // (2) pick which to delete + confirm. We only ever show first name + age
+  // — never usernames (a username is half a login credential).
   (function(){
-    var form    = document.getElementById('delete-form');
-    var btn     = document.getElementById('submit-btn');
-    var card    = document.getElementById('form-card');
-    var success = document.getElementById('success-card');
-    var msg     = document.getElementById('success-message');
+    var lookupForm = document.getElementById('lookup-form');
+    var lookupBtn  = document.getElementById('lookup-btn');
+    var formCard   = document.getElementById('form-card');
+    var selectCard = document.getElementById('select-card');
+    var kidList    = document.getElementById('kid-list');
+    var selectAll  = document.getElementById('select-all');
+    var deleteBtn  = document.getElementById('delete-btn');
+    var backBtn    = document.getElementById('back-btn');
+    var success    = document.getElementById('success-card');
+    var msg        = document.getElementById('success-message');
+
+    var currentEmail = '';
+    var currentReason = null;
+    var confirmArmed = false;
 
     function setError(name, text) {
       var el = document.getElementById('err-' + name);
       if (el) el.textContent = text || '';
     }
     function isEmail(s) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(s || '').trim()); }
-
-    form.addEventListener('submit', async function(e) {
-      e.preventDefault();
-      setError('parent_email', '');
-      var email = form.parent_email.value.trim();
-      if (!isEmail(email)) {
-        setError('parent_email', 'Please enter a valid email address.');
-        return;
-      }
-      btn.disabled = true;
-      var original = btn.textContent;
-      btn.textContent = 'Processing…';
-      try {
-        var res = await fetch('/api/delete-data', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            parent_email: email,
-            reason: form.reason.value || null,
-          }),
-        });
-        var body = await res.json().catch(function(){ return {}; });
-        if (res.ok) {
-          // Always show success even if no match — we don't leak account existence.
-          msg.innerHTML = body.matched
-            ? "We found and deleted the account for <strong>" + escapeHTML(email) + "</strong>. All data removed from the active database. Backups purged within 7 days."
-            : "We logged your deletion request for <strong>" + escapeHTML(email) + "</strong>. If we find a matching account in our system, it'll be deleted. If not, nothing was there to delete anyway.";
-          card.hidden = true;
-          success.hidden = false;
-          success.scrollIntoView({ behavior: 'smooth' });
-        } else {
-          alert(body.message || 'Something went wrong. Please try again or email hello@example.com.');
-          btn.disabled = false; btn.textContent = original;
-        }
-      } catch (err) {
-        console.error('[delete-data] network error:', err);
-        alert('Network error. Please try again.');
-        btn.disabled = false; btn.textContent = original;
-      }
-    });
-
     function escapeHTML(s) {
       return String(s == null ? '' : s).replace(/[&<>"']/g, function(c) {
         return ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'})[c];
       });
     }
+    function checkedIds() {
+      return Array.prototype.slice.call(kidList.querySelectorAll('input[type=checkbox]:checked'))
+        .map(function(cb){ return cb.value; });
+    }
+    function refreshDeleteBtn() {
+      var n = checkedIds().length;
+      deleteBtn.disabled = n === 0;
+      if (!confirmArmed) deleteBtn.textContent = n > 0 ? ('Delete ' + n + ' account' + (n === 1 ? '' : 's')) : 'Delete selected accounts';
+    }
+
+    // ---- Step 1: look up accounts ----
+    lookupForm.addEventListener('submit', async function(e) {
+      e.preventDefault();
+      setError('parent_email', '');
+      var email = lookupForm.parent_email.value.trim();
+      if (!isEmail(email)) { setError('parent_email', 'Please enter a valid email address.'); return; }
+      currentEmail = email;
+      currentReason = lookupForm.reason.value || null;
+      lookupBtn.disabled = true;
+      var orig = lookupBtn.textContent; lookupBtn.textContent = 'Looking…';
+      try {
+        var res = await fetch('/api/delete-data/children', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parent_email: email }),
+        });
+        var body = await res.json().catch(function(){ return {}; });
+        var kids = (body && body.children) || [];
+        if (kids.length === 0) {
+          // Nothing under this email — log the request anyway (parity with
+          // the old always-log behavior) and show the generic success.
+          await fetch('/api/delete-data', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_email: email, reason: currentReason }),
+          });
+          msg.innerHTML = "We logged your deletion request for <strong>" + escapeHTML(email) + "</strong>. If no account was found, there's nothing else to do.";
+          formCard.hidden = true; success.hidden = false;
+          success.scrollIntoView({ behavior: 'smooth' });
+          return;
+        }
+        // Render the kid checkboxes (name + age only).
+        kidList.innerHTML = kids.map(function(k){
+          return '<label class="kid-row"><input type="checkbox" value="' + escapeHTML(k.id) + '">' +
+                 '<span>' + escapeHTML(k.name) + ' <span class="kid-age">· age ' + escapeHTML(String(k.age)) + '</span></span></label>';
+        }).join('');
+        selectAll.checked = false;
+        confirmArmed = false;
+        formCard.hidden = true; selectCard.hidden = false;
+        refreshDeleteBtn();
+        selectCard.scrollIntoView({ behavior: 'smooth' });
+      } catch (err) {
+        console.error('[delete-data] lookup error:', err);
+        alert('Network error. Please try again.');
+      } finally {
+        lookupBtn.disabled = false; lookupBtn.textContent = orig;
+      }
+    });
+
+    // ---- Selection interactions ----
+    kidList.addEventListener('change', function(){
+      // Keep "select all" in sync.
+      var boxes = kidList.querySelectorAll('input[type=checkbox]');
+      var allChecked = boxes.length > 0 && checkedIds().length === boxes.length;
+      selectAll.checked = allChecked;
+      confirmArmed = false;
+      refreshDeleteBtn();
+    });
+    selectAll.addEventListener('change', function(){
+      kidList.querySelectorAll('input[type=checkbox]').forEach(function(cb){ cb.checked = selectAll.checked; });
+      confirmArmed = false;
+      refreshDeleteBtn();
+    });
+    backBtn.addEventListener('click', function(){
+      selectCard.hidden = true; formCard.hidden = false;
+      formCard.scrollIntoView({ behavior: 'smooth' });
+    });
+
+    // ---- Step 2: confirm + delete (two-click confirmation) ----
+    deleteBtn.addEventListener('click', async function(){
+      var ids = checkedIds();
+      if (ids.length === 0) return;
+      if (!confirmArmed) {
+        confirmArmed = true;
+        deleteBtn.textContent = 'Are you sure? Click again to permanently delete';
+        return;
+      }
+      deleteBtn.disabled = true; deleteBtn.textContent = 'Deleting…';
+      try {
+        var res = await fetch('/api/delete-data', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ parent_email: currentEmail, reason: currentReason, userIds: ids }),
+        });
+        var body = await res.json().catch(function(){ return {}; });
+        if (res.ok) {
+          msg.innerHTML = "Deleted " + (body.deletedCount || ids.length) + " account" + ((body.deletedCount || ids.length) === 1 ? '' : 's') +
+                          " under <strong>" + escapeHTML(currentEmail) + "</strong>. All data removed from the active database; backups purged within 7 days.";
+          selectCard.hidden = true; success.hidden = false;
+          success.scrollIntoView({ behavior: 'smooth' });
+        } else {
+          alert(body.message || 'Something went wrong. Please try again or email hello@example.com.');
+          deleteBtn.disabled = false; confirmArmed = false; refreshDeleteBtn();
+        }
+      } catch (err) {
+        console.error('[delete-data] delete error:', err);
+        alert('Network error. Please try again.');
+        deleteBtn.disabled = false; confirmArmed = false; refreshDeleteBtn();
+      }
+    });
   })();
 </script>
 
