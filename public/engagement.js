@@ -356,6 +356,11 @@
     state = loadCache();
     renderProfileBar();
 
+    // Restore any "ask parent" buttons the kid already tapped today so the
+    // confirmation chip persists across page reloads. Runs before the
+    // network fetch so the swap happens immediately on slow connections.
+    restoreAskParentState();
+
     try {
       state = await fetchState();
       saveCache(state);
@@ -380,6 +385,75 @@
     }
   }
 
+  // ---- Phase 12 — "Ask my parent" --------------------------------------
+  //
+  // Per-section flag → server-logged → picked up by the evening recap
+  // email. Idempotent: localStorage stops repeat taps, server dedup gate
+  // is the canonical line of defense.
+
+  function askParentStorageKey(digestDate, section) {
+    return 'mj-asked-parent-' + (digestDate || 'unknown') + '-' + section;
+  }
+
+  function buildSentChip() {
+    const el = document.createElement('span');
+    el.className = 'mj-ask-parent-sent';
+    el.textContent = '💬 Your parent will see this tonight!';
+    return el;
+  }
+
+  /** Tap handler — called from the inline onclick on each .mj-ask-parent-btn. */
+  function askParent(btnElement) {
+    if (!btnElement) return;
+    const section = btnElement.dataset.section;
+    const topic   = btnElement.dataset.topic || '';
+    const digestDate = window.__digestDate || null;
+    if (!section) return;
+
+    // Idempotency guard. localStorage may be unavailable (private mode),
+    // but the server dedup gate covers that case.
+    let alreadySent = false;
+    try {
+      const key = askParentStorageKey(digestDate, section);
+      alreadySent = !!localStorage.getItem(key);
+      localStorage.setItem(key, '1');
+    } catch (_) { /* private mode — proceed */ }
+    if (alreadySent) {
+      // Belt-and-suspenders DOM swap if a stale button somehow survived.
+      btnElement.replaceWith(buildSentChip());
+      return;
+    }
+
+    // Optimistic UI swap. Server response doesn't change what the kid
+    // sees — the swap is the experience.
+    btnElement.replaceWith(buildSentChip());
+
+    // Fire the event server-side. Don't undo the UI on failure; the
+    // server dedup will protect against double-counting if the kid taps
+    // again on next reload.
+    recordEvent('parent-question', { section, topic, digestDate })
+      .catch(err => console.warn('[askParent] event failed:', err));
+  }
+
+  /** Restore the "sent" state on page load for every button the kid
+   *  already tapped today. Called from init() after the profile bar
+   *  renders so DOM is settled. */
+  function restoreAskParentState() {
+    const digestDate = window.__digestDate || null;
+    let buttons;
+    try { buttons = document.querySelectorAll('.mj-ask-parent-btn'); }
+    catch (_) { return; }
+    buttons.forEach(btn => {
+      const section = btn.dataset.section;
+      if (!section) return;
+      try {
+        if (localStorage.getItem(askParentStorageKey(digestDate, section))) {
+          btn.replaceWith(buildSentChip());
+        }
+      } catch (_) { /* private mode — leave button as-is */ }
+    });
+  }
+
   // ---- Misc helpers ----------------------------------------------------
 
   function escapeHTML(s) {
@@ -392,6 +466,7 @@
   window.MarketJuice = {
     init,
     recordEvent,
+    askParent,
     getState() { return state ? JSON.parse(JSON.stringify(state)) : null; },
     _debugReset() {
       try {

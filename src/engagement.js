@@ -332,6 +332,23 @@ async function isDuplicate(client, userId, eventType, eventData, todayServer) {
     );
     return rows.length > 0;
   }
+  if (eventType === 'parent-question') {
+    // Phase 12: dedup per (section, digestDate). A kid can tap multiple
+    // sections in one digest, but each section is one ask.
+    const section = eventData?.section;
+    if (!section) return false;
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'parent-question'
+          AND event_data->>'section' = $2
+          AND event_data->>'digestDate' = $3
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, section, digestDate],
+    );
+    return rows.length > 0;
+  }
   // daily-visit is idempotent via last_active_date in applyDailyVisit;
   // no gate needed here.
   return false;
@@ -436,6 +453,9 @@ export async function recordEvent(userId, eventType, eventData = {}) {
     } else if (eventType === 'word-learned') {
       mcAwarded += applyWordLearned(after);
     }
+    // parent-question (Phase 12): no MC, no progression mutations. Just
+    // gets logged to engagement_events below for the evening recap email.
+    // Falls through to the same persist + audit path as everything else.
 
     if (mcAwarded > 0) {
       after.market_coins = before.market_coins + mcAwarded;
@@ -908,4 +928,90 @@ async function bumpRecord(client, userId, key, oldValue, newValue, today) {
   );
   const meta = PERSONAL_RECORDS.find(r => r.key === key);
   return { key, name: meta?.name || key, oldValue, newValue };
+}
+
+// ---- Phase 12 — read helpers for the evening recap email ---------------
+
+/**
+ * Pull every engagement event a user fired for a given digest date,
+ * filter out duplicate audit rows, and shape into a summary the evening
+ * recap email consumes. "engaged" is the gate the cron uses to decide
+ * whether to send the recap variant vs. the nudge.
+ */
+export async function getDailyEngagementSummary(userId, digestDate) {
+  const { rows } = await query(
+    `SELECT event_type, event_data, created_at
+       FROM engagement_events
+      WHERE user_id = $1
+        AND event_data->>'digestDate' = $2
+        AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+      ORDER BY created_at ASC`,
+    [userId, digestDate],
+  );
+
+  // Coerce the JSONB event_data — pg already parses to a JS object, but
+  // be defensive against legacy rows where it might come back as a string.
+  const events = rows.map(r => ({
+    type: r.event_type,
+    data: typeof r.event_data === 'string' ? JSON.parse(r.event_data) : (r.event_data || {}),
+    created_at: r.created_at,
+  }));
+
+  const games = events
+    .filter(e => e.type === 'game-completed')
+    .map(e => e.data);
+  const wordLearned = events.some(e => e.type === 'word-learned');
+  const sundayChallenge = events.find(e => e.type === 'sunday-challenge-completed')?.data;
+  const parentQuestions = events
+    .filter(e => e.type === 'parent-question')
+    .map(e => e.data);
+
+  const totalMC = events.reduce((sum, e) => sum + (Number(e.data.mcAwarded) || 0), 0);
+  // Perfect Day fires when the kid plays the 3rd unique game of the day.
+  // The audit row for that game-completed event has perfectDay:true.
+  const perfectDay = games.some(g => g.perfectDay === true);
+  const gamesCorrect = games.filter(g => g.correct === true).length;
+
+  // "engaged" excludes daily-visit (auto-fires on every /digest load) and
+  // parent-question (passive flag — doesn't mean the kid actually played).
+  // The evening cron uses this to fork recap vs. nudge.
+  const meaningfulEvents = events.filter(e =>
+    e.type === 'game-completed' ||
+    e.type === 'word-learned' ||
+    e.type === 'sunday-challenge-completed'
+  );
+  const engaged = meaningfulEvents.length > 0;
+
+  return {
+    engaged,
+    games,
+    wordLearned,
+    sundayChallenge,
+    parentQuestions,
+    totalMC,
+    perfectDay,
+    gamesPlayed: games.length,
+    gamesCorrect,
+  };
+}
+
+/**
+ * Just the kid's parent-question taps for a given day, ordered by tap
+ * time. The evening recap renders these in a "RILEY WANTS TO TALK ABOUT"
+ * block before the always-present "TALK ABOUT IT TONIGHT" picker.
+ */
+export async function getParentQuestionsForDate(userId, digestDate) {
+  const { rows } = await query(
+    `SELECT event_data->>'section' AS section,
+            event_data->>'topic'   AS topic,
+            created_at
+       FROM engagement_events
+      WHERE user_id = $1
+        AND event_type = 'parent-question'
+        AND event_data->>'digestDate' = $2
+        AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+      ORDER BY created_at ASC`,
+    [userId, digestDate],
+  );
+  return rows.map(r => ({ section: r.section, topic: r.topic }));
 }

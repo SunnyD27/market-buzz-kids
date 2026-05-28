@@ -46,7 +46,10 @@ the door for future sponsored content with a 30-day parent notice).
 | **7** Kid auth — username/password + 30d session + reset | ✅ | Shipped via PR #5 |
 | **8** Rebrand: Market Buzz Kids → **Market Juice** (themarketjuice.com) | ✅ | Shipped via PR #6 |
 | **9** Hero restructure — brand-as-h1 + citrus/chart logo lockup | ✅ | Hero h1 shipped via PR #6 (`09ac7e8`); logo lockup `1251c8f` + `34c1e95` on `dev` awaiting PR #7 |
-| **10** COPPA deletion compliance + data retention policy | ✅ | PII scrub in `storage.recordDeletionRequest`, deletion-ack email rewrite, privacy.html §4 "Data retention", boot migration to relax NOT NULL on `parent_email`/`kid_age`. On `dev` awaiting PR #7. |
+| **10** COPPA deletion compliance + data retention policy | ✅ | PII scrub in `storage.recordDeletionRequest`, deletion-ack email rewrite, privacy.html §4 "Data retention", boot migration to relax NOT NULL on `parent_email`/`kid_age`. Shipped via PR #12. |
+| **11** Server-side engagement overhaul — Market Coins, 4 new tables, 12-rank ladder, 6 badge families, personal records, Emergency Fund, unlock popups, `/progress` page, full namespace sweep `MB*`→`MJ*`. | ✅ | Shipped via PR #13 (`3b4ae9c`). Dedup-gate security fix (replay attack) shipped as follow-up commit `6b78f97` — landed in `dev` after merge. |
+| **12** "Ask My Parent" buttons + Evening Parent Recap email — `parentExplainer` on every digest section, 💬 button per section (hidden on `/sample`), evening cron with timezone-bucketed recap/nudge variants. | ✅ | On `dev` awaiting next PR (4 commits: Batch A prompts, Batch B UI, Batch C email pipeline, Batch D polish + docs). |
+| **Polish** Logo PNG on digest header (was 📈 emoji) | ✅ | On `dev` (`206bae9`). |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
 | **Polish** Investing principles expanded 8 → 11 | ✅ | Shipped via PR #3 |
@@ -59,16 +62,16 @@ the door for future sponsored content with a 30-day parent notice).
 
 | Commit | Branch | What |
 |---|---|---|
-| `34c1e95` | `dev` | `landing: swap brand mark to user-provided PNG, tighten lockup` |
-| `1251c8f` | `dev` | `landing: add citrus + chart logo mark to hero brand lockup` |
+| `206bae9` | `dev` | `fix: use brand PNG mark on digest header (was 📈 emoji)` |
+| `6b78f97` | `dev` | `fix: dedup gate prevents replay double-earning of MC` (Phase 11 security follow-up) |
+| `49660ed` | `main` | PR #13 merge — ships Phase 11 server-side engagement overhaul |
+| `3b4ae9c` | `main` | `feat: Phase 11 — server-side engagement system overhaul` |
+| `cc10fe2` | `main` | `Phase 10 follow-up: extend deletion scrub to signup-time metadata` |
+| `a838da7` | `main` | `Phase 10: COPPA deletion compliance + data retention policy` |
 | `2bfa45b` | `main` | PR #6 merge — ships Phase 8 rebrand + hero restructure |
 | `09ac7e8` | `main` | `landing: make Market Juice the hero headline` (Phase 9 step 1) |
 | `5aad556` | `main` | `rebrand: Market Buzz Kids → Market Juice` (Phase 8) |
-| `6d209d2` | `main` | PR #5 merge — ships Phase 7 kid auth + calendar fix + landing 11-principles |
-| `1afce38` | `main` | `fix: update landing page to show all 11 investing principles` |
 | `491e492` | `main` | `feat: add username/password auth for kids` (Phase 7) |
-| `9b8dbef` | `main` | `fix: skip post-holiday Week Ahead when holiday is Monday` |
-| `7715d2d` | `main` | `docs: refresh CONTEXT.md + HANDOFF.md through Phase 6.9` |
 
 ---
 
@@ -218,12 +221,13 @@ The remaining MVP sub-phase. Email-only is fine; push is nice-to-have.
 
 ### Pending on `dev` to merge into `main`
 
-- `1251c8f` — landing: add citrus + chart logo mark to hero brand lockup
-- `34c1e95` — landing: swap brand mark to user-provided PNG, tighten lockup
+- `6b78f97` — `fix: dedup gate prevents replay double-earning of MC` (Phase 11 security follow-up)
+- `206bae9` — `fix: use brand PNG mark on digest header (was 📈 emoji)`
+- Phase 12 work (the "Ask My Parent" + evening recap pipeline) — multiple commits to be created during the Phase 12 commit pass
 
-When ready: open PR #7 `dev → main` on GitHub, merge, Railway auto-deploys.
+When ready: open the next `dev → main` PR on GitHub, merge, Railway auto-deploys. The boot migration in `runBootMigrations()` is already in production (shipped with PR #13) so Phase 12 ships with zero migrations of its own.
 
-> Already shipped: PR #6 brought in the Phase 8 rebrand (`5aad556`) + Phase 9 hero h1 (`09ac7e8`). PR #5 shipped Phase 7 auth + earlier polish. PR #4 shipped Sunday Challenge + market-closed copy fix. PR #3 shipped principles 8→11 + edition-aware heading. PR #2 shipped Phase 6.8 (5+2 editions) + market-closed note. PR #1 was the initial Phase 6 backbone.
+> Already shipped: PR #13 brought in Phase 11 server-side engagement overhaul (`3b4ae9c`). PR #12 brought in Phase 10. PR #6 brought in Phase 8 rebrand + Phase 9 hero h1. PR #5 shipped Phase 7 auth. PR #4 shipped Sunday Challenge. PR #3 shipped principles 8→11. PR #2 shipped Phase 6.8 (5+2 editions). PR #1 was the initial Phase 6 backbone.
 
 ### Open questions / deferred polish
 
@@ -324,7 +328,7 @@ process.exit(0);
 
 ---
 
-*Last updated end-of-Phase-9 (hero restructure + logo lockup) session. PR #6 shipped Phase 8 rebrand + the Phase 9 hero h1 promotion. On `dev` awaiting PR #7: the two logo-lockup commits (`1251c8f` + `34c1e95`). themarketjuice.com Resend domain is verified and transactional emails deliver to any parent ✅. Open follow-ups: (1) Phase 6.3 push notifications still TODO. (2) Internal JS namespaces still carry the old brand abbreviation (`window.MBGames`, `window.MarketBuzz`, `mbg-` CSS prefix) — deliberate scope; future atomic refactor. (3) Server-side engagement persistence is unlocked by Phase 7 auth but not yet wired (XP/streaks/ranks still localStorage-only).*
+*Last updated end-of-Phase-12 (Ask My Parent buttons + Evening Parent Recap email) session. PR #13 shipped Phase 11 (server-side engagement) to `main`. On `dev` awaiting next PR: Phase 11 dedup security fix (`6b78f97`), digest-header logo PNG fix (`206bae9`), and Phase 12 work. themarketjuice.com Resend domain verified, all 7 transactional emails deliver. Open follow-ups: (1) Phase 6.3 push notifications still TODO. (2) Internal JS namespaces are now fully `MarketJuice` / `MJGames` / `mj-*` — Phase 8 namespace debt cleared in Phase 11. (3) Server-side engagement is live and authoritative (Phase 11); leaderboards / weekly seasons are next on the engagement roadmap. (4) 12-month inactivity sweep is now unblocked by `user_progress.last_active_date` — cron itself not built yet.*
 
 ---
 
@@ -454,3 +458,63 @@ The Phase 10 follow-up extended the PII scrub in `storage.recordDeletionRequest(
 All eight columns were already nullable — no schema change needed, no boot migration required. Live-tested against Neon: backfilled non-null values, ran the scrub, all eight columns came back `NULL`, and the core identity scrub (`parent_email`, `kid_age`, etc.) still works.
 
 Two utm_* columns deliberately kept populated: `utm_content` and `utm_term` — they're tail attribution data, not PII on their own once the identifying fields are gone, and they're useful for product analytics on aggregate signups. Same reasoning for the optional survey fields `invest_experience` and `referral_source`.
+
+---
+
+## Session: Phase 11 — Server-side engagement overhaul
+
+XP renamed to **Market Coins (MC)**, all engagement moved server-side. Four batches, 25 tasks, ~3,800 LOC net added.
+
+**What shipped (PR #13, `3b4ae9c`):**
+- Four new Postgres tables: `user_progress` (canonical state per user), `engagement_events` (append-only audit log), `user_badges` (6 families × up to 10 tiers), `personal_records` (4 auto-tracked bests). Boot migration drops the empty `engagement` placeholder + creates the new tables idempotently.
+- `src/engagement.js` — the engine. `ensureProgress` / `getProgress` / `recordEvent` do everything in one transaction: streak progression, Perfect Day, rank-up detection, badge tier checks, personal record updates. Audit row written last with server-enriched data (mcAwarded, perfectDay, shieldUsed, shieldAwarded, streakAfter, rankAfter).
+- `src/progression.js` — canonical constants. 12-rank linear-progressive ladder (Rookie → Wall Street Legend), MC awards table (25 correct / 15 participation / +25 Perfect Day / +5 Word reveal / 50–75 Sunday / streak bonus `min(streak × 2, 30)`), 6 badge families × 10 tiers each, 4 personal records, Emergency Fund config (max 3, gated by Stock Scout rank).
+- `public/engagement.js` rewritten as a server-synced thin client with offline event queue. Old `mb_*` / `mbg-*` localStorage wiped on first load — no migration per Q2 in the spec ("nothing worth preserving").
+- `public/engagement-popups.js` — celebration layer. Rank-up modal with focus trap + ESC + backdrop close, badge unlock queue, record + shield toasts. CSS-only confetti for rank-ups. Rank-tier cosmetic accents (gold accent at Market Strategist+, gold theme at Market Master+).
+- `src/progress-template.js` + `GET /progress` — kid's full profile page. 6 sections: profile header, How MC Works explainer, 12-rank ladder, 6-family badge grid, 4 personal records, Emergency Fund status.
+- Full namespace sweep — `MarketBuzz`/`MBGames`/`mb-*`/`mbg-*` → `MarketJuice`/`MJGames`/`mj-*` across 83 distinct identifiers. The Phase 8 "deliberately left for a follow-up" debt is now cleared.
+- Passive XP removed (no more open-digest or scroll-to-bottom MC). Word-of-Day reveal kept at 5 MC via the `word-learned` event.
+- COPPA deletion scrub extended to all 4 engagement tables in the same transaction as the user soft-delete.
+- 37-assertion smoke test (`scripts/test-engagement.js`) covers every event type + edge cases (streak advance, shield use/award, rank-up, badge tier crossings, multi-tier from shield rescue, etc.).
+
+**Follow-up security fix (`6b78f97`, on `dev` post-merge):** the initial cut had no dedup — a kid could replay the same game 50 times and earn MC each time. Added `isDuplicate()` gate inside `recordEvent`'s transaction that checks `engagement_events` for a prior award per event type (game name + digestDate for games, digestDate alone for word-learned / sunday-challenge / parent-question). Duplicates write an audit row marked `duplicate: true` with `mcAwarded: 0`, skip all state mutations, return `{ duplicate: true }` so the client can show a friendly "Already earned!" toast. 12 additional smoke-test assertions.
+
+**Bugs caught + fixed during checkpoints (all from the smoke test):**
+1. `pg` returns DATE columns as `Date` objects; the engine compared them as strings, so every day looked new. Added `normalizeProgressRow()`.
+2. Per-day games counter was in-memory only — games 2 and 3 of a day never fired Perfect Day. Replaced with DISTINCT-by-game query against the events log.
+3. Audit row was written before MC was computed; personal-record day/week sums missed the current event. Reordered to insert last with enriched data.
+4. 7-day shield award ran before rank-up for the same event; an event that crossed Stock Scout AND a 7-day boundary skipped the shield. Moved shield logic to after rank-up.
+5. `applyGameCompleted` used `last_active_date` (which `daily-visit` overwrites on every page load) as the "is this a new day for streak?" signal. Switched to `last_streak_date`.
+6. `/progress` badge tiles read `progress[snake_case]` but `getProgress()` returns camelCase keys. Added a translation map.
+
+---
+
+## Session: Phase 12 — "Ask My Parent" + Evening Parent Recap Email
+
+Adds a parent-facing surface — kids flag sections they want to discuss, parents get an evening email summarizing the day or nudging when the streak is at risk. Zero new database tables; everything piggybacks on Phase 11's `engagement_events` + `daily_digests`. Four batches, 16 tasks.
+
+**Batch A — Content pipeline.** Extended all 3 AI prompt builders (`buildStandardPrompt`, `buildWeeklyWrapPrompt`, `buildWeekAheadPrompt`) with PARENT EXPLAINER RULES. Every content section (stories[*], bigPicture via `bigPictureParentExplainer`, wordOfDay, didYouKnow, quiz) now carries a `parentExplainer: { summary, conversationStarter }` object. Rules require the conversationStarter to reference *today's specific content* (real companies, numbers, events) — generic finance questions are explicitly forbidden via GOOD/BAD examples in the prompt. `parseDigestJSON` is plain `JSON.parse` + citation stripping, so nested fields pass through cleanly. `scrubProfanity` walks objects recursively, only mutates string leaves. One live regen against today's digest (`2026-05-27`, ~$0.30 in API cost) confirmed Claude follows the rules: starters reference SpaceX's $1.75T valuation, oil dropping $94→$88, Snowflake vs Salesforce, etc.
+
+**Batch B — Digest UI.** `parent-question` event type (0 MC, deduped per `(section, digestDate)`, no progression mutations — just logged). 💬 buttons in `src/template.js`: 4 server-rendered (stories, big-picture, did-you-know, word-of-day) + 1 client-injected (quiz, after answering). Hidden on `/sample` via the `opts.isSample` guard. Tap behavior: optimistic UI swap to "💬 Your parent will see this tonight!" + localStorage persistence across reload + server-logged event via `MarketJuice.recordEvent('parent-question', {section, topic, digestDate})`. `restoreAskParentState()` runs on init before the network fetch so reload is instant. Browser-verified end-to-end: 3 buttons tapped → 3 audit rows in DB → reload restores chips → re-tap returns `{ duplicate: true }`.
+
+**Style note:** the original button design was a bordered pill chip; user feedback (mid-checkpoint) was "looks too fake with the grey background." Rewrote to a quiet text link — no border, no fill, `--text-dim` at 70% opacity, lifts to `--purple` with a soft underline on hover. Post-tap "sent" chip keeps the purple fill because it's an affirmative state.
+
+**Batch C — Evening email.** `getDailyEngagementSummary(userId, digestDate)` + `getParentQuestionsForDate(userId, digestDate)` in `src/engagement.js` — both filter duplicate audit rows so dedup doesn't pollute the recap. `renderEveningRecap({ kidName, engagement, digestContent, progress, parentQuestions, digestDate, variant })` in `src/emails.js` with two variants:
+
+- **Recap** (kid engaged today): subject `${kid}'s Daily Squeeze — ${date}`. Body has session summary (games / MC / Perfect Day), per-game brief (quiz gets its parentExplainer.summary inline; other games just list "Correct/Played"), word-of-day brief, "WANTS TO TALK ABOUT" block (the 💬 taps with topic + parentExplainer.summary + conversationStarter), then always-present "TALK ABOUT IT TONIGHT" picker (2–3 starters from sections the kid engaged with — quiz first, then wordOfDay, then backfill from stories/bigPicture/didYouKnow, skipping anything already in the 💬 block). Footer chip shows streak + MC + rank.
+- **Nudge** (kid idle AND streak ≥ 3): subject `${kid}'s streak is at risk`. Light tease of today's digest contents (topMover, wordOfDay, game count) + streak-at-risk language scaled to streak length + CTA to `/digest`.
+
+Cron: hourly UTC sweep + `POST /api/cron/send-evening-recap` external trigger (matches the existing `send-digest` pattern with `X-Cron-Secret`). PostgreSQL `EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(u.timezone, 'America/New_York')) = 19` gate per row — every IANA timezone gets its email at 7 PM local. 100ms sleep between sends. Per-user fork: `engaged → recap`, `!engaged && streak >= 3 → nudge`, otherwise skip (don't nag fresh signups, Q4 in spec). At prelaunch scale a restart mid-loop could skip a few sends; no audit dedup table.
+
+73-assertion smoke test (`scripts/test-evening-email.js`) covers 6 scenarios: engaged recap, idle nudge, sub-threshold skip, legacy digest backward-compat (no parentExplainer fields), full pipeline via real `recordEvent()` calls (catches drift between Phase 11 writer and Phase 12 reader), variant-fork decision matrix.
+
+**Tone of the parent email** (per spec Q9): restrained, clean, no exclamation stacks, no gamification language. Plain uppercase eyebrows (`TODAY'S SESSION`, `TALK ABOUT IT TONIGHT`), typographic dashes, rank emoji only in the footer chip, 💬 only next to kid-flagged questions.
+
+**Backward compatibility:** old `daily_digests` rows (pre-Phase-12) don't have `parentExplainer` fields. `getExplainerForSection()` returns null in that case; the recap email shows the kid-flagged topic with a generic fallback line ("Sky was curious about this — ask them what they remember") and skips the "TALK ABOUT IT TONIGHT" block entirely (no explainers to pick from). Verified in Scenario D.
+
+**No new env vars.** `CRON_SECRET` (Phase 6.2) is reused for the external trigger.
+
+**Open items deferred:**
+- Push notifications (Phase 6.3) still TODO — email-only MVP works.
+- 12-month inactivity auto-delete is now unblocked by Phase 11's `last_active_date` but the cron itself isn't built yet.
+- Evening-recap dedup ledger — not built; accept the risk at prelaunch scale.
