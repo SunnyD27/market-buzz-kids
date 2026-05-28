@@ -312,6 +312,72 @@ async function consumeToken(rawToken, opts = {}) {
   }
 }
 
+/**
+ * Atomically consume a password_reset token and apply the new password.
+ *
+ * The token is validated AND consumed in a single UPDATE ... RETURNING so two
+ * concurrent reset clicks can't both pass (only one row flips used_at). The
+ * password write and the session_version bump ride in the SAME transaction:
+ * bumping session_version invalidates every cookie issued before the reset
+ * (see requireAuth in auth.js), which is the whole point of a reset — lock out
+ * a session the parent believes was stolen or shared.
+ *
+ * `passwordHash` must be pre-computed (bcrypt is slow; don't hold a tx open
+ * across it).
+ *
+ * Returns { ok: true, userId } on success, or
+ *         { ok: false, reason: 'invalid' } if the token was missing, expired,
+ *         already used, or not a password_reset token.
+ */
+async function resetPasswordWithToken(rawToken, passwordHash) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const tokRes = await client.query(
+      `UPDATE verification_tokens
+          SET used_at = NOW()
+        WHERE token = $1
+          AND purpose = 'password_reset'
+          AND used_at IS NULL
+          AND expires_at > NOW()
+        RETURNING user_id`,
+      [rawToken]
+    );
+    const consumed = tokRes.rows[0];
+    if (!consumed) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'invalid' };
+    }
+
+    const userRes = await client.query(
+      `UPDATE users
+          SET password_hash = $1,
+              session_version = session_version + 1,
+              updated_at = NOW()
+        WHERE id = $2
+          AND deleted_at IS NULL
+        RETURNING id`,
+      [passwordHash, consumed.user_id]
+    );
+    if (userRes.rows.length === 0) {
+      // Token pointed at a scrubbed/deleted user — don't leave a half-applied
+      // reset. Roll the token consumption back too.
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'invalid' };
+    }
+
+    await client.query('COMMIT');
+    console.log(`[storage] password reset applied for user ${consumed.user_id} (session_version bumped)`);
+    return { ok: true, userId: consumed.user_id };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ---- Deletion ------------------------------------------------------------
 
 /**
@@ -587,6 +653,52 @@ async function cleanupAbandonedSignups() {
   return { found: abandoned.length, cleaned };
 }
 
+/**
+ * Retention: delete accounts inactive for 12+ months.
+ *
+ * The privacy policy promises inactive accounts are auto-deleted after a year.
+ * "Inactive" = no login / digest view in 12 months (users.last_active_at);
+ * accounts that never recorded activity fall back to created_at so legacy rows
+ * without last_active_at still age out.
+ *
+ * Reuses recordDeletionRequest (same PII-scrub + audit path), audit method
+ * 'automatic-inactivity'. Per-user failures are logged and skipped.
+ *
+ * Returns { found, cleaned }.
+ */
+async function cleanupInactiveAccounts() {
+  const { rows: inactive } = await query(
+    `SELECT id, parent_email, kid_first_name, last_active_at
+       FROM users
+      WHERE is_active = TRUE
+        AND deleted_at IS NULL
+        AND (
+          (last_active_at IS NOT NULL AND last_active_at < NOW() - INTERVAL '12 months')
+          OR
+          (last_active_at IS NULL AND created_at < NOW() - INTERVAL '12 months')
+        )`
+  );
+
+  let cleaned = 0;
+  for (const user of inactive) {
+    try {
+      await recordDeletionRequest({
+        parent_email: user.parent_email,
+        userId: user.id,
+        reason: 'inactive 12+ months',
+        processed_method: 'automatic-inactivity',
+        user_agent: 'system-cron',
+      });
+      cleaned++;
+      console.log(`[cleanup] scrubbed inactive account: user ${user.id} (last active: ${user.last_active_at || 'never'})`);
+    } catch (err) {
+      console.error(`[cleanup] failed to scrub inactive user ${user.id}:`, err.message);
+    }
+  }
+
+  return { found: inactive.length, cleaned };
+}
+
 // ---- Stats ---------------------------------------------------------------
 
 async function counts() {
@@ -613,10 +725,12 @@ async function counts() {
 export const storage = {
   createUserFromSignup,
   consumeToken,
+  resetPasswordWithToken,
   recordDeletionRequest,
   createDeleteDataToken,
   validateDeleteDataToken,
   cleanupAbandonedSignups,
+  cleanupInactiveAccounts,
   findActiveUserByEmail,
   findUserById,
   getActiveChildrenByParentEmail,

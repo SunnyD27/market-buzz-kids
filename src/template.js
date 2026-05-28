@@ -968,9 +968,10 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
     }};
   }
 
-  // Today's hydrated bundle, baked in at generation time. JSON.stringify
-  // produces a safe string literal — no XSS risk since values are escaped.
-  var __DC_BUNDLE = ${JSON.stringify({ games: dailyChallenge.games.map(g => ({ type: g.type, data: g.data })) })};
+  // Today's hydrated bundle, baked in at generation time. The .replace
+  // escapes '<' to \\u003c so a stray "</script>" inside the (AI-generated)
+  // data can't break out of this inline <script> tag.
+  var __DC_BUNDLE = ${JSON.stringify({ games: dailyChallenge.games.map(g => ({ type: g.type, data: g.data })) }).replace(/</g, '\\u003c')};
   (function () {
     var host = document.getElementById('daily-challenge-host');
     if (!host || !window.MJGames || !window.MJGames.dailyChallenge) return;
@@ -982,7 +983,7 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
   // ---- Sunday Challenge ----------------------------------------------
   // Same pattern as Daily Challenge: data baked in at render time, the
   // game module dispatches based on .type to the right sub-renderer.
-  var __SC_DATA = ${JSON.stringify(sundayChallenge)};
+  var __SC_DATA = ${JSON.stringify(sundayChallenge).replace(/</g, '\\u003c')};
   (function () {
     var host = document.getElementById('sunday-challenge-host');
     if (!host || !window.MJGames || !window.MJGames.sundayChallenge) return;
