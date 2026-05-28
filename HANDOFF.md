@@ -588,3 +588,34 @@ Addressed findings from the full codebase security audit (critical + important +
 5. Note: booting locally ran the `delete_data` CHECK boot-migration against Neon (idempotent, forward-only — same as a deploy would).
 
 **Still open (not in this pass):** 12-month inactivity sweep (TODO in server.js, now unblocked by `last_active_date`); evening-recap per-parent dedup; the privacy "deleted from all backups within 7 days" claim still doesn't reflect Neon's actual backup retention.
+
+---
+
+## Session: Security Audit Follow-Up
+
+Remaining audit findings (important + minor) addressed. All on `dev`.
+
+**Fix 12 — Sessions invalidated on password reset.** Added `users.session_version` (default 1). The signed `mj_session` cookie value is now `"${userId}:${session_version}"`; `requireAuth` parses both, looks the user up, and rejects the cookie if the versions differ. A password reset bumps `session_version`, so all existing cookies for that kid stop working. Legacy cookies (bare UUID, no `:`) force a one-time re-login.
+
+**Fix 13 — Atomic password-reset token.** The reset handler no longer does SELECT-then-UPDATE. It now runs a single `UPDATE verification_tokens SET used_at=NOW() WHERE token=$1 AND purpose='password_reset' AND expires_at>NOW() AND used_at IS NULL RETURNING user_id` (validate + consume in one statement), then the password update and the `session_version` bump — all inside one transaction (`getClient`/BEGIN/COMMIT). Two concurrent clicks can't both succeed.
+
+**Fix 14 — Backup-deletion overclaim removed.** privacy.html §6 and the deletion page no longer promise "all backups within 7 days." New wording: personal info is removed from active systems immediately; provider backups are purged on their standard retention schedule.
+
+**Fix 15 — Email fan-out failure logging.** The teaser (`sendDailyTeasers`) and evening recap (`sendEveningRecaps`) fan-outs now log per-recipient failures and a summary — using **user/kid ids, never plaintext emails**. Teaser groups by parent, so it logs the affected kid ids per failed parent.
+
+**Fix 16 — Inline-script JSON escape.** `template.js` `__DC_BUNDLE` and `__SC_DATA` now run `JSON.stringify(...).replace(/</g, '\\u003c')` so a stray `</script>` in the (AI-generated) digest data can't break out of the inline `<script>`.
+
+**Fix 17 — 12-month inactivity sweep.** Added `users.last_active_at`, stamped on login and (debounced to once/day) on authenticated digest/progress views in `requireAuth`. New `storage.cleanupInactiveAccounts()` scrubs active, non-deleted users with no activity in 12 months (falls back to `created_at` when `last_active_at` is NULL), via `recordDeletionRequest` with `processed_method='automatic-inactivity'`. Exposed as `POST /api/cron/cleanup-inactive` (header `X-Cron-Secret` OR `?secret=`) plus an in-process weekly cron (Sundays 4 AM ET).
+
+**Migrations:** `runBootMigrations()` adds `session_version` + `last_active_at` idempotently (`ADD COLUMN IF NOT EXISTS`); standalone doc in `src/migrations/add-session-version-and-activity.sql`. schema.sql updated for fresh deploys. (Verified live on boot: columns added against Neon.)
+
+**Deviations from the spec (followed existing codebase, as instructed):**
+- Cookie is signed via cookie-parser (not a manual HMAC); `setSession(res, id, version)` builds the `id:version` value and cookie-parser signs it.
+- Token purpose column is `verification_tokens.purpose`; reset purpose is `'password_reset'` (matches existing).
+- 12-month sweep uses `users.last_active_at` (new), NOT `user_progress.last_active_date` (that's the engagement NY-date field — different semantics). The earlier TODO comment that referenced `user_progress.last_active_date` was corrected.
+- `cleanup-inactive` accepts header OR `?secret=` (consistent with `cleanup-abandoned`), both fail closed.
+
+**Fast-follow (not built):**
+- Pre-deletion warning email to parents ~7 days before the 12-month mark.
+- Automated retry for failed email sends (currently logged only).
+- Verified `last_active_at`-on-login and session-version-reject end-to-end logic by code review + unit checks (cookie format, atomic reset 400); a full login→reset→old-cookie-rejected integration test needs a consented test user and wasn't run against prod.

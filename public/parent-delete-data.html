@@ -86,7 +86,7 @@
       <li>Name, age, engagement data (Market Coins, streak, quiz answers, etc.) — all gone</li>
       <li>Removed from the daily digest send list</li>
       <li>Push notifications stop</li>
-      <li>Within 7 days: removed from all backups too</li>
+      <li>Backups are purged on our infrastructure provider's standard retention schedule</li>
     </ul>
   </div>
 
@@ -316,7 +316,7 @@
         var body = await res.json().catch(function(){ return {}; });
         if (res.ok && body.ok) {
           msg.innerHTML = "Deleted " + (body.deletedCount || ids.length) + " account" + ((body.deletedCount || ids.length) === 1 ? '' : 's') +
-                          ". All data removed from the active database; backups purged within 7 days.";
+                          ". All data removed from the active database; backups are purged on our provider's standard retention schedule.";
           selectCard.hidden = true; success.hidden = false;
           success.scrollIntoView({ behavior: 'smooth' });
         } else if (body.expired) {

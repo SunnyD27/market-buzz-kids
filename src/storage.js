@@ -587,6 +587,52 @@ async function cleanupAbandonedSignups() {
   return { found: abandoned.length, cleaned };
 }
 
+/**
+ * Retention: delete accounts inactive for 12+ months.
+ *
+ * The privacy policy promises inactive accounts are auto-deleted after a year.
+ * "Inactive" = no login / digest view in 12 months (users.last_active_at);
+ * accounts that never recorded activity fall back to created_at so legacy rows
+ * without last_active_at still age out.
+ *
+ * Reuses recordDeletionRequest (same PII-scrub + audit path), audit method
+ * 'automatic-inactivity'. Per-user failures are logged and skipped.
+ *
+ * Returns { found, cleaned }.
+ */
+async function cleanupInactiveAccounts() {
+  const { rows: inactive } = await query(
+    `SELECT id, parent_email, kid_first_name, last_active_at
+       FROM users
+      WHERE is_active = TRUE
+        AND deleted_at IS NULL
+        AND (
+          (last_active_at IS NOT NULL AND last_active_at < NOW() - INTERVAL '12 months')
+          OR
+          (last_active_at IS NULL AND created_at < NOW() - INTERVAL '12 months')
+        )`
+  );
+
+  let cleaned = 0;
+  for (const user of inactive) {
+    try {
+      await recordDeletionRequest({
+        parent_email: user.parent_email,
+        userId: user.id,
+        reason: 'inactive 12+ months',
+        processed_method: 'automatic-inactivity',
+        user_agent: 'system-cron',
+      });
+      cleaned++;
+      console.log(`[cleanup] scrubbed inactive account: user ${user.id} (last active: ${user.last_active_at || 'never'})`);
+    } catch (err) {
+      console.error(`[cleanup] failed to scrub inactive user ${user.id}:`, err.message);
+    }
+  }
+
+  return { found: inactive.length, cleaned };
+}
+
 // ---- Stats ---------------------------------------------------------------
 
 async function counts() {
@@ -617,6 +663,7 @@ export const storage = {
   createDeleteDataToken,
   validateDeleteDataToken,
   cleanupAbandonedSignups,
+  cleanupInactiveAccounts,
   findActiveUserByEmail,
   findUserById,
   getActiveChildrenByParentEmail,

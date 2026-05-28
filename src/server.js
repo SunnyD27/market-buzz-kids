@@ -15,7 +15,7 @@ import { generateDigest } from './generate.js';
 import { buildHTML } from './template.js';
 import { buildProgressHTML } from './progress-template.js';
 import { storage } from './storage.js';
-import { healthCheck as dbHealthCheck, query as dbQuery } from './db.js';
+import { healthCheck as dbHealthCheck, query as dbQuery, getClient as dbGetClient } from './db.js';
 import { getTodaysDigest, getDigestForDate, todayNY } from './digest-store.js';
 import { requireAuth, setSession, clearSession } from './auth.js';
 import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate } from './engagement.js';
@@ -269,7 +269,7 @@ app.post('/api/login', authLimiter, async (req, res) => {
   let row;
   try {
     const result = await dbQuery(
-      `SELECT id, password_hash, is_active
+      `SELECT id, password_hash, is_active, session_version
          FROM users
         WHERE LOWER(username) = LOWER($1)
           AND deleted_at IS NULL
@@ -1024,9 +1024,10 @@ async function sendDailyTeasers() {
     const key = (u.parent_email || '').toLowerCase();
     if (!key) continue;
     if (!byParent.has(key)) {
-      byParent.set(key, { parent_email: u.parent_email, kidNames: [] });
+      byParent.set(key, { parent_email: u.parent_email, kidNames: [], ids: [] });
     }
     byParent.get(key).kidNames.push(u.kid_first_name);
+    byParent.get(key).ids.push(u.id);
   }
   const parents = [...byParent.values()];
 
@@ -1034,11 +1035,17 @@ async function sendDailyTeasers() {
 
   let sent = 0;
   let failed = 0;
+  const failures = []; // { ids, error } — log user ids, never plaintext emails
   for (const parent of parents) {
     const email = renderDailyTeaserEmail({ kidNames: parent.kidNames }, content);
     const result = await sendEmail({ to: parent.parent_email, ...email });
-    if (result.ok) sent++;
-    else failed++;
+    if (result.ok) {
+      sent++;
+    } else {
+      failed++;
+      console.error(`[send-digest] send failed: kidIds=${JSON.stringify(parent.ids)} error=${result.error}`);
+      failures.push({ ids: parent.ids, error: result.error });
+    }
     // Small spacing between sends to stay under Resend's free-tier rate
     // limit (10 req/sec). 100ms is comfortably under that.
     await new Promise(r => setTimeout(r, 100));
@@ -1046,6 +1053,9 @@ async function sendDailyTeasers() {
 
   const finished_at = new Date().toISOString();
   console.log(`[send-digest] done · sent=${sent} failed=${failed} parents=${parents.length} kids=${recipients.length}`);
+  if (failures.length > 0) {
+    console.error(`[send-digest] partial failure: ${failures.length}/${parents.length} parent email(s) failed · kidIds=${JSON.stringify(failures.flatMap(f => f.ids))}`);
+  }
 
   // TODO (multi-kid fast-follow): the Phase 12 evening recap cron
   // (sendEveningRecaps) still sends one email PER KID. Apply the same
@@ -1220,6 +1230,7 @@ async function sendEveningRecaps() {
   console.log(`[evening-recap] starting · ${users.length} user(s) at 7 PM local`);
 
   let sent = 0, skipped = 0, failed = 0;
+  const failures = []; // user ids only — never plaintext emails in logs
   for (const u of users) {
     try {
       const summary = await getDailyEngagementSummary(u.id, digestDate);
@@ -1252,11 +1263,17 @@ async function sendEveningRecaps() {
       });
 
       const result = await sendEmail({ to: u.parent_email, ...rendered });
-      if (result.ok) sent++;
-      else failed++;
+      if (result.ok) {
+        sent++;
+      } else {
+        failed++;
+        console.error(`[evening-recap] send failed: userId=${u.id} variant=${variant} error=${result.error}`);
+        failures.push(u.id);
+      }
     } catch (err) {
       console.error(`[evening-recap] user ${u.id} failed:`, err.message);
       failed++;
+      failures.push(u.id);
     }
     // Stay under Resend's 10 req/sec free-tier limit. Matches the 7 AM
     // teaser cron's pacing.
@@ -1265,6 +1282,9 @@ async function sendEveningRecaps() {
 
   const finished_at = new Date().toISOString();
   console.log(`[evening-recap] done · sent=${sent} skipped=${skipped} failed=${failed} total=${users.length}`);
+  if (failures.length > 0) {
+    console.error(`[evening-recap] partial failure: ${failures.length}/${users.length} failed · userIds=${JSON.stringify(failures)}`);
+  }
   return { ok: true, status: 'ok', sent, skipped, failed, total: users.length, started_at, finished_at };
 }
 
@@ -1338,6 +1358,37 @@ cron.schedule('0 3 * * *', async () => {
     console.log(`[Cron] Abandoned-consent cleanup: ${result.cleaned}/${result.found} scrubbed`);
   } catch (err) {
     console.error('[Cron] Abandoned-consent cleanup threw:', err.message);
+  }
+}, {
+  timezone: 'America/New_York',
+});
+
+// External trigger for the 12-month inactivity sweep. Same auth pattern as
+// cleanup-abandoned (header OR ?secret=, fails closed when CRON_SECRET unset).
+app.post('/api/cron/cleanup-inactive', async (req, res) => {
+  const expected = process.env.CRON_SECRET || '';
+  const got = req.header('x-cron-secret') || req.query.secret || '';
+  if (!expected || got !== expected) {
+    return res.status(403).json({ error: 'Invalid cron secret' });
+  }
+  try {
+    const result = await storage.cleanupInactiveAccounts();
+    console.log(`[cleanup-inactive] ${result.cleaned}/${result.found} scrubbed`);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[cleanup-inactive] failed:', err.message);
+    res.status(500).json({ error: 'Cleanup failed' });
+  }
+});
+
+// In-process weekly sweep — Sundays at 4 AM ET. 12-month windows don't need
+// daily precision, so weekly keeps the scan cost low.
+cron.schedule('0 4 * * 0', async () => {
+  try {
+    const result = await storage.cleanupInactiveAccounts();
+    console.log(`[Cron] Inactive-account cleanup: ${result.cleaned}/${result.found} scrubbed`);
+  } catch (err) {
+    console.error('[Cron] Inactive-account cleanup threw:', err.message);
   }
 }, {
   timezone: 'America/New_York',
@@ -1559,6 +1610,26 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] delete_data CHECK migration failed (token-gated deletion will error until fixed):', err.message);
+  }
+
+  // Session versioning + activity tracking (audit follow-up Fix 12 + 17).
+  // session_version invalidates old cookies on password reset; last_active_at
+  // drives the 12-month inactivity sweep. ADD COLUMN IF NOT EXISTS is itself
+  // idempotent, so no detection query is needed.
+  try {
+    const { rows } = await dbQuery(
+      "SELECT column_name FROM information_schema.columns WHERE table_name = 'users' AND column_name = 'session_version'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Adding users.session_version + users.last_active_at…');
+      await dbQuery(`
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS session_version INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at  TIMESTAMPTZ;
+      `);
+      console.log('[migrations] ✅ session_version + last_active_at added.');
+    }
+  } catch (err) {
+    console.error('[migrations] session/activity migration failed (login + inactivity sweep may error until fixed):', err.message);
   }
 }
 

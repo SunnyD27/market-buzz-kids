@@ -62,6 +62,11 @@ CREATE TABLE IF NOT EXISTS users (
   -- Auth (Phase 7 — kid login)
   username            VARCHAR(30),
   password_hash       VARCHAR(255),
+  -- Session invalidation: bumped on password reset so old signed cookies
+  -- (which carry the version) stop validating. See src/auth.js.
+  session_version     INTEGER      NOT NULL DEFAULT 1,
+  -- Last login / digest-view activity, for the 12-month inactivity sweep.
+  last_active_at      TIMESTAMPTZ,
 
   -- Push (Phase 4 PWA support; populated when kid subscribes)
   push_subscription   JSONB,

@@ -39,14 +39,27 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  * Reading from signedCookies is therefore sufficient for tamper checking.
  */
 export async function requireAuth(req, res, next) {
-  const userId = req.signedCookies?.[COOKIE_NAME];
-  if (!userId) {
+  const raw = req.signedCookies?.[COOKIE_NAME];
+  if (!raw) {
     return res.redirect('/login');
   }
 
+  // Cookie format is `${userId}:${session_version}`. Legacy cookies (pre
+  // session-versioning) are just the bare UUID with no ':' — force those
+  // users to re-login so they get a versioned cookie. This is a one-time
+  // event after the session-versioning rollout.
+  const sep = raw.indexOf(':');
+  if (sep === -1) {
+    clearSession(res);
+    return res.redirect('/login');
+  }
+  const userId = raw.slice(0, sep);
+  const cookieVersion = raw.slice(sep + 1);
+
   try {
     const { rows } = await query(
-      `SELECT id, username, kid_first_name, kid_age, is_active
+      `SELECT id, username, kid_first_name, kid_age, is_active,
+              session_version, last_active_at
          FROM users
         WHERE id = $1
           AND is_active = TRUE
@@ -60,7 +73,26 @@ export async function requireAuth(req, res, next) {
       clearSession(res);
       return res.redirect('/login');
     }
-    req.user = rows[0];
+    const user = rows[0];
+
+    // Session invalidation: the cookie's version must match the DB. A
+    // password reset bumps session_version, so old cookies stop working.
+    if (String(user.session_version) !== cookieVersion) {
+      clearSession(res);
+      return res.redirect('/login');
+    }
+
+    req.user = user;
+
+    // Activity tracking for the 12-month inactivity sweep. Debounced to at
+    // most once/day per user so we don't write on every page load. Fire-and-
+    // forget — never block the response on this bookkeeping write.
+    const lastActive = user.last_active_at ? new Date(user.last_active_at).getTime() : 0;
+    if (Date.now() - lastActive > 86400000) {
+      query('UPDATE users SET last_active_at = NOW() WHERE id = $1', [user.id])
+        .catch(err => console.error('[auth] last_active_at update failed:', err.message));
+    }
+
     next();
   } catch (err) {
     console.error('[auth] session lookup failed:', err.message);
@@ -77,8 +109,10 @@ export async function requireAuth(req, res, next) {
  *   secure=true in production so the cookie only travels over HTTPS.
  *   sameSite=lax so email-link clicks (cross-site GETs) still carry it.
  */
-export function setSession(res, userId) {
-  res.cookie(COOKIE_NAME, userId, {
+export function setSession(res, userId, sessionVersion = 1) {
+  // Cookie value carries both the user id and their session_version so
+  // requireAuth can reject cookies issued before a password reset.
+  res.cookie(COOKIE_NAME, `${userId}:${sessionVersion}`, {
     signed: true,
     httpOnly: true,
     secure: process.env.NODE_ENV === 'production',
