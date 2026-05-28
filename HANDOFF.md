@@ -548,3 +548,43 @@ Lets a single parent email register multiple children (siblings). Five batches.
 **Fast-follows (HARDENING — do before scaling past soft launch):**
 1. **Email-gate deletion.** Deletion is currently gated *only* by knowing the parent email — no token/ownership proof (pre-existing, not introduced here; multi-kid surfaces the child list). Add a confirm-link token to the deletion flow, same pattern as consent. Near-zero risk at ~30 families; required before scaling.
 2. **Evening-recap dedup.** The Phase 12 evening recap cron (`sendEveningRecaps`) still sends one email PER KID. Apply the same parent-email grouping as the morning teaser — one evening email per parent with per-kid sections (engaged → recap, idle → nudge). TODO comment is in `src/server.js` near `sendDailyTeasers`.
+
+---
+
+## Session: Security Audit Fixes
+
+Addressed findings from the full codebase security audit (critical + important + minor). All on `dev`. No user-facing signup/login/digest flow changed except the deletion page (now token-gated).
+
+**Critical:**
+- **Host-header injection fixed.** Reset / verify / consent links now build from `appUrl()` (`APP_BASE_URL`) instead of `req.get('host')`. `grep "req.get('host')" src/` → zero.
+- **Fail-closed secrets.** Server `process.exit(1)` if `SESSION_SECRET` is unset in production (dev keeps the fallback + warning). `/generate` ADMIN_KEY guard now fails closed when `ADMIN_KEY` is unset (`!expected || key !== expected`).
+- **Placeholder contact removed.** `hello@example.com` → `hello@themarketjuice.com` in privacy.html + parent-delete-data.html. (Landing form placeholder `you@example.com` → `you@email.com`.)
+- **7-day abandoned-consent cleanup BUILT.** `storage.cleanupAbandonedSignups()` scrubs under-13 signups where consent was never given after 7 days (reuses `recordDeletionRequest`, audit method `automatic-consent-expired`). Exposed as `POST /api/cron/cleanup-abandoned` AND an in-process daily cron at 3 AM ET (so it runs even if no external cron is configured). `recordDeletionRequest` now also deletes the user's `verification_tokens` and accepts a `processed_method` override.
+- **Token-gated deletion.** New `delete_data` token purpose. Flow: `POST /api/delete-data/request {parent_email}` → emails a 1-hour single-use link (generic no-leak response) → `POST /api/delete-data/children {token}` (validates, does NOT consume) → `POST /api/delete-data {token, userIds}` (validates + consumes, scrubs, ack email). Parent email is derived from the token, never trusted from the client. New `src/migrations/add-delete-data-token.sql` + idempotent boot migration (detects via `pg_get_constraintdef`). `public/parent-delete-data.html` rewritten to a 2-state page (no token → email form; `?token=…` → child list + delete; invalid/expired → "request a new link"). Verified live: invalid token → 400, request → generic 200, delete without valid token → 400.
+
+**Important:**
+- **express-rate-limit (^8)** on `/api/login` (10/15min), `/api/signup` (10/hr), `/api/forgot-password` (5/hr), `/api/reset-password` (10/15min), `/api/delete-data/request` (5/hr), `/api/check-username` (30/min). Not on `/digest`, engagement, or the secret-gated crons. In-memory store (fine for single Railway instance).
+- **Generic login error.** "Account not yet activated" now returns the same `Wrong username or password.` as bad credentials (no enumeration).
+- **Consent disclosures aligned.** Both the under-13 consent email and the add-child consent email now list username + hashed password, device type, timezone, and IP. "XP" → "Market Coins" in privacy.html + the verify email.
+- **DB TLS** `rejectUnauthorized: true` in production (relaxed in dev). **`trust proxy` → 1** (Railway single hop).
+
+**Minor:**
+- pwa.js `mb_pwa_visits`/`mb_pwa_dismissed_at`/`window.MBPwa` → `mj_*`/`window.MJPwa` (fixes the collision with engagement.js `clearLegacyStorage`). Stale "Buzz" copy removed from emails.js + sw.js.
+- Dockerfile drops root (runs as the base image's `node` user; `chown -R node:node /app`). railway.toml gains `healthcheckPath = "/api/health"` + `healthcheckTimeout = 30`.
+
+**Deviations from the fix spec (followed the existing codebase, as instructed):**
+- Token purposes are `email_verify` / `parental_consent` / `password_reset` / `add_child_consent` (not `verification`/`consent`); column is `verification_tokens.purpose` (not `type`). Added `delete_data` to that set.
+- Reused `recordDeletionRequest(...)` (not a non-existent `deleteUserData`).
+- `/api/cron/cleanup-abandoned` accepts **either** the `X-Cron-Secret` header (matching the other cron endpoints) **or** `?secret=` (matching the Railway note below). Both fail closed if `CRON_SECRET` is unset.
+- `/api/health` already existed — only railway.toml needed the healthcheck entry.
+- Used the base image's built-in `node` user instead of creating `nodeuser`.
+- express-rate-limit v8 uses `limit:` (not the deprecated `max:`).
+
+**Action items after deploy:**
+1. (Optional) Create a Railway cron for `POST /api/cron/cleanup-abandoned?secret=$CRON_SECRET` (daily 3 AM ET). The in-process cron already covers this; the external one is belt-and-suspenders.
+2. Verify the Neon connection works with `rejectUnauthorized:true` in production — if the chain fails, pin Neon's CA via `ssl: { ca: ... }`. (Heads-up: pg warns that `sslmode=require` in `DATABASE_URL` will mean `verify-full` in pg v9; revisit when upgrading pg.)
+3. Confirm all env vars are set in Railway: `SESSION_SECRET`, `ADMIN_KEY`, `CRON_SECRET`, `APP_BASE_URL` (the server now refuses to boot in prod without `SESSION_SECRET`).
+4. **Tests not added** — the existing `scripts/test-*.js` were not extended for the new endpoints; add coverage for the token-gated delete flow + abandoned cleanup before the next release.
+5. Note: booting locally ran the `delete_data` CHECK boot-migration against Neon (idempotent, forward-only — same as a deploy would).
+
+**Still open (not in this pass):** 12-month inactivity sweep (TODO in server.js, now unblocked by `last_active_date`); evening-recap per-parent dedup; the privacy "deleted from all backups within 7 days" claim still doesn't reflect Neon's actual backup retention.

@@ -4,6 +4,7 @@ import dotenv from 'dotenv';
 dotenv.config({ override: true });
 import express from 'express';
 import cookieParser from 'cookie-parser';
+import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import cron from 'node-cron';
@@ -29,7 +30,9 @@ import {
   renderPasswordResetEmail,
   renderMultiKidPasswordResetEmail,
   renderAddChildConsentEmail,
+  renderDeleteDataVerifyEmail,
   sendEmail,
+  appUrl,
 } from './emails.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -38,10 +41,12 @@ const __dirname = path.dirname(__filename);
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// We sit behind Railway's proxy in production, so req.ip resolves via
-// X-Forwarded-For. Local dev doesn't have a proxy — 'trust proxy' tolerates
-// both.
-app.set('trust proxy', true);
+// We sit behind Railway's single proxy hop in production, so req.ip resolves
+// from the LAST entry of X-Forwarded-For. Trusting a fixed hop count (not
+// `true`/all) prevents a client from spoofing req.ip via a forged
+// X-Forwarded-For — important for rate limiting and for the consent/signup
+// IPs we store for COPPA audit.
+app.set('trust proxy', 1);
 
 // Parse JSON bodies for /api endpoints (signup, deletion).
 app.use(express.json({ limit: '32kb' }));
@@ -51,6 +56,13 @@ app.use(express.json({ limit: '32kb' }));
 // automatically. Fallback only used in local dev — production MUST set
 // SESSION_SECRET. We log loudly if it's the fallback, so production
 // misconfigurations don't ship silently.
+// Fail closed in production: the dev fallback is a hardcoded string committed
+// to a public repo, so booting prod without SESSION_SECRET would let anyone
+// forge mj_session cookies (the cookie value is the user UUID). Crash instead.
+if (!process.env.SESSION_SECRET && process.env.NODE_ENV === 'production') {
+  console.error('FATAL: SESSION_SECRET must be set in production');
+  process.exit(1);
+}
 const SESSION_SECRET = process.env.SESSION_SECRET || 'market-juice-fallback-secret-DEV-ONLY';
 if (!process.env.SESSION_SECRET) {
   console.warn('[auth] SESSION_SECRET not set — using insecure dev fallback. SET THIS IN PRODUCTION.');
@@ -76,6 +88,45 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, '..', 'public'), {
   index: false, // don't auto-serve index.html — we route the root manually
 }));
+
+// ============================================================
+// Rate limiters (Fix 7) — protect sensitive endpoints from brute force /
+// enumeration / spam. Limits are generous: a normal kid/parent never hits
+// them. Uses the in-memory store (fine for Railway's single instance; a
+// multi-instance deploy would need a shared store). `trust proxy` is set to
+// 1 above so the per-IP key reflects the real client, not the proxy.
+// ============================================================
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  limit: 10,                // 10 attempts per window per IP
+  message: { error: 'Too many attempts. Please try again in a few minutes.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const signupLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 10,                // 10 signups per IP per hour
+  message: { error: 'Too many signups from this location. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const checkLimiter = rateLimit({
+  windowMs: 60 * 1000,      // 1 minute
+  limit: 30,                // 30 checks/min (normal typing generates ~5-10)
+  message: { error: 'Too many requests. Please slow down.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const emailLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000, // 1 hour
+  limit: 5,                 // 5 email-sending requests per IP per hour
+  message: { error: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ============================================================
 // Routes
@@ -206,7 +257,7 @@ app.get('/reset-password', (req, res) => {
 // Login looks up by LOWER(username), validates the bcrypt hash, then
 // sets the session cookie. Same error message for "user not found" and
 // "wrong password" — never reveal which one failed.
-app.post('/api/login', async (req, res) => {
+app.post('/api/login', authLimiter, async (req, res) => {
   const body = req.body || {};
   const username = String(body.username || '').trim();
   const password = String(body.password || '');
@@ -235,11 +286,12 @@ app.post('/api/login', async (req, res) => {
     return res.status(401).json({ error: 'Wrong username or password.' });
   }
 
-  // Account exists but isn't activated yet — surface a distinct copy so
-  // the parent knows to click the email link rather than wonder why
-  // their correct password "doesn't work."
+  // Account exists but isn't activated yet. Return the SAME generic error as
+  // wrong credentials so login can't be used to confirm an account exists
+  // (username enumeration). Parents learn activation is pending from the
+  // signup confirmation flow + the consent email, not from the login error.
   if (!row.is_active) {
-    return res.status(401).json({ error: "Account not yet activated. Check your parent's email for the confirmation link." });
+    return res.status(401).json({ error: 'Wrong username or password.' });
   }
 
   let match;
@@ -266,7 +318,7 @@ app.post('/api/logout', (req, res) => {
 // Real-time availability check from the signup form. Returns
 // { available: true|false }. Returns false for any string the server
 // would reject (too short, bad chars) so the UI shows red ✗ pre-submit.
-app.get('/api/check-username', async (req, res) => {
+app.get('/api/check-username', checkLimiter, async (req, res) => {
   const username = String(req.query.username || '').trim();
   if (!username || username.length < 3 || username.length > 20 || !/^[a-zA-Z0-9_]+$/.test(username)) {
     return res.json({ available: false });
@@ -293,7 +345,7 @@ app.get('/api/check-username', async (req, res) => {
 // /api/reset-password validates the token, hashes the new password, and
 // marks the token used. Same token table the verify/consent flow uses
 // (the CHECK constraint was expanded to accept 'password_reset').
-app.post('/api/forgot-password', async (req, res) => {
+app.post('/api/forgot-password', emailLimiter, async (req, res) => {
   const email = String(req.body?.email || '').trim();
 
   // Always 200, always identical body — even on error. The actual work
@@ -338,7 +390,7 @@ app.post('/api/forgot-password', async (req, res) => {
          VALUES ($1, $2, 'password_reset', $3)`,
         [token, user.id, expiresAt],
       );
-      const link = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
+      const link = appUrl(`/reset-password?token=${token}`);
       resets.push({ user, kidName: user.kid_first_name, username: user.username, link });
     } catch (err) {
       console.error('[forgot-password] token insert failed:', err.message);
@@ -360,7 +412,7 @@ app.post('/api/forgot-password', async (req, res) => {
   }
 });
 
-app.post('/api/reset-password', async (req, res) => {
+app.post('/api/reset-password', authLimiter, async (req, res) => {
   const token = String(req.body?.token || '').trim();
   const password = String(req.body?.password || '');
 
@@ -464,7 +516,7 @@ function classifyDevice(ua) {
   return 'unknown';
 }
 
-app.post('/api/signup', async (req, res) => {
+app.post('/api/signup', signupLimiter, async (req, res) => {
   const body = req.body || {};
   const errors = {};
 
@@ -621,7 +673,7 @@ app.post('/api/signup', async (req, res) => {
     : tokenRow.purpose === 'parental_consent'
       ? `/api/consent?token=${tokenRow.token}`
       : `/api/verify?token=${tokenRow.token}`;
-  const linkURL = `${req.protocol}://${req.get('host')}${linkPath}`;
+  const linkURL = appUrl(linkPath);
 
   const email = tokenRow.purpose === 'add_child_consent'
     ? renderAddChildConsentEmail(user, linkURL)
@@ -785,28 +837,66 @@ function slice120(v) {
 }
 
 // ============================================================
-// API — data deletion (parent-initiated)
+// API — data deletion (parent-initiated, token-gated — Fix 5)
 // ============================================================
-// Per privacy policy, we always return success (200) to avoid leaking
-// account existence. If the email matches an active user, storage soft-
-// deletes it. If not, we still log the request for audit purposes.
-// Multi-kid: step-1 lookup for the deletion page. Given a parent email,
-// returns the active children so the parent can pick which to delete.
-// Returns first name + age + id ONLY — never usernames (a username is half
-// a login credential). The id is a UUID and the deletion step re-verifies
-// it belongs to the submitted email, so echoing it is safe.
-//
-// NB: this shares the existing delete-flow's security model — deletion is
-// gated only by knowing the parent email (no token/ownership proof). That's
-// a pre-existing property; multi-kid surfaces the child list but doesn't
-// change the trust model. Revisit (email-gated deletion) before scaling.
-app.post('/api/delete-data/children', async (req, res) => {
+// Three steps, all proving control of the parent inbox before any child PII
+// is revealed or deleted:
+//   1. POST /api/delete-data/request  { parent_email }
+//        → emails a single-use 1-hour 'delete_data' link. Always returns the
+//          SAME generic response (no account-existence leak).
+//   2. POST /api/delete-data/children { token }
+//        → validates the token (does NOT consume it) and returns the child
+//          list (first name + age + id; never usernames).
+//   3. POST /api/delete-data          { token, userIds }
+//        → validates AND consumes the token, then scrubs the selected kids
+//          (each re-verified to belong to the token's parent email).
+
+// Step 1 — request a verification link. emailLimiter caps abuse.
+app.post('/api/delete-data/request', emailLimiter, async (req, res) => {
   const parent_email = String(req.body?.parent_email || '').trim();
+  // Generic response regardless of outcome — never reveal whether an account
+  // exists at this address (mirrors /api/forgot-password).
+  const generic = { ok: true, message: "If an account exists with that email, we've sent a verification link. Please check your inbox." };
+
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
     return res.status(400).json({ ok: false, message: 'Please enter a valid email address.' });
   }
+
+  // Respond first so a slow Resend send can't become a timing oracle.
+  res.json(generic);
+
   try {
-    const children = await storage.getActiveChildrenByParentEmail(parent_email);
+    const created = await storage.createDeleteDataToken(parent_email);
+    if (!created) return; // no active children — send nothing
+    const link = appUrl(`/parent/delete-data?token=${created.token}`);
+    const payload = renderDeleteDataVerifyEmail(link);
+    sendEmail({ to: parent_email, ...payload }).catch(err =>
+      console.error('[delete-data/request] sendEmail failed:', err.message)
+    );
+  } catch (err) {
+    console.error('[delete-data/request] failed:', err.message);
+  }
+});
+
+// Step 2 — token-gated child list. Validates WITHOUT consuming so the parent
+// can review and confirm within the 1-hour window.
+app.post('/api/delete-data/children', async (req, res) => {
+  const token = String(req.body?.token || '').trim();
+  if (!token) {
+    return res.status(400).json({ ok: false, message: 'Missing or invalid link.' });
+  }
+  let valid;
+  try {
+    valid = await storage.validateDeleteDataToken(token, { consume: false });
+  } catch (err) {
+    console.error('[delete-data/children] token validation failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Lookup is temporarily unavailable. Please try again in a moment.' });
+  }
+  if (!valid) {
+    return res.status(400).json({ ok: false, expired: true, message: 'This link has expired. Please request a new one.' });
+  }
+  try {
+    const children = await storage.getActiveChildrenByParentEmail(valid.parentEmail);
     return res.json({
       ok: true,
       children: children.map(c => ({ id: c.id, name: c.kid_first_name, age: c.kid_age })),
@@ -817,41 +907,46 @@ app.post('/api/delete-data/children', async (req, res) => {
   }
 });
 
+// Step 3 — token-gated deletion. Validates AND consumes the token, then
+// scrubs the selected children (each re-verified to belong to the token's
+// parent email, so a forged id can't reach another family's kid).
 app.post('/api/delete-data', async (req, res) => {
   const body = req.body || {};
-  const parent_email = String(body.parent_email || '').trim();
-  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
-    return res.status(400).json({ ok: false, message: 'Please enter a valid email address.' });
-  }
+  const token = String(body.token || '').trim();
   const reason = typeof body.reason === 'string' ? body.reason.slice(0, 120) : null;
 
-  // Multi-kid: an optional userIds array targets specific children. Each
-  // recordDeletionRequest call re-verifies the id belongs to this parent
-  // email, so a forged id can't delete another family's kid. Without
-  // userIds, fall back to the single-match-by-email behavior.
-  const rawIds = Array.isArray(body.userIds) ? body.userIds : null;
-  const userIds = rawIds
-    ? rawIds.filter(id => typeof id === 'string' && id.length > 0).slice(0, 5)
-    : null;
+  if (!token) {
+    return res.status(400).json({ ok: false, message: 'Missing or invalid link.' });
+  }
+
+  const rawIds = Array.isArray(body.userIds) ? body.userIds : [];
+  const userIds = rawIds.filter(id => typeof id === 'string' && id.length > 0).slice(0, 5);
+  if (!userIds.length) {
+    return res.status(400).json({ ok: false, message: 'Select at least one account to delete.' });
+  }
+
+  // Consume the token now — single-use. parentEmail is the authoritative
+  // owner derived from the token, not from anything the client supplied.
+  let valid;
+  try {
+    valid = await storage.validateDeleteDataToken(token, { consume: true });
+  } catch (err) {
+    console.error('[delete-data] token validation failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Deletion is temporarily unavailable. Please try again in a moment.' });
+  }
+  if (!valid) {
+    return res.status(400).json({ ok: false, expired: true, message: 'This link has expired. Please request a new one.' });
+  }
+  const parent_email = valid.parentEmail;
 
   const ua = String(req.headers['user-agent'] || '').slice(0, 500);
   const deletedNames = [];
   let matchedCount = 0;
 
   try {
-    if (userIds && userIds.length) {
-      for (const userId of userIds) {
-        const request = await storage.recordDeletionRequest({
-          parent_email, reason, userId, requested_ip: req.ip, user_agent: ua,
-        });
-        if (request.matched_user_id) {
-          matchedCount++;
-          if (request.matchedKidName) deletedNames.push(request.matchedKidName);
-        }
-      }
-    } else {
+    for (const userId of userIds) {
       const request = await storage.recordDeletionRequest({
-        parent_email, reason, requested_ip: req.ip, user_agent: ua,
+        parent_email, reason, userId, requested_ip: req.ip, user_agent: ua,
       });
       if (request.matched_user_id) {
         matchedCount++;
@@ -863,9 +958,8 @@ app.post('/api/delete-data', async (req, res) => {
     return res.status(500).json({ ok: false, message: 'Deletion is temporarily unavailable. Please try again in a moment.' });
   }
 
-  // Always send a deletion-ack email. When kids were deleted, name them
-  // (captured before the scrub). Same body whether matched or not so we
-  // don't leak existence through the email channel for the unmatched case.
+  // Confirmation email to the (now-proven) parent address, naming the kids
+  // deleted (captured before the scrub).
   const ack = renderDeletionAckEmail({ parent_email, kidNames: deletedNames });
   sendEmail({ to: parent_email, ...ack }).catch(err =>
     console.error('[delete-ack] sendEmail failed:', err.message)
@@ -996,8 +1090,12 @@ app.post('/api/cron/send-digest', async (req, res) => {
 // Admin: trigger digest generation manually.
 app.get('/generate', async (req, res) => {
   const key = req.query.key;
-  if (key !== process.env.ADMIN_KEY) {
-    return res.status(403).json({ error: 'Unauthorized' });
+  // Fail closed when ADMIN_KEY is unset — `undefined !== undefined` is false,
+  // which would otherwise let an unauthenticated caller through. Mirrors the
+  // cron-secret guard pattern.
+  const expected = process.env.ADMIN_KEY;
+  if (!expected || key !== expected) {
+    return res.status(403).json({ error: 'Invalid admin key' });
   }
   try {
     console.log('[Manual] Triggering digest generation...');
@@ -1200,30 +1298,50 @@ cron.schedule('0 * * * *', async () => {
 });
 
 // ============================================================
-// TODO — scheduled retention-cleanup jobs (privacy policy §4)
+// Retention-cleanup jobs (privacy policy §4)
 // ============================================================
-// The privacy page promises two automatic deletions that aren't built
-// yet. Both should run on a daily cron alongside the 7 AM digest job
-// and reuse storage.recordDeletionRequest() so the PII scrub +
-// audit-row pattern stays uniform.
+// (1) 7-day incomplete-consent cleanup — BUILT (below). Scrubs under-13
+//     signups whose parent never consented within 7 days, via
+//     storage.cleanupAbandonedSignups() → recordDeletionRequest().
 //
-//   1. **12-month inactivity sweep.** Find users where
-//      (is_active = TRUE AND deleted_at IS NULL) AND no engagement
-//      activity in the last 365 days, then scrub each one and log a
-//      deletion_request with processed_method='automatic-inactivity'.
-//      Requires server-side engagement persistence first — XP/streaks
-//      are still localStorage as of Phase 9, so "last activity" can
-//      only mean signup_at or email-open events until that lands.
-//
-//   2. **7-day incomplete-consent cleanup.** Find users where
-//      consent_required = TRUE AND consent_given = FALSE AND
-//      created_at < NOW() - INTERVAL '7 days'. The consent token row
-//      already expires at 7 days, so these users are permanently
-//      stuck inactive — drop them. Use processed_method='automatic-
-//      consent-expired' on the audit row.
-//
-// Both are referenced in public/privacy.html §4 "When we delete" and
-// in HANDOFF.md. Build before the next public-launch push.
+// (2) TODO — 12-month inactivity sweep. Now unblocked by Phase 11's
+//     user_progress.last_active_date: find active, non-deleted users with no
+//     activity in 365 days and run them through recordDeletionRequest() with
+//     processed_method='automatic-inactivity'. Not yet built.
+
+// External trigger for the abandoned-consent cleanup. Accepts the
+// X-Cron-Secret header (matching the other cron endpoints) OR a ?secret=
+// query param (so the Railway cron note can use a plain URL). Fails closed
+// when CRON_SECRET is unset.
+app.post('/api/cron/cleanup-abandoned', async (req, res) => {
+  const expected = process.env.CRON_SECRET || '';
+  const got = req.header('x-cron-secret') || req.query.secret || '';
+  if (!expected || got !== expected) {
+    return res.status(403).json({ error: 'Invalid cron secret' });
+  }
+  try {
+    const result = await storage.cleanupAbandonedSignups();
+    console.log(`[cleanup-abandoned] ${result.cleaned}/${result.found} scrubbed`);
+    res.json({ success: true, ...result });
+  } catch (err) {
+    console.error('[cleanup-abandoned] failed:', err.message);
+    res.status(500).json({ error: 'Cleanup failed' });
+  }
+});
+
+// In-process daily sweep at 3 AM ET, so the COPPA cleanup runs even if the
+// external Railway cron is never configured. Idempotent — re-running finds
+// nothing once rows are scrubbed.
+cron.schedule('0 3 * * *', async () => {
+  try {
+    const result = await storage.cleanupAbandonedSignups();
+    console.log(`[Cron] Abandoned-consent cleanup: ${result.cleaned}/${result.found} scrubbed`);
+  } catch (err) {
+    console.error('[Cron] Abandoned-consent cleanup threw:', err.message);
+  }
+}, {
+  timezone: 'America/New_York',
+});
 
 // ============================================================
 // Boot-time digest bootstrap (Phase 6.7)
@@ -1418,6 +1536,29 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] Multi-kid migration failed (sibling signup will error until fixed):', err.message);
+  }
+
+  // Token-gated deletion (Fix 5): expand verification_tokens.purpose to allow
+  // 'delete_data'. Detect via the live constraint definition so this is
+  // idempotent and independent of the other migrations' detection signals.
+  try {
+    const { rows } = await dbQuery(`
+      SELECT pg_get_constraintdef(oid) AS def
+        FROM pg_constraint
+       WHERE conname = 'verification_tokens_purpose_check'
+    `);
+    const def = rows[0]?.def || '';
+    if (def && !def.includes('delete_data')) {
+      console.log('[migrations] Expanding verification_tokens.purpose CHECK to include delete_data…');
+      await dbQuery(`
+        ALTER TABLE verification_tokens DROP CONSTRAINT IF EXISTS verification_tokens_purpose_check;
+        ALTER TABLE verification_tokens ADD CONSTRAINT verification_tokens_purpose_check
+          CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset', 'add_child_consent', 'delete_data'));
+      `);
+      console.log('[migrations] ✅ delete_data token purpose enabled.');
+    }
+  } catch (err) {
+    console.error('[migrations] delete_data CHECK migration failed (token-gated deletion will error until fixed):', err.message);
   }
 }
 

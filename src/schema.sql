@@ -103,7 +103,7 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
   user_id       UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   -- Phase 7 added 'password_reset'; older deployments need the migration in
   -- src/migrations/add-auth-columns.sql to expand this CHECK.
-  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset', 'add_child_consent')),
+  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset', 'add_child_consent', 'delete_data')),
   expires_at    TIMESTAMPTZ  NOT NULL,
   used_at       TIMESTAMPTZ,
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()

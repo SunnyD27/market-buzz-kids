@@ -34,7 +34,13 @@ function getPool() {
   }
   _pool = new Pool({
     connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
+    // Verify the server certificate in production. Neon serves
+    // publicly-trusted certs, so no custom CA bundle is needed; if a deploy
+    // ever fails the chain validation, pin Neon's CA via ssl: { ca: ... }.
+    // Local dev keeps verification relaxed for self-signed / proxied setups.
+    ssl: process.env.NODE_ENV === 'production'
+      ? { rejectUnauthorized: true }
+      : { rejectUnauthorized: false },
   });
   _pool.on('error', (err) => {
     console.error('[db] idle client error:', err.message);

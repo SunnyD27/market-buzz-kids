@@ -29,8 +29,8 @@
   const VAPID_PUBLIC_KEY_PLACEHOLDER = 'REPLACE_IN_PHASE_6';
 
   const SUBSCRIBE_ENDPOINT = '/api/push/subscribe';
-  const VISIT_KEY  = 'mb_pwa_visits';
-  const DISMISS_KEY = 'mb_pwa_dismissed_at';
+  const VISIT_KEY  = 'mj_pwa_visits';
+  const DISMISS_KEY = 'mj_pwa_dismissed_at';
   const DISMISS_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
 
   // ---- Service worker registration --------------------------------------
@@ -235,7 +235,7 @@
   }
 
   // Tiny debug surface for inspection in DevTools.
-  window.MBPwa = {
+  window.MJPwa = {
     isStandalone, isIOS, isIOSSafari,
     maybeShowBanner, hideBanner,
     _resetVisits: () => localStorage.removeItem(VISIT_KEY),
