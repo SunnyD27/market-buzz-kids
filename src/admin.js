@@ -143,25 +143,36 @@ async function getUserStats() {
 
 async function getEngagementStats() {
   const out = {
-    dau: 0, wau: 0, mau: 0,
+    dau: { visited: 0, played: 0 },
+    wau: { visited: 0, played: 0 },
+    mau: { visited: 0, played: 0 },
     avgGamesToday: 0, perfectDaysToday: 0, totalEventsToday: 0,
     activeStreaks: 0, avgStreak: 0,
   };
   try {
-    // DAU/WAU/MAU — distinct users with a meaningful (non-duplicate) event.
+    // DAU/WAU/MAU, each split two ways (duplicates excluded throughout):
+    //   visited = distinct users with ANY event except parent-question
+    //             (includes daily-visit — i.e. opened the digest)
+    //   played  = distinct users with a game / word / Sunday completion
+    // Both are computed per window in one query via FILTER.
+    const VISITED = `event_type <> 'parent-question'`;
+    const PLAYED = `event_type IN ('game-completed', 'word-learned', 'sunday-challenge-completed')`;
     const active = await query(`
       SELECT
-        COUNT(DISTINCT user_id) FILTER (WHERE ${NY_DATE('created_at')} = ${NY_TODAY})::int AS dau,
-        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days')::int AS wau,
-        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days')::int AS mau
+        COUNT(DISTINCT user_id) FILTER (WHERE ${NY_DATE('created_at')} = ${NY_TODAY} AND ${VISITED})::int AS dau_visited,
+        COUNT(DISTINCT user_id) FILTER (WHERE ${NY_DATE('created_at')} = ${NY_TODAY} AND ${PLAYED})::int  AS dau_played,
+        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'  AND ${VISITED})::int AS wau_visited,
+        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '7 days'  AND ${PLAYED})::int  AS wau_played,
+        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days' AND ${VISITED})::int AS mau_visited,
+        COUNT(DISTINCT user_id) FILTER (WHERE created_at >= NOW() - INTERVAL '30 days' AND ${PLAYED})::int  AS mau_played
       FROM engagement_events
-      WHERE event_type IN ('game-completed', 'word-learned', 'sunday-challenge-completed')
-        AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+      WHERE COALESCE((event_data->>'duplicate')::boolean, false) = false
         AND created_at >= NOW() - INTERVAL '30 days'
     `);
-    out.dau = active.rows[0]?.dau || 0;
-    out.wau = active.rows[0]?.wau || 0;
-    out.mau = active.rows[0]?.mau || 0;
+    const a = active.rows[0] || {};
+    out.dau = { visited: a.dau_visited || 0, played: a.dau_played || 0 };
+    out.wau = { visited: a.wau_visited || 0, played: a.wau_played || 0 };
+    out.mau = { visited: a.mau_visited || 0, played: a.mau_played || 0 };
 
     // Today's activity detail.
     const today = await query(`
@@ -443,14 +454,17 @@ function buildEngagementSection(e) {
     <section class="card">
       <h2>Engagement</h2>
       <div class="metrics">
-        ${metric('DAU', e.dau)}
-        ${metric('WAU', e.wau)}
-        ${metric('MAU', e.mau)}
+        ${metric('DAU (visited)', e.dau.visited)}
+        ${metric('DAU (played)', e.dau.played)}
+        ${metric('WAU (visited)', e.wau.visited)}
+        ${metric('WAU (played)', e.wau.played)}
+        ${metric('MAU (visited)', e.mau.visited)}
+        ${metric('MAU (played)', e.mau.played)}
         ${metric('Avg games/user today', e.avgGamesToday)}
         ${metric('Perfect Days today', e.perfectDaysToday)}
         ${metric('Total events today', e.totalEventsToday)}
       </div>
-      <p class="note">Active users counted from non-duplicate game / word / Sunday completions (excludes daily-visit + parent-question). Windows are America/New_York.</p>
+      <p class="note">Visited = distinct users with any non-duplicate event (incl. daily-visit, excl. parent-question). Played = distinct users with a non-duplicate game / word / Sunday completion. Windows are America/New_York.</p>
       ${e._error ? `<p class="err">Query error: ${esc(e._error)}</p>` : ''}
     </section>`;
 }
