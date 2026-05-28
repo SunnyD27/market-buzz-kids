@@ -4,3 +4,5 @@ dockerfilePath = "Dockerfile"
 
 [deploy]
 restartPolicyType = "always"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 30

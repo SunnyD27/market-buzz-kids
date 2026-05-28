@@ -19,6 +19,12 @@ COPY public/ ./public/
 # For real-world rotation persistence post-deploy we'd want this in Postgres.)
 RUN mkdir -p ./state
 
+# Drop root: run as the unprivileged `node` user that ships with the base
+# image. The app writes to ./public (rendered digest) and ./state (rotation
+# history) at runtime, so hand the whole app dir to that user first.
+RUN chown -R node:node /app
+USER node
+
 ENV NODE_ENV=production
 # Railway injects $PORT at runtime; the app falls back to 3000 locally.
 EXPOSE 3000

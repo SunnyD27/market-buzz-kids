@@ -158,7 +158,9 @@ export function renderConsentEmail(user, link) {
         <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin-bottom:10px;">What we collect</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>${kid}'s first name and age (you gave us these)</li>
-          <li>Engagement data: games played, quiz answers, XP, streak, Perfect Days</li>
+          <li>A username and a securely hashed password so ${kid} can log in</li>
+          <li>Engagement data: games played, quiz answers, Market Coins, streak, Perfect Days</li>
+          <li>Standard technical info: device type, timezone, and IP address (for security and to verify your consent)</li>
           <li>Push token only if ${kid} adds Market Juice to home screen and turns on notifications</li>
         </ul>
         <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin:18px 0 10px 0;">How we use it</div>
@@ -260,9 +262,10 @@ export function renderAddChildConsentEmail(user, link) {
         <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin-bottom:10px;">What we collect for ${kid}</div>
         <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
           <li>First name and age</li>
-          <li>Username and password (for login)</li>
+          <li>Username and a securely hashed password (for login)</li>
           <li>Quiz answers, game activity, and learning progress (Market Coins, streaks, badges)</li>
           <li>Daily digest interaction data</li>
+          <li>Standard technical info: device type, timezone, and IP address (for security and to verify your consent)</li>
         </ul>
         <p style="margin:14px 0 0 0;font-size:13px;color:#6b7280;line-height:1.6;">
           We use this only to deliver the daily digest and track ${kid}'s progress. We don't share it with third parties.
@@ -296,7 +299,7 @@ export function renderAddChildConsentEmail(user, link) {
         ? `You're adding ${kid} (age ${user.kid_age}). Because ${kid} is under 13, U.S. COPPA law requires your consent before we collect their information.`
         : `You're adding ${kid} (age ${user.kid_age}) to your Market Juice family. One click confirms it's really you.`,
       '',
-      `We collect for ${kid}: first name + age, username + password, quiz/game activity and learning progress, and daily digest interaction data. We don't share it with third parties.`,
+      `We collect for ${kid}: first name + age, username + a securely hashed password, quiz/game activity and learning progress, daily digest interaction data, and standard technical info (device type, timezone, IP address) for security and consent verification. We don't share it with third parties.`,
       '',
       `Click to confirm and create ${kid}'s account:`,
       link,
@@ -335,7 +338,7 @@ export function renderVerifyEmail(user, link) {
     <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">Or paste this link into your browser:</p>
     <p style="margin:0 0 22px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</p>
     <p style="margin:0;font-size:14px;color:#454a5b;">
-      What we collect: ${kid}'s first name, age, and engagement data (XP, streak, quiz answers).
+      What we collect: ${kid}'s first name, age, username, and engagement data (Market Coins, streak, quiz answers).
       No selling, no sharing.
       <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">Delete anytime</a>.
     </p>
@@ -561,12 +564,12 @@ export function renderDailyTeaserEmail(user, content) {
         ⭐ <strong>Today's mover:</strong> ${topMoverLine}
       </p>` : ''}
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
-      Hey ${kid} — your daily buzz is ready. 3 minutes, 3 games, real markets.
+      Hey ${kid} — your daily juice is ready. 3 minutes, 3 games, real markets.
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
       <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
         <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
-          Read today's Buzz →
+          Read today's Juice →
         </a>
       </td></tr>
     </table>
@@ -689,6 +692,60 @@ export function renderMultiKidPasswordResetEmail(resets) {
   ].join('\n');
 
   return { subject, html: shell({ preheader, body }), text };
+}
+
+// ============================================================
+// 6b) Data-deletion verification (Fix 5 — token-gated deletion)
+// ============================================================
+// Sent in response to a parent submitting their email on the deletion page.
+// The link carries a single-use 1-hour 'delete_data' token; clicking it
+// returns the parent to /parent/delete-data?token=… where they can review
+// the child list and confirm deletion. Mirrors the no-leak password-reset
+// pattern — the same email is implied for any address, and only a real
+// account produces a working link.
+export function renderDeleteDataVerifyEmail(link) {
+  const subject = `Confirm your data deletion request — Market Juice`;
+  const preheader = `Confirm it's you, then review or delete your account data. Link expires in 1 hour.`;
+
+  const body = `
+    <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.3px;">
+      Confirm your data request
+    </h1>
+    <p style="margin:0 0 14px 0;font-size:15px;color:#454a5b;">
+      We received a request to review or delete account data associated with this email on Market Juice.
+    </p>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
+      If you made this request, click below to continue:
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
+          Review My Data →
+        </a>
+      </td></tr>
+    </table>
+    <p style="margin:0 0 14px 0;font-size:14px;color:#454a5b;">
+      Or paste this link into your browser:<br>
+      <a href="${escapeHTML(link)}" style="color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</a>
+    </p>
+    <p style="margin:0 0 8px 0;font-size:13px;color:#8b91a3;">
+      This link expires in 1 hour. If you didn't make this request, you can safely ignore this email — nothing will be changed.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      `Confirm your data deletion request — Market Juice`,
+      '',
+      `We received a request to review or delete account data associated with this email.`,
+      `If you made this request, click to continue:`,
+      link,
+      '',
+      `This link expires in 1 hour. If you didn't make this request, you can safely ignore this email.`,
+    ].join('\n'),
+  };
 }
 
 // ============================================================

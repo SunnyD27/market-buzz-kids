@@ -76,7 +76,7 @@
 
   <h1>Delete your kid's data</h1>
   <p>
-    Enter the parent email you signed up with. We'll show the accounts under that email so you can choose which to delete.
+    Enter the parent email you signed up with. To protect your family's data, we'll email you a verification link to confirm it's you before showing any account details.
   </p>
 
   <div class="what-happens">
@@ -90,9 +90,9 @@
     </ul>
   </div>
 
-  <!-- Step 1 — find accounts under this email -->
+  <!-- State 1 — request a verification link (shown when there's no ?token) -->
   <div class="deletion-form" id="form-card">
-    <form id="lookup-form" novalidate>
+    <form id="request-form" novalidate>
       <div class="form-row">
         <label for="parent_email">Parent email <span class="req">*</span></label>
         <input type="email" id="parent_email" name="parent_email"
@@ -101,30 +101,28 @@
         <div class="field-error" id="err-parent_email"></div>
       </div>
 
-      <div class="form-row">
-        <label for="reason">Reason (optional)</label>
-        <select id="reason" name="reason">
-          <option value="">Prefer not to say</option>
-          <option value="not_using">We're not using it anymore</option>
-          <option value="content_issue">Concern about the content</option>
-          <option value="privacy_concern">Privacy concern</option>
-          <option value="kid_too_old">Kid is too old now</option>
-          <option value="other">Other</option>
-        </select>
-      </div>
-
-      <button type="submit" id="lookup-btn" class="btn btn-primary btn-block">
-        Find accounts
+      <button type="submit" id="request-btn" class="btn btn-primary btn-block">
+        Send verification link
       </button>
 
       <p class="legal" style="margin-top: 14px;">
-        Questions? Email <a href="mailto:hello@example.com">hello@example.com</a>. See our
+        Questions? Email <a href="mailto:hello@themarketjuice.com">hello@themarketjuice.com</a>. See our
         <a href="/privacy">privacy policy</a> for more details.
       </p>
     </form>
   </div>
 
-  <!-- Step 2 — choose which account(s) to delete -->
+  <!-- State 1b — link sent -->
+  <div class="deletion-success" id="sent-card" hidden>
+    <div class="icon">📧</div>
+    <h3>Check your email</h3>
+    <p>If an account exists with that email, we've sent a verification link. Click it to review and delete your data.</p>
+    <p style="font-size: 13px; color: var(--dim); margin-top: 16px;">
+      The link expires in 1 hour. Didn't get it? Check spam, or try again.
+    </p>
+  </div>
+
+  <!-- State 2 — token present: choose which account(s) to delete -->
   <div class="deletion-form" id="select-card" hidden>
     <h3 style="font-size:18px;color:var(--bright);margin-bottom:6px;">Which account(s) do you want to delete?</h3>
     <p style="font-size:13px;color:var(--dim);margin-bottom:14px;">This permanently deletes the selected account(s) and all their progress. This can't be undone.</p>
@@ -132,12 +130,30 @@
     <label class="kid-row" style="border-top:1px solid var(--border);margin-top:6px;padding-top:12px;">
       <input type="checkbox" id="select-all"> <span><strong>Delete ALL accounts</strong></span>
     </label>
+
+    <div class="form-row" style="margin-top:16px;">
+      <label for="reason">Reason (optional)</label>
+      <select id="reason" name="reason">
+        <option value="">Prefer not to say</option>
+        <option value="not_using">We're not using it anymore</option>
+        <option value="content_issue">Concern about the content</option>
+        <option value="privacy_concern">Privacy concern</option>
+        <option value="kid_too_old">Kid is too old now</option>
+        <option value="other">Other</option>
+      </select>
+    </div>
+
     <button type="button" id="delete-btn" class="btn btn-primary btn-block" style="margin-top:16px;" disabled>
       Delete selected accounts
     </button>
-    <button type="button" id="back-btn" class="btn btn-block" style="margin-top:10px;background:transparent;border:1px solid var(--border);color:var(--text);">
-      ← Use a different email
-    </button>
+  </div>
+
+  <!-- State 2b — token invalid / expired -->
+  <div class="deletion-success" id="expired-card" hidden>
+    <div class="icon">⌛</div>
+    <h3>Link expired</h3>
+    <p>This link has expired or has already been used. Please request a new one.</p>
+    <p style="margin-top: 16px;"><a href="/parent/delete-data" class="back-link">← Request a new link</a></p>
   </div>
 
   <div class="deletion-success" id="success-card" hidden>
@@ -165,23 +181,27 @@
     }
   })();
 
-  // Two-step deletion: (1) look up accounts under the parent email,
-  // (2) pick which to delete + confirm. We only ever show first name + age
-  // — never usernames (a username is half a login credential).
+  // Token-gated deletion (Fix 5):
+  //   State 1 (no ?token): submit parent email → server emails a verification
+  //     link → show "check your email".
+  //   State 2 (?token=…): validate the token, show the child list (first name
+  //     + age only — never usernames), confirm, delete. The token authorizes
+  //     everything server-side; the email is never trusted from the client.
   (function(){
-    var lookupForm = document.getElementById('lookup-form');
-    var lookupBtn  = document.getElementById('lookup-btn');
-    var formCard   = document.getElementById('form-card');
-    var selectCard = document.getElementById('select-card');
-    var kidList    = document.getElementById('kid-list');
-    var selectAll  = document.getElementById('select-all');
-    var deleteBtn  = document.getElementById('delete-btn');
-    var backBtn    = document.getElementById('back-btn');
-    var success    = document.getElementById('success-card');
-    var msg        = document.getElementById('success-message');
+    var requestForm = document.getElementById('request-form');
+    var requestBtn  = document.getElementById('request-btn');
+    var formCard    = document.getElementById('form-card');
+    var sentCard    = document.getElementById('sent-card');
+    var selectCard  = document.getElementById('select-card');
+    var expiredCard = document.getElementById('expired-card');
+    var kidList     = document.getElementById('kid-list');
+    var selectAll   = document.getElementById('select-all');
+    var deleteBtn   = document.getElementById('delete-btn');
+    var reasonEl    = document.getElementById('reason');
+    var success     = document.getElementById('success-card');
+    var msg         = document.getElementById('success-message');
 
-    var currentEmail = '';
-    var currentReason = null;
+    var token = new URLSearchParams(location.search).get('token') || '';
     var confirmArmed = false;
 
     function setError(name, text) {
@@ -203,37 +223,52 @@
       deleteBtn.disabled = n === 0;
       if (!confirmArmed) deleteBtn.textContent = n > 0 ? ('Delete ' + n + ' account' + (n === 1 ? '' : 's')) : 'Delete selected accounts';
     }
+    function showExpired() {
+      formCard.hidden = true; selectCard.hidden = true; sentCard.hidden = true;
+      expiredCard.hidden = false;
+    }
 
-    // ---- Step 1: look up accounts ----
-    lookupForm.addEventListener('submit', async function(e) {
-      e.preventDefault();
-      setError('parent_email', '');
-      var email = lookupForm.parent_email.value.trim();
-      if (!isEmail(email)) { setError('parent_email', 'Please enter a valid email address.'); return; }
-      currentEmail = email;
-      currentReason = lookupForm.reason.value || null;
-      lookupBtn.disabled = true;
-      var orig = lookupBtn.textContent; lookupBtn.textContent = 'Looking…';
+    // ---- State 1: request a verification link ----
+    if (requestForm) {
+      requestForm.addEventListener('submit', async function(e) {
+        e.preventDefault();
+        setError('parent_email', '');
+        var email = requestForm.parent_email.value.trim();
+        if (!isEmail(email)) { setError('parent_email', 'Please enter a valid email address.'); return; }
+        requestBtn.disabled = true;
+        var orig = requestBtn.textContent; requestBtn.textContent = 'Sending…';
+        try {
+          await fetch('/api/delete-data/request', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_email: email }),
+          });
+          // Always show the same "check your email" — no account-existence leak.
+          formCard.hidden = true; sentCard.hidden = false;
+          sentCard.scrollIntoView({ behavior: 'smooth' });
+        } catch (err) {
+          console.error('[delete-data] request error:', err);
+          alert('Network error. Please try again.');
+          requestBtn.disabled = false; requestBtn.textContent = orig;
+        }
+      });
+    }
+
+    // ---- State 2: token present → load the child list (token not consumed) ----
+    async function loadChildren() {
       try {
         var res = await fetch('/api/delete-data/children', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ parent_email: email }),
+          body: JSON.stringify({ token: token }),
         });
         var body = await res.json().catch(function(){ return {}; });
-        var kids = (body && body.children) || [];
+        if (!res.ok || !body.ok) { showExpired(); return; }
+        var kids = body.children || [];
         if (kids.length === 0) {
-          // Nothing under this email — log the request anyway (parity with
-          // the old always-log behavior) and show the generic success.
-          await fetch('/api/delete-data', {
-            method: 'POST', headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ parent_email: email, reason: currentReason }),
-          });
-          msg.innerHTML = "We logged your deletion request for <strong>" + escapeHTML(email) + "</strong>. If no account was found, there's nothing else to do.";
-          formCard.hidden = true; success.hidden = false;
-          success.scrollIntoView({ behavior: 'smooth' });
+          formCard.hidden = true;
+          msg.textContent = 'There are no active accounts left to delete.';
+          success.hidden = false;
           return;
         }
-        // Render the kid checkboxes (name + age only).
         kidList.innerHTML = kids.map(function(k){
           return '<label class="kid-row"><input type="checkbox" value="' + escapeHTML(k.id) + '">' +
                  '<span>' + escapeHTML(k.name) + ' <span class="kid-age">· age ' + escapeHTML(String(k.age)) + '</span></span></label>';
@@ -244,16 +279,13 @@
         refreshDeleteBtn();
         selectCard.scrollIntoView({ behavior: 'smooth' });
       } catch (err) {
-        console.error('[delete-data] lookup error:', err);
-        alert('Network error. Please try again.');
-      } finally {
-        lookupBtn.disabled = false; lookupBtn.textContent = orig;
+        console.error('[delete-data] children error:', err);
+        showExpired();
       }
-    });
+    }
 
     // ---- Selection interactions ----
     kidList.addEventListener('change', function(){
-      // Keep "select all" in sync.
       var boxes = kidList.querySelectorAll('input[type=checkbox]');
       var allChecked = boxes.length > 0 && checkedIds().length === boxes.length;
       selectAll.checked = allChecked;
@@ -265,12 +297,8 @@
       confirmArmed = false;
       refreshDeleteBtn();
     });
-    backBtn.addEventListener('click', function(){
-      selectCard.hidden = true; formCard.hidden = false;
-      formCard.scrollIntoView({ behavior: 'smooth' });
-    });
 
-    // ---- Step 2: confirm + delete (two-click confirmation) ----
+    // ---- Confirm + delete (two-click confirmation; consumes the token) ----
     deleteBtn.addEventListener('click', async function(){
       var ids = checkedIds();
       if (ids.length === 0) return;
@@ -283,16 +311,18 @@
       try {
         var res = await fetch('/api/delete-data', {
           method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ parent_email: currentEmail, reason: currentReason, userIds: ids }),
+          body: JSON.stringify({ token: token, userIds: ids, reason: reasonEl.value || null }),
         });
         var body = await res.json().catch(function(){ return {}; });
-        if (res.ok) {
+        if (res.ok && body.ok) {
           msg.innerHTML = "Deleted " + (body.deletedCount || ids.length) + " account" + ((body.deletedCount || ids.length) === 1 ? '' : 's') +
-                          " under <strong>" + escapeHTML(currentEmail) + "</strong>. All data removed from the active database; backups purged within 7 days.";
+                          ". All data removed from the active database; backups purged within 7 days.";
           selectCard.hidden = true; success.hidden = false;
           success.scrollIntoView({ behavior: 'smooth' });
+        } else if (body.expired) {
+          showExpired();
         } else {
-          alert(body.message || 'Something went wrong. Please try again or email hello@example.com.');
+          alert(body.message || 'Something went wrong. Please try again or email hello@themarketjuice.com.');
           deleteBtn.disabled = false; confirmArmed = false; refreshDeleteBtn();
         }
       } catch (err) {
@@ -301,6 +331,11 @@
         deleteBtn.disabled = false; confirmArmed = false; refreshDeleteBtn();
       }
     });
+
+    // ---- Boot: token in URL → State 2; otherwise show the email form ----
+    if (token) {
+      loadChildren();
+    }
   })();
 </script>
 

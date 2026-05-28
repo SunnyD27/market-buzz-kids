@@ -14,7 +14,7 @@
  */
 
 // Bumped to v2 + renamed `mb-` → `mj-` prefix for the Market Juice rebrand
-// (was Market Buzz Kids). The activate handler below explicitly deletes any
+// (from the previous brand). The activate handler below explicitly deletes any
 // leftover `mb-*` caches so kids who had the PWA installed pre-rebrand get
 // fresh assets on their next visit instead of stale branded content.
 //
@@ -62,8 +62,7 @@ self.addEventListener('install', (event) => {
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     // Reap old versioned caches. Includes legacy `mb-*` caches from the
-    // pre-rebrand Market Buzz Kids days, plus any `mj-*` caches that
-    // aren't the current ones.
+    // pre-rebrand days, plus any `mj-*` caches that aren't the current ones.
     const names = await caches.keys();
     await Promise.all(
       names
@@ -154,7 +153,7 @@ async function cacheFirst(req, cacheName) {
 
 self.addEventListener('push', (event) => {
   // Phase 6 backend will send a JSON payload like:
-  //   { title: "📈 Today's Buzz is ready!", body: "Today's mover: Nike -4.2%", url: "/" }
+  //   { title: "📈 Today's Juice is ready!", body: "Today's mover: Nike -4.2%", url: "/" }
   let payload = {};
   if (event.data) {
     try { payload = event.data.json(); }

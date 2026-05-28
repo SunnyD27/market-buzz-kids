@@ -425,9 +425,17 @@ async function recordDeletionRequest(input) {
       await client.query(`DELETE FROM personal_records  WHERE user_id = $1`, [matched.id]);
       await client.query(`DELETE FROM user_progress     WHERE user_id = $1`, [matched.id]);
 
+      // Remove any outstanding verification/consent/reset tokens for this
+      // user — they're useless once the row is scrubbed and would otherwise
+      // linger forever (ON DELETE CASCADE never fires under soft-delete).
+      await client.query(`DELETE FROM verification_tokens WHERE user_id = $1`, [matched.id]);
+
       matchedUserId = matched.id;
       processedAt = new Date();
-      processedMethod = 'automatic';
+      // Caller may override the audit method (e.g. the abandoned-consent
+      // cleanup cron records 'automatic-consent-expired'). Defaults to
+      // 'automatic' for the parent-initiated flow.
+      processedMethod = input.processed_method || 'automatic';
     }
 
     const reqRes = await client.query(
@@ -466,6 +474,119 @@ async function recordDeletionRequest(input) {
   }
 }
 
+// ---- Token-gated deletion (Fix 5) ----------------------------------------
+
+/**
+ * Create a single-use 'delete_data' token for a parent email, so the parent
+ * must prove control of the inbox before seeing/deleting any child data.
+ *
+ * The token is anchored to one active child row (we only use it to recover
+ * the parent_email later — every child under that email is in scope). Returns
+ * { token, childCount } when at least one active child exists, or null when
+ * none do (caller then sends no email but still returns a generic response,
+ * preserving the no-account-existence-leak property).
+ */
+async function createDeleteDataToken(parentEmail) {
+  const children = await getActiveChildrenByParentEmail(parentEmail);
+  if (!children.length) return null;
+  const anchor = children[0];
+  const token = newToken();
+  const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+  await query(
+    `INSERT INTO verification_tokens (token, user_id, purpose, expires_at)
+     VALUES ($1, $2, 'delete_data', $3)`,
+    [token, anchor.id, expiresAt]
+  );
+  return { token, childCount: children.length };
+}
+
+/**
+ * Validate a 'delete_data' token. Returns { parentEmail } when valid (not
+ * used, not expired, anchor row still present), else null.
+ *
+ * opts.consume === true marks the token used in the same transaction — used
+ * on the actual delete step. The child-list step passes consume=false so the
+ * parent can review the list and confirm within the 1-hour window before the
+ * token is burned.
+ */
+async function validateDeleteDataToken(rawToken, opts = {}) {
+  const consume = opts.consume === true;
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+    const { rows } = await client.query(
+      `SELECT t.token, t.used_at, t.expires_at, u.parent_email
+         FROM verification_tokens t
+         JOIN users u ON u.id = t.user_id
+        WHERE t.token = $1 AND t.purpose = 'delete_data'
+        FOR UPDATE OF t`,
+      [rawToken]
+    );
+    const t = rows[0];
+    if (!t || t.used_at || new Date(t.expires_at).getTime() < Date.now() || !t.parent_email) {
+      await client.query('ROLLBACK');
+      return null;
+    }
+    if (consume) {
+      await client.query(`UPDATE verification_tokens SET used_at = NOW() WHERE token = $1`, [rawToken]);
+    }
+    await client.query('COMMIT');
+    return { parentEmail: t.parent_email };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+// ---- Retention cleanup ---------------------------------------------------
+
+/**
+ * COPPA retention: delete signups where a parent never completed consent.
+ *
+ * The privacy policy promises that data collected at signup for an under-13
+ * child is removed if the parent doesn't consent within 7 days. The consent
+ * token already expires at 7 days, so these rows are permanently stuck
+ * inactive — scrub them.
+ *
+ * Reuses recordDeletionRequest (the same PII-scrub + audit path the
+ * parent-initiated deletion uses), tagging the audit row with
+ * processed_method='automatic-consent-expired'. Per-user failures are logged
+ * and skipped so one bad row doesn't abort the whole sweep.
+ *
+ * Returns { found, cleaned }.
+ */
+async function cleanupAbandonedSignups() {
+  const { rows: abandoned } = await query(
+    `SELECT id, parent_email, kid_first_name
+       FROM users
+      WHERE consent_required = TRUE
+        AND consent_given = FALSE
+        AND created_at < NOW() - INTERVAL '7 days'
+        AND deleted_at IS NULL`
+  );
+
+  let cleaned = 0;
+  for (const user of abandoned) {
+    try {
+      await recordDeletionRequest({
+        parent_email: user.parent_email,
+        userId: user.id,
+        reason: 'consent not completed within 7 days',
+        processed_method: 'automatic-consent-expired',
+        user_agent: 'system-cron',
+      });
+      cleaned++;
+      console.log(`[cleanup] scrubbed abandoned signup: user ${user.id}`);
+    } catch (err) {
+      console.error(`[cleanup] failed to scrub user ${user.id}:`, err.message);
+    }
+  }
+
+  return { found: abandoned.length, cleaned };
+}
+
 // ---- Stats ---------------------------------------------------------------
 
 async function counts() {
@@ -493,6 +614,9 @@ export const storage = {
   createUserFromSignup,
   consumeToken,
   recordDeletionRequest,
+  createDeleteDataToken,
+  validateDeleteDataToken,
+  cleanupAbandonedSignups,
   findActiveUserByEmail,
   findUserById,
   getActiveChildrenByParentEmail,
