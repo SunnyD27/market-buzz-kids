@@ -312,6 +312,72 @@ async function consumeToken(rawToken, opts = {}) {
   }
 }
 
+/**
+ * Atomically consume a password_reset token and apply the new password.
+ *
+ * The token is validated AND consumed in a single UPDATE ... RETURNING so two
+ * concurrent reset clicks can't both pass (only one row flips used_at). The
+ * password write and the session_version bump ride in the SAME transaction:
+ * bumping session_version invalidates every cookie issued before the reset
+ * (see requireAuth in auth.js), which is the whole point of a reset — lock out
+ * a session the parent believes was stolen or shared.
+ *
+ * `passwordHash` must be pre-computed (bcrypt is slow; don't hold a tx open
+ * across it).
+ *
+ * Returns { ok: true, userId } on success, or
+ *         { ok: false, reason: 'invalid' } if the token was missing, expired,
+ *         already used, or not a password_reset token.
+ */
+async function resetPasswordWithToken(rawToken, passwordHash) {
+  const client = await getClient();
+  try {
+    await client.query('BEGIN');
+
+    const tokRes = await client.query(
+      `UPDATE verification_tokens
+          SET used_at = NOW()
+        WHERE token = $1
+          AND purpose = 'password_reset'
+          AND used_at IS NULL
+          AND expires_at > NOW()
+        RETURNING user_id`,
+      [rawToken]
+    );
+    const consumed = tokRes.rows[0];
+    if (!consumed) {
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'invalid' };
+    }
+
+    const userRes = await client.query(
+      `UPDATE users
+          SET password_hash = $1,
+              session_version = session_version + 1,
+              updated_at = NOW()
+        WHERE id = $2
+          AND deleted_at IS NULL
+        RETURNING id`,
+      [passwordHash, consumed.user_id]
+    );
+    if (userRes.rows.length === 0) {
+      // Token pointed at a scrubbed/deleted user — don't leave a half-applied
+      // reset. Roll the token consumption back too.
+      await client.query('ROLLBACK');
+      return { ok: false, reason: 'invalid' };
+    }
+
+    await client.query('COMMIT');
+    console.log(`[storage] password reset applied for user ${consumed.user_id} (session_version bumped)`);
+    return { ok: true, userId: consumed.user_id };
+  } catch (err) {
+    await client.query('ROLLBACK').catch(() => {});
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 // ---- Deletion ------------------------------------------------------------
 
 /**
@@ -659,6 +725,7 @@ async function counts() {
 export const storage = {
   createUserFromSignup,
   consumeToken,
+  resetPasswordWithToken,
   recordDeletionRequest,
   createDeleteDataToken,
   validateDeleteDataToken,

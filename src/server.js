@@ -306,7 +306,15 @@ app.post('/api/login', authLimiter, async (req, res) => {
     return res.status(401).json({ error: 'Wrong username or password.' });
   }
 
-  setSession(res, row.id);
+  // Carry the user's current session_version into the cookie so a later
+  // password reset (which bumps the version) invalidates this session.
+  setSession(res, row.id, row.session_version);
+
+  // Stamp activity for the 12-month inactivity sweep. Fire-and-forget — a
+  // bookkeeping write must never block or fail the login response.
+  dbQuery('UPDATE users SET last_active_at = NOW() WHERE id = $1', [row.id])
+    .catch(err => console.error('[login] last_active_at update failed:', err.message));
+
   res.json({ success: true, redirect: '/digest' });
 });
 
@@ -423,37 +431,23 @@ app.post('/api/reset-password', authLimiter, async (req, res) => {
     return res.status(400).json({ error: 'Password must be at least 6 characters.' });
   }
 
-  let tokenRow;
+  let result;
   try {
-    const result = await dbQuery(
-      `SELECT user_id
-         FROM verification_tokens
-        WHERE token = $1
-          AND purpose = 'password_reset'
-          AND expires_at > NOW()
-          AND used_at IS NULL
-        LIMIT 1`,
-      [token],
-    );
-    tokenRow = result.rows[0];
+    // bcrypt is slow — hash before opening the reset transaction.
+    const hash = await bcrypt.hash(password, 10);
+    // Atomic: validates + consumes the token, writes the password, and bumps
+    // session_version (invalidating old cookies) all in one transaction.
+    result = await storage.resetPasswordWithToken(token, hash);
   } catch (err) {
-    console.error('[reset-password] DB lookup failed:', err.message);
-    return res.status(500).json({ error: 'Reset is temporarily unavailable.' });
+    console.error('[reset-password] reset failed:', err.message);
+    return res.status(500).json({ error: 'Reset failed. Try again in a moment.' });
   }
 
-  if (!tokenRow) {
+  if (!result.ok) {
     return res.status(400).json({ error: 'Invalid or expired reset link. Request a new one.' });
   }
 
-  try {
-    const hash = await bcrypt.hash(password, 10);
-    await dbQuery('UPDATE users SET password_hash = $1, updated_at = NOW() WHERE id = $2', [hash, tokenRow.user_id]);
-    await dbQuery("UPDATE verification_tokens SET used_at = NOW() WHERE token = $1", [token]);
-    return res.json({ success: true });
-  } catch (err) {
-    console.error('[reset-password] update failed:', err.message);
-    return res.status(500).json({ error: 'Reset failed. Try again in a moment.' });
-  }
+  return res.json({ success: true });
 });
 
 // ============================================================
