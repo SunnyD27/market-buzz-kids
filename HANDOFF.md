@@ -619,3 +619,32 @@ Remaining audit findings (important + minor) addressed. All on `dev`.
 - Pre-deletion warning email to parents ~7 days before the 12-month mark.
 - Automated retry for failed email sends (currently logged only).
 - Verified `last_active_at`-on-login and session-version-reject end-to-end logic by code review + unit checks (cookie format, atomic reset 400); a full login→reset→old-cookie-rejected integration test needs a consented test user and wasn't run against prod.
+
+## Session: Security Audit Follow-Up — Gap Fixes
+
+Review of commit `2743e37` found Fix 12/13 were only partially wired; the
+session-versioning was effectively a no-op and would have locked users out
+after a reset. Closed in `f828422`.
+
+- **Login didn't propagate `session_version`.** `POST /api/login` called
+  `setSession(res, row.id)` (defaulting the cookie to version 1) even though it
+  already SELECTed `session_version`. Once a reset bumped the DB version, login
+  would issue a stale v1 cookie that `requireAuth` rejects → user locked out.
+  Now `setSession(res, row.id, row.session_version)`.
+- **Reset didn't bump `session_version`.** `POST /api/reset-password` updated
+  `password_hash` only, so a reset never actually invalidated old cookies
+  (Fix 12D was missing).
+- **Reset wasn't atomic.** It still did SELECT-then-UPDATE on the token
+  (Fix 13 not applied at the handler).
+
+  Both fixed by new `storage.resetPasswordWithToken(token, hash)`: one
+  transaction does an atomic `UPDATE verification_tokens ... RETURNING user_id`
+  consume, then `UPDATE users SET password_hash, session_version = session_version + 1`.
+  Handler hashes before opening the tx; returns 400 on a missing/expired/used
+  token or a deleted target user.
+- **Login now stamps `last_active_at`** (fire-and-forget) — Fix 17B had only
+  the `requireAuth` debounced write, not the login write.
+
+Not verified end-to-end against a live DB (needs a consented test user +
+reset-token flow); `node --check` passes on all three files and the logic was
+confirmed by reading the requireAuth/setSession/reset paths together.
