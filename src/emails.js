@@ -25,7 +25,17 @@ import { Resend } from 'resend';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'onboarding@resend.dev';
-const APP_BASE_URL = (process.env.APP_BASE_URL || 'http://localhost:3199').replace(/\/$/, '');
+// Normalize APP_BASE_URL: strip trailing slash AND guarantee a scheme.
+// A protocol-less value (e.g. APP_BASE_URL=themarketjuice.com set without
+// https:// in the Railway dashboard) would otherwise produce unclickable
+// links like "themarketjuice.com/login" in emails. If no scheme is
+// present, assume https (localhost dev keeps its explicit http://).
+function normalizeBaseUrl(raw) {
+  let url = (raw || 'http://localhost:3199').trim().replace(/\/$/, '');
+  if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
+  return url;
+}
+const APP_BASE_URL = normalizeBaseUrl(process.env.APP_BASE_URL);
 
 // One client per process. Only initialized when the key is present so we
 // don't accidentally crash inside Resend's constructor.
