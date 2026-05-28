@@ -231,3 +231,30 @@ CREATE TABLE IF NOT EXISTS daily_digests (
 
 CREATE INDEX IF NOT EXISTS daily_digests_generated_at_idx
   ON daily_digests (generated_at DESC);
+
+-- ============================================================
+-- email_events (Phase 13 — Resend webhook deliverability log)
+-- ============================================================
+-- Append-only log of Resend webhook events (sent/delivered/opened/clicked/
+-- bounced/complained). Drives the Email Analytics card on /admin. `email_kind`
+-- is the 'kind' tag we attach on send (teaser, evening-recap, verify, …) so
+-- deliverability can be sliced by email type. `recipient` is the parent email
+-- the message went to — scrubbed by storage.recordDeletionRequest() when the
+-- last child under that address is deleted (COPPA).
+CREATE TABLE IF NOT EXISTS email_events (
+  id            BIGSERIAL    PRIMARY KEY,
+  email_id      VARCHAR(255),
+  event_type    VARCHAR(50)  NOT NULL,
+  recipient     VARCHAR(255),
+  email_kind    VARCHAR(50),
+  subject       TEXT,
+  event_data    JSONB        NOT NULL DEFAULT '{}',
+  created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_events_type
+  ON email_events (event_type);
+CREATE INDEX IF NOT EXISTS idx_email_events_created
+  ON email_events (created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_email_events_kind
+  ON email_events (email_kind);

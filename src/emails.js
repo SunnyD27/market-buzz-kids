@@ -754,7 +754,7 @@ export function renderDeleteDataVerifyEmail(link) {
 // Same signature as the Phase 5 stub. Resolves `{ ok, id }` on success or
 // `{ ok: false, error }` on failure. Never throws — caller treats this as
 // fire-and-forget so a transient send failure doesn't break the request.
-export async function sendEmail({ to, subject, html, text, from }) {
+export async function sendEmail({ to, subject, html, text, from, kind }) {
   const sender = from || FROM_EMAIL;
 
   // Stub mode — no API key. Log to console so dev can copy URLs out (matches
@@ -765,6 +765,7 @@ export async function sendEmail({ to, subject, html, text, from }) {
     console.log(`📧 [stub-send] To: ${to}`);
     console.log(`📧 [stub-send] From: ${sender}`);
     console.log(`📧 [stub-send] Subject: ${subject}`);
+    if (kind) console.log(`📧 [stub-send] Kind: ${kind}`);
     console.log('───────────────────────────────────────────────────────────────');
     console.log(text);
     console.log('═══════════════════════════════════════════════════════════════');
@@ -773,13 +774,19 @@ export async function sendEmail({ to, subject, html, text, from }) {
   }
 
   try {
-    const result = await resend.emails.send({
+    // Phase 13: tag every send with its `kind` so the Resend webhook can
+    // attribute deliverability events to an email type (teaser, evening-recap,
+    // verify, …). Resend tag values must match /^[A-Za-z0-9_-]+$/, which all
+    // our kinds satisfy.
+    const payload = {
       from: sender,
       to,
       subject,
       html,
       text,
-    });
+    };
+    if (kind) payload.tags = [{ name: 'kind', value: kind }];
+    const result = await resend.emails.send(payload);
     if (result?.error) {
       console.error(`[emails] Resend rejected: ${result.error.message || result.error}`);
       return { ok: false, error: result.error.message || String(result.error) };
