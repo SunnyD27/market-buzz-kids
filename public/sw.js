@@ -17,7 +17,14 @@
 // (was Market Buzz Kids). The activate handler below explicitly deletes any
 // leftover `mb-*` caches so kids who had the PWA installed pre-rebrand get
 // fresh assets on their next visit instead of stale branded content.
-const VERSION = 'v2';
+//
+// Bumped to v3 for Phase 11/12 — `engagement.css` + `engagement.js` shipped
+// substantial visual + behavioral changes (new profile bar, popups, 💬
+// buttons, server-synced client). Without this bump, kids with the PWA
+// installed pre-Phase-11 would keep getting the old localStorage-only
+// engagement.js from cache forever. Any future shell-asset change MUST
+// also bump this version.
+const VERSION = 'v3';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
