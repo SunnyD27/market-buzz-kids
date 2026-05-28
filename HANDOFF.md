@@ -648,3 +648,74 @@ after a reset. Closed in `f828422`.
 Not verified end-to-end against a live DB (needs a consented test user +
 reset-token flow); `node --check` passes on all three files and the logic was
 confirmed by reading the requireAuth/setSession/reset paths together.
+
+## Session: Phase 13 — Lightweight Admin Dashboard
+
+Single server-rendered `/admin` page (ADMIN_KEY-gated, same query-param pattern
+as `/generate`) showing live product health, plus a Resend webhook pipeline for
+email deliverability.
+
+New / changed:
+- `src/admin.js` (NEW) — `gatherAdminData()` + `buildAdminHTML(data, adminKey)`.
+  Sections: Users · Engagement (DAU/WAU/MAU + today detail) · Streaks · Rank
+  Distribution (CSS bars, all 12 ranks) · Game Popularity (30d) · Scenario
+  Health (low-scenario alerts) · Recent Signups (name+age only, no PII) · Email
+  Analytics (from email_events). Inline CSS dark theme, no frameworks/charts,
+  auto-refresh meta (5 min), live queries every load (no cache).
+- `GET /admin` route + boot-log line in `src/server.js`. Fails closed when
+  ADMIN_KEY is unset.
+- `email_events` table — added to `src/schema.sql` and an idempotent boot
+  migration in `runBootMigrations()`. (Verified live: table created on Neon.)
+- `POST /api/webhooks/resend` — Svix signature verification (svix@^1.95) against
+  the raw body, inserts events into email_events. 401 on bad/missing signature
+  or unset RESEND_WEBHOOK_SECRET; 200 (no retry) on post-verification errors.
+- `sendEmail()` now takes `kind` and attaches a Resend `tags:[{name:'kind'}]`.
+  All 9 send call sites tagged: verify, consent, add-child-consent, welcome,
+  deletion-ack, delete-data-verify, teaser, password-reset, evening-recap.
+- COPPA scrub: `recordDeletionRequest()` deletes a parent's email_events rows —
+  but only once NO active children remain under that email (multi-kid guarded),
+  done post-commit + try/caught so it can never roll back the PII scrub.
+- `svix` added to dependencies (the only new package).
+
+Deviations from the spec (followed the codebase, as the spec instructed):
+- ESM throughout (project is "type":"module") — the spec's CommonJS
+  require()/module.exports would not load.
+- "Today" / windows are evaluated in America/New_York (the product's day
+  boundary, per engagement.js), not raw CURRENT_DATE (UTC on Neon), which would
+  mis-bucket "today" for the evening ET hours.
+- Scenario rotation uses the REAL games.js math (dayIndex = floor(epochMs/
+  86400000); pickScenario offset = (dayIndex + hashString(gameType)) % count),
+  NOT the spec's 2026-01-01 epoch + bare `dayIndex % count`. company-models.json
+  is reshuffled daily (stableShuffle), so it's reported "Randomized daily" and
+  alerted on raw count < target rather than a rotation runway.
+- Webhook raw body is captured via the global express.json `verify` callback;
+  a route-level express.raw() can't work because the global JSON parser already
+  consumed the stream before any route runs.
+- Each admin section getter is individually fault-tolerant: one failing query
+  (e.g. email_events missing pre-migration) degrades that card, not the page.
+- Game Popularity shows a real correct-% whenever events carry a `correct`
+  flag; with live data, compound/time-machine do carry it, so they show a
+  percentage rather than "—". "—" still appears only when no correctness is
+  tracked for a game.
+
+Verified (live, against Neon): /admin 403 without/with wrong key, 200 with key;
+all 8 sections render with real data (24 signups, ranks, game popularity);
+scenario health flags Time Machine (7) + Historical Charts (10) LOW, Company
+Models (37) Healthy; signed Svix webhook → 200 + row inserted + surfaced in
+Email Analytics; bad/again-no-secret signature → 401. Desktop + responsive
+layout screenshotted. Test webhook row cleaned up afterward.
+
+### Post-deploy manual steps (Resend webhook) — REQUIRED to populate Email Analytics
+1. Resend dashboard → Webhooks → Add Webhook.
+2. URL: `https://themarketjuice.com/api/webhooks/resend`
+3. Events: select all (sent, delivered, opened, clicked, bounced, complained).
+4. Copy the signing secret → set `RESEND_WEBHOOK_SECRET` in Railway env vars.
+5. Resend → Domains → your domain → enable Open Tracking and Click Tracking.
+6. Verify: send a test email and check `/admin?key=…` for the event.
+
+New env var: `RESEND_WEBHOOK_SECRET` (from the Resend webhook). Until it's set,
+the webhook endpoint returns 401 and Email Analytics shows an empty state.
+
+Not done (future): no caching (fine at prelaunch; add a 60s in-memory cache if
+slow); no pre-deletion warning emails; spec's "—" assumption for compound/
+time-machine correct-rate doesn't hold against live data (see deviation note).

@@ -8,6 +8,7 @@ import rateLimit from 'express-rate-limit';
 import bcrypt from 'bcrypt';
 import { randomBytes } from 'crypto';
 import cron from 'node-cron';
+import { Webhook } from 'svix';
 import path from 'path';
 import fs from 'fs';
 import { fileURLToPath } from 'url';
@@ -20,6 +21,7 @@ import { getTodaysDigest, getDigestForDate, todayNY } from './digest-store.js';
 import { requireAuth, setSession, clearSession } from './auth.js';
 import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate } from './engagement.js';
 import { EVENT_TYPES } from './progression.js';
+import { gatherAdminData, buildAdminHTML } from './admin.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -49,7 +51,15 @@ const PORT = process.env.PORT || 3000;
 app.set('trust proxy', 1);
 
 // Parse JSON bodies for /api endpoints (signup, deletion).
-app.use(express.json({ limit: '32kb' }));
+// Capture the raw bytes alongside the parsed body so the Resend webhook
+// (POST /api/webhooks/resend) can verify the Svix signature, which must run
+// against the exact raw payload. This global parser runs before any route, so
+// a route-level express.raw() can't see the body — the verify callback is the
+// reliable way to keep the raw bytes around.
+app.use(express.json({
+  limit: '32kb',
+  verify: (req, _res, buf) => { req.rawBody = buf; },
+}));
 
 // Phase 7 — signed-cookie parser for the mj_session cookie. The secret
 // signs the cookie value; cookie-parser refuses tampered cookies
@@ -407,14 +417,14 @@ app.post('/api/forgot-password', emailLimiter, async (req, res) => {
 
   if (resets.length === 1) {
     const payload = renderPasswordResetEmail(resets[0].user, resets[0].link);
-    sendEmail({ to: parentEmailForSend, ...payload }).catch(err =>
+    sendEmail({ to: parentEmailForSend, ...payload, kind: 'password-reset' }).catch(err =>
       console.error('[forgot-password] sendEmail failed:', err.message),
     );
   } else if (resets.length > 1) {
     const payload = renderMultiKidPasswordResetEmail(
       resets.map(r => ({ kidName: r.kidName, username: r.username, link: r.link }))
     );
-    sendEmail({ to: parentEmailForSend, ...payload }).catch(err =>
+    sendEmail({ to: parentEmailForSend, ...payload, kind: 'password-reset' }).catch(err =>
       console.error('[forgot-password] sendEmail failed:', err.message),
     );
   }
@@ -674,11 +684,16 @@ app.post('/api/signup', signupLimiter, async (req, res) => {
     : tokenRow.purpose === 'parental_consent'
       ? renderConsentEmail(user, linkURL)
       : renderVerifyEmail(user, linkURL);
+  const signupEmailKind = tokenRow.purpose === 'add_child_consent'
+    ? 'add-child-consent'
+    : tokenRow.purpose === 'parental_consent'
+      ? 'consent'
+      : 'verify';
 
   // Fire-and-forget — we don't block the response on email delivery, and we
   // don't want a transient send failure to look like a signup failure to the
   // parent. Phase 6 should add a retry queue.
-  sendEmail({ to: user.parent_email, ...email }).catch(err =>
+  sendEmail({ to: user.parent_email, ...email, kind: signupEmailKind }).catch(err =>
     console.error('[signup] sendEmail failed:', err)
   );
 
@@ -742,7 +757,7 @@ async function handleTokenClick(req, res, expectedPurpose) {
   // doubles as the safety net (adds a "didn't set this up?" line).
   if (result.user?.is_active) {
     const welcome = renderWelcomeEmail(result.user, { addChild: result.action === 'child_added' });
-    sendEmail({ to: result.user.parent_email, ...welcome }).catch(err =>
+    sendEmail({ to: result.user.parent_email, ...welcome, kind: 'welcome' }).catch(err =>
       console.error('[welcome] sendEmail failed:', err.message)
     );
   }
@@ -864,7 +879,7 @@ app.post('/api/delete-data/request', emailLimiter, async (req, res) => {
     if (!created) return; // no active children — send nothing
     const link = appUrl(`/parent/delete-data?token=${created.token}`);
     const payload = renderDeleteDataVerifyEmail(link);
-    sendEmail({ to: parent_email, ...payload }).catch(err =>
+    sendEmail({ to: parent_email, ...payload, kind: 'delete-data-verify' }).catch(err =>
       console.error('[delete-data/request] sendEmail failed:', err.message)
     );
   } catch (err) {
@@ -955,7 +970,7 @@ app.post('/api/delete-data', async (req, res) => {
   // Confirmation email to the (now-proven) parent address, naming the kids
   // deleted (captured before the scrub).
   const ack = renderDeletionAckEmail({ parent_email, kidNames: deletedNames });
-  sendEmail({ to: parent_email, ...ack }).catch(err =>
+  sendEmail({ to: parent_email, ...ack, kind: 'deletion-ack' }).catch(err =>
     console.error('[delete-ack] sendEmail failed:', err.message)
   );
 
@@ -1032,7 +1047,7 @@ async function sendDailyTeasers() {
   const failures = []; // { ids, error } — log user ids, never plaintext emails
   for (const parent of parents) {
     const email = renderDailyTeaserEmail({ kidNames: parent.kidNames }, content);
-    const result = await sendEmail({ to: parent.parent_email, ...email });
+    const result = await sendEmail({ to: parent.parent_email, ...email, kind: 'teaser' });
     if (result.ok) {
       sent++;
     } else {
@@ -1091,6 +1106,72 @@ app.post('/api/cron/send-digest', async (req, res) => {
   return res.status(httpStatus).json(result);
 });
 
+// ============================================================
+// Resend webhook (Phase 13 — email deliverability tracking)
+// ============================================================
+// Resend POSTs delivery lifecycle events (sent/delivered/opened/clicked/
+// bounced/complained) here. We verify the Svix signature against the raw
+// body, then append the event to email_events for the admin dashboard.
+// Always 200 on parse/processing errors AFTER a valid signature so Resend
+// doesn't retry on our own bugs — but 401 on a bad/missing signature.
+function extractEmailKind(data) {
+  // Resend echoes the tags we set on send. Be tolerant of both shapes:
+  // an array of { name, value } and a flat { kind: '...' } object.
+  if (!data || !data.tags) return null;
+  if (Array.isArray(data.tags)) {
+    const t = data.tags.find(x => x && x.name === 'kind');
+    return t ? t.value : null;
+  }
+  if (typeof data.tags === 'object') return data.tags.kind || null;
+  return null;
+}
+
+app.post('/api/webhooks/resend', async (req, res) => {
+  const secret = process.env.RESEND_WEBHOOK_SECRET;
+  if (!secret) {
+    console.warn('[resend-webhook] RESEND_WEBHOOK_SECRET not set — rejecting webhook.');
+    return res.status(401).json({ error: 'Webhook not configured' });
+  }
+
+  // Verify the Svix signature against the EXACT raw payload bytes.
+  const rawBody = req.rawBody ? req.rawBody.toString('utf8') : JSON.stringify(req.body || {});
+  try {
+    const wh = new Webhook(secret);
+    wh.verify(rawBody, {
+      'svix-id': req.header('svix-id'),
+      'svix-timestamp': req.header('svix-timestamp'),
+      'svix-signature': req.header('svix-signature'),
+    });
+  } catch (err) {
+    console.warn('[resend-webhook] signature verification failed:', err.message);
+    return res.status(401).json({ error: 'Invalid signature' });
+  }
+
+  // Signature is valid — record the event. Any error past this point still
+  // returns 200 so Resend doesn't retry on our processing bugs.
+  try {
+    const event = req.body || {};
+    const data = event.data || {};
+    const to = Array.isArray(data.to) ? data.to[0] : data.to;
+    await dbQuery(
+      `INSERT INTO email_events (email_id, event_type, recipient, email_kind, subject, event_data)
+       VALUES ($1, $2, $3, $4, $5, $6)`,
+      [
+        data.email_id || null,
+        event.type || 'unknown',
+        to || null,
+        extractEmailKind(data),
+        data.subject || null,
+        JSON.stringify(data),
+      ],
+    );
+    return res.status(200).json({ received: true });
+  } catch (err) {
+    console.error('[resend-webhook] failed to record event:', err.message);
+    return res.status(200).json({ received: true });
+  }
+});
+
 // Admin: trigger digest generation manually.
 app.get('/generate', async (req, res) => {
   const key = req.query.key;
@@ -1108,6 +1189,27 @@ app.get('/generate', async (req, res) => {
   } catch (err) {
     console.error('[Manual] Generation failed:', err.message);
     res.status(500).json({ error: err.message });
+  }
+});
+
+// ============================================================
+// Admin dashboard (Phase 13)
+// ============================================================
+// Single server-rendered health page, gated by ADMIN_KEY (same query-param
+// pattern as /generate). No session, no login — bookmark the URL with the
+// key. Fails closed when ADMIN_KEY is unset (undefined !== undefined is
+// false, which would otherwise let an unauthenticated caller through).
+app.get('/admin', async (req, res) => {
+  const expected = process.env.ADMIN_KEY;
+  if (!expected || req.query.key !== expected) {
+    return res.status(403).send('Unauthorized');
+  }
+  try {
+    const dashboardData = await gatherAdminData();
+    res.status(200).type('html').send(buildAdminHTML(dashboardData, req.query.key));
+  } catch (err) {
+    console.error('[admin] dashboard error:', err);
+    res.status(500).send('Dashboard error — check server logs');
   }
 });
 
@@ -1256,7 +1358,7 @@ async function sendEveningRecaps() {
         variant,
       });
 
-      const result = await sendEmail({ to: u.parent_email, ...rendered });
+      const result = await sendEmail({ to: u.parent_email, ...rendered, kind: 'evening-recap' });
       if (result.ok) {
         sent++;
       } else {
@@ -1625,6 +1727,36 @@ async function runBootMigrations() {
   } catch (err) {
     console.error('[migrations] session/activity migration failed (login + inactivity sweep may error until fixed):', err.message);
   }
+
+  // Phase 13 — email_events table for the Resend webhook + admin email
+  // analytics. Standalone DDL also lives in src/schema.sql. Detect via the
+  // table's presence so this is idempotent.
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'email_events'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating Phase 13 email_events table…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS email_events (
+          id            BIGSERIAL    PRIMARY KEY,
+          email_id      VARCHAR(255),
+          event_type    VARCHAR(50)  NOT NULL,
+          recipient     VARCHAR(255),
+          email_kind    VARCHAR(50),
+          subject       TEXT,
+          event_data    JSONB        NOT NULL DEFAULT '{}',
+          created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_email_events_type    ON email_events (event_type);
+        CREATE INDEX IF NOT EXISTS idx_email_events_created ON email_events (created_at DESC);
+        CREATE INDEX IF NOT EXISTS idx_email_events_kind    ON email_events (email_kind);
+      `);
+      console.log('[migrations] ✅ email_events table created.');
+    }
+  } catch (err) {
+    console.error('[migrations] email_events migration failed (admin email analytics + webhook will error until fixed):', err.message);
+  }
 }
 
 app.listen(PORT, () => {
@@ -1643,6 +1775,7 @@ app.listen(PORT, () => {
   console.log(`   Evening recap: POST /api/cron/send-evening-recap (X-Cron-Secret) + hourly UTC sweep at 7 PM local`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
+  console.log(`   Admin dashboard: /admin?key=***`);
 
   // Run migrations FIRST (so routes that depend on the new columns
   // work on the next request after a fresh deploy), then bootstrap the

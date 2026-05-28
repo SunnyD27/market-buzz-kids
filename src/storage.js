@@ -529,6 +529,31 @@ async function recordDeletionRequest(input) {
       console.log(`[storage] deletion request logged for unmatched email: ${parentEmail}`);
     }
 
+    // Phase 13: scrub Resend deliverability events (email_events) addressed to
+    // this parent email — but ONLY once no active children remain under it.
+    // Siblings share one parent inbox, so deleting one kid must not wipe email
+    // analytics still relevant to the others. The row we just scrubbed already
+    // has deleted_at set + parent_email NULLed in the committed transaction, so
+    // it won't count itself. Done post-commit + guarded so a missing
+    // email_events table or an analytics hiccup can never roll back the COPPA
+    // PII scrub above (a failed statement would otherwise poison the tx).
+    if (matched) {
+      try {
+        await query(
+          `DELETE FROM email_events
+            WHERE LOWER(recipient) = LOWER($1)
+              AND NOT EXISTS (
+                SELECT 1 FROM users
+                 WHERE LOWER(parent_email) = LOWER($1)
+                   AND deleted_at IS NULL
+              )`,
+          [parentEmail],
+        );
+      } catch (err) {
+        console.error('[storage] email_events scrub failed (non-fatal):', err.message);
+      }
+    }
+
     // matchedKidName captured before the scrub — callers use it to build a
     // per-kid acknowledgment email.
     return { ...reqRes.rows[0], matchedKidName };
