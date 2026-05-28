@@ -158,8 +158,12 @@
         // Field-specific errors from server
         if (body.errors && typeof body.errors === 'object') {
           for (const [k, v] of Object.entries(body.errors)) setError(k, v);
+        } else if (body.message) {
+          // Non-field message (e.g. the 5-child cap) — show it inline on
+          // the email field rather than a jarring alert.
+          setError('parent_email', body.message);
         } else {
-          alert(body.message || 'Something went wrong. Please try again.');
+          alert('Something went wrong. Please try again.');
         }
         btn.disabled = false; btn.textContent = original;
       }
@@ -174,23 +178,54 @@
     const headline = document.getElementById('success-headline');
     const bodyEl   = document.getElementById('success-body');
     const consentRequired = values.kid_age >= 10 && values.kid_age <= 12;
+    const kid = escape(values.kid_first_name);
+    const email = escape(values.parent_email);
 
-    headline.textContent = consentRequired
-      ? "Almost done — one more step"
-      : "You're in!";
-
-    if (consentRequired) {
+    if (body && body.knownParent) {
+      // Multi-kid abbreviated flow — known parent adding a sibling. One
+      // email (consent link), no separate verification step.
+      headline.textContent = `Almost done — confirm by email`;
       bodyEl.innerHTML = `
-        We just sent a <strong>parental consent email</strong> to <strong>${escape(values.parent_email)}</strong>.
-        Click the consent link in that email and ${escape(values.kid_first_name)}'s
+        We sent a <strong>confirmation link</strong> to <strong>${email}</strong> to add ${kid}.
+        Click it and ${kid}'s account will be ready. (No need to verify your email again —
+        you've already done that.)
+      `;
+    } else if (consentRequired) {
+      headline.textContent = "Almost done — one more step";
+      bodyEl.innerHTML = `
+        We just sent a <strong>parental consent email</strong> to <strong>${email}</strong>.
+        Click the consent link in that email and ${kid}'s
         account will be activated. We'll start sending the daily digest the morning after.
       `;
     } else {
+      headline.textContent = "You're in!";
       bodyEl.innerHTML = `
-        We just sent a <strong>verification email</strong> to <strong>${escape(values.parent_email)}</strong>.
-        Click the link to confirm, and ${escape(values.kid_first_name)} will get
+        We just sent a <strong>verification email</strong> to <strong>${email}</strong>.
+        Click the link to confirm, and ${kid} will get
         their first digest tomorrow at 7&nbsp;AM&nbsp;EST.
       `;
+    }
+
+    // Multi-kid: offer to add another sibling under the same email. Pre-fills
+    // the parent email so the known-parent abbreviated flow kicks in.
+    bodyEl.innerHTML += `
+      <p style="margin-top:16px;font-size:14px;">
+        Got another kid? <a href="#" id="add-another-child" style="font-weight:600;">Add another child →</a> (same email)
+      </p>`;
+    const addLink = document.getElementById('add-another-child');
+    if (addLink) {
+      addLink.addEventListener('click', (e) => {
+        e.preventDefault();
+        const keepEmail = values.parent_email;
+        form.reset();
+        if (coppaNote) coppaNote.hidden = true;
+        success.hidden = true;
+        form.hidden = false;
+        btn.disabled = false;
+        btn.textContent = 'Sign up →';
+        form.parent_email.value = keepEmail;   // pre-fill so it's recognized as a known parent
+        form.kid_first_name.focus();
+      });
     }
 
     form.hidden = true;

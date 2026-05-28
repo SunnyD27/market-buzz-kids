@@ -27,6 +27,8 @@ import {
   renderDailyTeaserEmail,
   renderEveningRecap,
   renderPasswordResetEmail,
+  renderMultiKidPasswordResetEmail,
+  renderAddChildConsentEmail,
   sendEmail,
 } from './emails.js';
 
@@ -318,6 +320,15 @@ app.post('/api/forgot-password', async (req, res) => {
   if (!rows.length) return;
 
   const expiresAt = new Date(Date.now() + 60 * 60 * 1000); // 1 hour
+
+  // Multi-kid: generate a reset token + link per resettable child, then
+  // send ONE email. Single kid → the normal reset email. 2+ kids → a
+  // consolidated email listing each child with their own link. This keeps
+  // the no-leak property (we never reveal in-browser whether/which kids
+  // exist — the parent picks inside their own inbox) while still letting
+  // them reset the right account.
+  const resets = [];
+  const parentEmailForSend = rows[0].parent_email;
   for (const user of rows) {
     if (!user.username) continue; // pre-Phase-7 account, can't reset
     const token = randomBytes(32).toString('hex');
@@ -328,13 +339,24 @@ app.post('/api/forgot-password', async (req, res) => {
         [token, user.id, expiresAt],
       );
       const link = `${req.protocol}://${req.get('host')}/reset-password?token=${token}`;
-      const payload = renderPasswordResetEmail(user, link);
-      sendEmail({ to: user.parent_email, ...payload }).catch(err =>
-        console.error('[forgot-password] sendEmail failed:', err.message),
-      );
+      resets.push({ user, kidName: user.kid_first_name, username: user.username, link });
     } catch (err) {
       console.error('[forgot-password] token insert failed:', err.message);
     }
+  }
+
+  if (resets.length === 1) {
+    const payload = renderPasswordResetEmail(resets[0].user, resets[0].link);
+    sendEmail({ to: parentEmailForSend, ...payload }).catch(err =>
+      console.error('[forgot-password] sendEmail failed:', err.message),
+    );
+  } else if (resets.length > 1) {
+    const payload = renderMultiKidPasswordResetEmail(
+      resets.map(r => ({ kidName: r.kidName, username: r.username, link: r.link }))
+    );
+    sendEmail({ to: parentEmailForSend, ...payload }).catch(err =>
+      console.error('[forgot-password] sendEmail failed:', err.message),
+    );
   }
 });
 
@@ -489,16 +511,25 @@ app.post('/api/signup', async (req, res) => {
     return res.status(400).json({ ok: false, errors });
   }
 
-  // ---- Duplicate email check ----
+  // ---- Multi-kid: known-parent detection + 5-child cap ----
+  // One parent email can register multiple children. If this email already
+  // has an active, verified child, take the abbreviated flow (skip
+  // re-verifying the email; still email-gate the per-child consent). The
+  // old "one account per email" 409 is gone — siblings are allowed.
+  let knownParent = false;
   try {
-    if (await storage.findActiveUserByEmail(parent_email)) {
-      return res.status(409).json({
-        ok: false,
-        message: "That email is already signed up. Want to delete and re-sign up? See /parent/delete-data.",
-      });
+    knownParent = await storage.isKnownConsentedParent(parent_email);
+    if (knownParent) {
+      const children = await storage.getActiveChildrenByParentEmail(parent_email);
+      if (children.length >= 5) {
+        return res.status(400).json({
+          ok: false,
+          message: 'You can register up to 5 children per parent email. To add another, please delete an existing account first.',
+        });
+      }
     }
   } catch (err) {
-    console.error('[signup] duplicate-check failed:', err.message);
+    console.error('[signup] known-parent check failed:', err.message);
     return res.status(500).json({ ok: false, message: 'Signup is temporarily unavailable. Please try again in a moment.' });
   }
 
@@ -558,6 +589,7 @@ app.post('/api/signup', async (req, res) => {
       signup_ip:    req.ip,
       username,
       password_hash,
+      knownParent,
     }));
   } catch (err) {
     // 23505 = unique_violation. Two indexes can fire: parent_email or
@@ -582,14 +614,20 @@ app.post('/api/signup', async (req, res) => {
   // Build the verify / consent URL and render the email.
   // Phase 5: emails are logged to console by sendEmail() — clickable.
   // Phase 6: same call site, sendEmail() will use Resend.
-  const linkPath = tokenRow.purpose === 'parental_consent'
-    ? `/api/consent?token=${tokenRow.token}`
-    : `/api/verify?token=${tokenRow.token}`;
+  // Multi-kid: known parents get the add-child consent email (purpose
+  // 'add_child_consent'); everyone else gets the normal verify/consent.
+  const linkPath = tokenRow.purpose === 'add_child_consent'
+    ? `/api/add-child-consent?token=${tokenRow.token}`
+    : tokenRow.purpose === 'parental_consent'
+      ? `/api/consent?token=${tokenRow.token}`
+      : `/api/verify?token=${tokenRow.token}`;
   const linkURL = `${req.protocol}://${req.get('host')}${linkPath}`;
 
-  const email = tokenRow.purpose === 'parental_consent'
-    ? renderConsentEmail(user, linkURL)
-    : renderVerifyEmail(user, linkURL);
+  const email = tokenRow.purpose === 'add_child_consent'
+    ? renderAddChildConsentEmail(user, linkURL)
+    : tokenRow.purpose === 'parental_consent'
+      ? renderConsentEmail(user, linkURL)
+      : renderVerifyEmail(user, linkURL);
 
   // Fire-and-forget — we don't block the response on email delivery, and we
   // don't want a transient send failure to look like a signup failure to the
@@ -597,6 +635,15 @@ app.post('/api/signup', async (req, res) => {
   sendEmail({ to: user.parent_email, ...email }).catch(err =>
     console.error('[signup] sendEmail failed:', err)
   );
+
+  if (knownParent) {
+    return res.status(200).json({
+      ok: true,
+      knownParent: true,
+      // Safe to echo the kid's first name — the parent just typed it.
+      message: `Almost done! We sent a confirmation link to add ${user.kid_first_name}. Check your email to finish.`,
+    });
+  }
 
   return res.status(200).json({
     ok: true,
@@ -621,6 +668,11 @@ app.get('/api/verify', (req, res) => {
 app.get('/api/consent', (req, res) => {
   handleTokenClick(req, res, 'parental_consent');
 });
+// Multi-kid: abbreviated consent link clicked by a known parent adding a
+// sibling. Same token-consume machinery as /api/consent.
+app.get('/api/add-child-consent', (req, res) => {
+  handleTokenClick(req, res, 'add_child_consent');
+});
 
 async function handleTokenClick(req, res, expectedPurpose) {
   const token = String(req.query.token || '');
@@ -640,8 +692,10 @@ async function handleTokenClick(req, res, expectedPurpose) {
 
   // Phase 6.2: send the welcome email the moment a user transitions to active.
   // The first successful token click is exactly that transition.
+  // Multi-kid: when this was an add-child consent, the welcome email
+  // doubles as the safety net (adds a "didn't set this up?" line).
   if (result.user?.is_active) {
-    const welcome = renderWelcomeEmail(result.user);
+    const welcome = renderWelcomeEmail(result.user, { addChild: result.action === 'child_added' });
     sendEmail({ to: result.user.parent_email, ...welcome }).catch(err =>
       console.error('[welcome] sendEmail failed:', err.message)
     );
@@ -667,13 +721,21 @@ function activationPage({ ok, reason, action, user }) {
     // the same "you're active — today's digest is live" message. Only the
     // celebratory icon differs so the parent can tell which flow they're on.
     const kid = escapeHTML(user.kid_first_name);
-    if (action === 'consent_granted') {
+    if (action === 'child_added') {
+      title = `🎉 ${kid} is all set!`;
+    } else if (action === 'consent_granted') {
       title = `🎉 ${kid}'s account is active!`;
     } else {
       title = `✅ ${kid}'s account is active!`;
     }
-    message = `Today's digest is ready and waiting for <strong>${kid}</strong>.`;
-    hint = 'Fresh digests land daily at 7&nbsp;AM EST. You can <a href="/parent/delete-data" style="color:#58a6ff;text-decoration:underline;">request data deletion</a> anytime.';
+    if (action === 'child_added') {
+      const uname = user.username ? `Their username is <strong>${escapeHTML(user.username)}</strong>.` : '';
+      message = `<strong>${kid}</strong> can now log in and play. ${uname}`;
+      hint = 'Want to add another child? <a href="/#signup" style="color:#58a6ff;text-decoration:underline;">Sign up another child</a> with the same parent email. You can <a href="/parent/delete-data" style="color:#58a6ff;text-decoration:underline;">manage data</a> anytime.';
+    } else {
+      message = `Today's digest is ready and waiting for <strong>${kid}</strong>.`;
+      hint = 'Fresh digests land daily at 7&nbsp;AM EST. You can <a href="/parent/delete-data" style="color:#58a6ff;text-decoration:underline;">request data deletion</a> anytime.';
+    }
   } else {
     const reasons = {
       not_found:     'This activation link is invalid or has already been used.',
@@ -728,6 +790,33 @@ function slice120(v) {
 // Per privacy policy, we always return success (200) to avoid leaking
 // account existence. If the email matches an active user, storage soft-
 // deletes it. If not, we still log the request for audit purposes.
+// Multi-kid: step-1 lookup for the deletion page. Given a parent email,
+// returns the active children so the parent can pick which to delete.
+// Returns first name + age + id ONLY — never usernames (a username is half
+// a login credential). The id is a UUID and the deletion step re-verifies
+// it belongs to the submitted email, so echoing it is safe.
+//
+// NB: this shares the existing delete-flow's security model — deletion is
+// gated only by knowing the parent email (no token/ownership proof). That's
+// a pre-existing property; multi-kid surfaces the child list but doesn't
+// change the trust model. Revisit (email-gated deletion) before scaling.
+app.post('/api/delete-data/children', async (req, res) => {
+  const parent_email = String(req.body?.parent_email || '').trim();
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(parent_email) || parent_email.length > 255) {
+    return res.status(400).json({ ok: false, message: 'Please enter a valid email address.' });
+  }
+  try {
+    const children = await storage.getActiveChildrenByParentEmail(parent_email);
+    return res.json({
+      ok: true,
+      children: children.map(c => ({ id: c.id, name: c.kid_first_name, age: c.kid_age })),
+    });
+  } catch (err) {
+    console.error('[delete-data/children] lookup failed:', err.message);
+    return res.status(500).json({ ok: false, message: 'Lookup is temporarily unavailable. Please try again in a moment.' });
+  }
+});
+
 app.post('/api/delete-data', async (req, res) => {
   const body = req.body || {};
   const parent_email = String(body.parent_email || '').trim();
@@ -736,33 +825,58 @@ app.post('/api/delete-data', async (req, res) => {
   }
   const reason = typeof body.reason === 'string' ? body.reason.slice(0, 120) : null;
 
-  let request;
+  // Multi-kid: an optional userIds array targets specific children. Each
+  // recordDeletionRequest call re-verifies the id belongs to this parent
+  // email, so a forged id can't delete another family's kid. Without
+  // userIds, fall back to the single-match-by-email behavior.
+  const rawIds = Array.isArray(body.userIds) ? body.userIds : null;
+  const userIds = rawIds
+    ? rawIds.filter(id => typeof id === 'string' && id.length > 0).slice(0, 5)
+    : null;
+
+  const ua = String(req.headers['user-agent'] || '').slice(0, 500);
+  const deletedNames = [];
+  let matchedCount = 0;
+
   try {
-    request = await storage.recordDeletionRequest({
-      parent_email,
-      reason,
-      requested_ip: req.ip,
-      user_agent: String(req.headers['user-agent'] || '').slice(0, 500),
-    });
+    if (userIds && userIds.length) {
+      for (const userId of userIds) {
+        const request = await storage.recordDeletionRequest({
+          parent_email, reason, userId, requested_ip: req.ip, user_agent: ua,
+        });
+        if (request.matched_user_id) {
+          matchedCount++;
+          if (request.matchedKidName) deletedNames.push(request.matchedKidName);
+        }
+      }
+    } else {
+      const request = await storage.recordDeletionRequest({
+        parent_email, reason, requested_ip: req.ip, user_agent: ua,
+      });
+      if (request.matched_user_id) {
+        matchedCount++;
+        if (request.matchedKidName) deletedNames.push(request.matchedKidName);
+      }
+    }
   } catch (err) {
     console.error('[delete-data] failed:', err.message);
     return res.status(500).json({ ok: false, message: 'Deletion is temporarily unavailable. Please try again in a moment.' });
   }
 
-  // Phase 6.2: always send a deletion-ack email — same body whether matched
-  // or not, so we never leak account existence through the email channel.
-  const ack = renderDeletionAckEmail({ parent_email });
+  // Always send a deletion-ack email. When kids were deleted, name them
+  // (captured before the scrub). Same body whether matched or not so we
+  // don't leak existence through the email channel for the unmatched case.
+  const ack = renderDeletionAckEmail({ parent_email, kidNames: deletedNames });
   sendEmail({ to: parent_email, ...ack }).catch(err =>
     console.error('[delete-ack] sendEmail failed:', err.message)
   );
 
-  // We don't return the matched_user_id — that would leak existence.
-  // We return `matched: true/false` only for the UX confirmation copy.
   return res.status(200).json({
     ok: true,
-    matched: !!request.matched_user_id,
-    message: request.matched_user_id
-      ? 'Account found and deletion processed.'
+    matched: matchedCount > 0,
+    deletedCount: matchedCount,
+    message: matchedCount > 0
+      ? `Deletion processed for ${matchedCount} account${matchedCount === 1 ? '' : 's'}.`
       : 'Deletion request logged.',
   });
 });
@@ -808,13 +922,27 @@ async function sendDailyTeasers() {
              error: err.message };
   }
 
-  console.log(`[send-digest] starting · ${recipients.length} recipient(s)`);
+  // Multi-kid: dedup by parent email. A household with two kids shares one
+  // parent inbox — send ONE teaser per parent listing all their kids, not
+  // one per kid. Group case-insensitively (stored emails preserve case).
+  const byParent = new Map();
+  for (const u of recipients) {
+    const key = (u.parent_email || '').toLowerCase();
+    if (!key) continue;
+    if (!byParent.has(key)) {
+      byParent.set(key, { parent_email: u.parent_email, kidNames: [] });
+    }
+    byParent.get(key).kidNames.push(u.kid_first_name);
+  }
+  const parents = [...byParent.values()];
+
+  console.log(`[send-digest] starting · ${parents.length} parent(s) across ${recipients.length} kid(s)`);
 
   let sent = 0;
   let failed = 0;
-  for (const user of recipients) {
-    const email = renderDailyTeaserEmail(user, content);
-    const result = await sendEmail({ to: user.parent_email, ...email });
+  for (const parent of parents) {
+    const email = renderDailyTeaserEmail({ kidNames: parent.kidNames }, content);
+    const result = await sendEmail({ to: parent.parent_email, ...email });
     if (result.ok) sent++;
     else failed++;
     // Small spacing between sends to stay under Resend's free-tier rate
@@ -823,14 +951,21 @@ async function sendDailyTeasers() {
   }
 
   const finished_at = new Date().toISOString();
-  console.log(`[send-digest] done · sent=${sent} failed=${failed} total=${recipients.length}`);
+  console.log(`[send-digest] done · sent=${sent} failed=${failed} parents=${parents.length} kids=${recipients.length}`);
+
+  // TODO (multi-kid fast-follow): the Phase 12 evening recap cron
+  // (sendEveningRecaps) still sends one email PER KID. Apply the same
+  // parent-email grouping there — render one evening email per parent with
+  // per-kid sections (engaged kids get recaps, idle kids get nudges).
+  // Tracked as the D5 fast-follow from the multi-kid spec.
 
   return {
     ok: true,
     status: 'ok',
     sent,
     failed,
-    total: recipients.length,
+    total: parents.length,
+    kids: recipients.length,
     started_at,
     finished_at,
   };
@@ -1251,6 +1386,38 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] Phase 11 engagement migration failed (engagement APIs will error until fixed):', err.message);
+  }
+
+  // Multi-kid support: drop the one-active-user-per-email UNIQUE index so a
+  // parent email can register multiple children, replace it with a plain
+  // lookup index, and expand verification_tokens.purpose to allow
+  // 'add_child_consent'. Standalone DDL in
+  // src/migrations/add-multi-kid-support.sql.
+  try {
+    // pg_index.indisunique tells us whether the parent-email index is still
+    // the old UNIQUE form. If the unique index is gone, the migration ran.
+    const { rows } = await dbQuery(`
+      SELECT i.indisunique
+        FROM pg_class c
+        JOIN pg_index i ON i.indexrelid = c.oid
+       WHERE c.relname = 'users_parent_email_active'
+    `);
+    const stillUnique = rows.length > 0 && rows[0].indisunique === true;
+    if (stillUnique) {
+      console.log('[migrations] Applying multi-kid schema (drop unique parent-email index + expand token CHECK)…');
+      await dbQuery(`
+        DROP INDEX IF EXISTS users_parent_email_active;
+        CREATE INDEX IF NOT EXISTS idx_users_parent_email
+          ON users (LOWER(parent_email))
+          WHERE deleted_at IS NULL;
+        ALTER TABLE verification_tokens DROP CONSTRAINT IF EXISTS verification_tokens_purpose_check;
+        ALTER TABLE verification_tokens ADD CONSTRAINT verification_tokens_purpose_check
+          CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset', 'add_child_consent'));
+      `);
+      console.log('[migrations] ✅ Multi-kid schema applied.');
+    }
+  } catch (err) {
+    console.error('[migrations] Multi-kid migration failed (sibling signup will error until fixed):', err.message);
   }
 }
 

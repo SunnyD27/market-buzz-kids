@@ -47,15 +47,73 @@ async function findUserById(id) {
   return rows[0] || null;
 }
 
+// ---- Multi-kid helpers ---------------------------------------------------
+
+/**
+ * All active, non-deleted children registered under a parent email.
+ * Case-insensitive match (stored emails preserve original case; the index
+ * is on LOWER()). Ordered oldest-first so UI lists are stable.
+ */
+async function getActiveChildrenByParentEmail(parentEmail) {
+  const { rows } = await query(
+    `SELECT id, kid_first_name, username, kid_age, created_at
+       FROM users
+      WHERE LOWER(parent_email) = $1
+        AND is_active = TRUE
+        AND deleted_at IS NULL
+      ORDER BY created_at ASC`,
+    [emailKey(parentEmail)]
+  );
+  return rows;
+}
+
+/**
+ * Is this a "known parent"? — i.e. do they already have at least one
+ * active, email-verified, non-deleted child? If so, the signup flow takes
+ * the abbreviated path (skip re-verifying the email; still email-gate the
+ * per-child consent).
+ *
+ * NB: intentionally does NOT require consent_given. COPPA consent is only
+ * collected for ages 10-12; a parent whose only existing child is 13-16
+ * has consent_given=false but is just as proven. email_verified is the
+ * real "we know this parent" signal.
+ */
+async function isKnownConsentedParent(parentEmail) {
+  const { rows } = await query(
+    `SELECT 1
+       FROM users
+      WHERE LOWER(parent_email) = $1
+        AND is_active = TRUE
+        AND deleted_at IS NULL
+        AND email_verified = TRUE
+      LIMIT 1`,
+    [emailKey(parentEmail)]
+  );
+  return rows.length > 0;
+}
+
 // ---- User lifecycle ------------------------------------------------------
 
 /**
  * Create a fresh user + its verify/consent token in one transaction.
  * Returns { user, tokenRow } — same shape Phase 5 returned.
+ *
+ * Multi-kid: when `input.knownParent` is true (the parent already has an
+ * active, email-verified child under this email), we take the abbreviated
+ * path — the row is created with `email_verified = true` (the email is
+ * already proven, so we skip re-verification) and the token uses purpose
+ * 'add_child_consent'. The parent still clicks an emailed consent link to
+ * activate the child (consent stays email-gated — same proof level as the
+ * first child), but they don't have to re-verify their address first.
  */
 async function createUserFromSignup(input) {
   const consentRequired = input.kid_age >= 10 && input.kid_age <= 12;
-  const purpose = consentRequired ? 'parental_consent' : 'email_verify';
+  const knownParent = input.knownParent === true;
+  // Known parent → abbreviated consent token; otherwise the normal
+  // age-based purpose (consent for 10-12, verify for 13-16).
+  const purpose = knownParent
+    ? 'add_child_consent'
+    : (consentRequired ? 'parental_consent' : 'email_verify');
   const token = newToken();
   const expiresAt = tokenExpiry(7);
 
@@ -69,15 +127,15 @@ async function createUserFromSignup(input) {
         invest_experience, referral_source,
         utm_source, utm_medium, utm_campaign, utm_content, utm_term,
         user_agent, device_type, timezone, signup_ip,
-        consent_required,
+        consent_required, email_verified,
         username, password_hash
       ) VALUES (
         $1, $2, $3,
         $4, $5,
         $6, $7, $8, $9, $10,
         $11, $12, $13, $14,
-        $15,
-        $16, $17
+        $15, $16,
+        $17, $18
       )
       RETURNING *`,
       [
@@ -96,6 +154,10 @@ async function createUserFromSignup(input) {
         input.timezone || null,
         input.signup_ip || null,
         consentRequired,
+        // Known parent: email already proven via the first child, so the
+        // row goes in pre-verified. New parent: stays false until they
+        // click the verify/consent link.
+        knownParent,
         // Phase 7 — both nullable. createUserFromSignup callers that
         // pre-date kid-auth (none in this codebase, but defensive) just
         // omit these and the row goes in with NULL/NULL. POST /api/signup
@@ -116,7 +178,7 @@ async function createUserFromSignup(input) {
 
     await client.query('COMMIT');
 
-    console.log(`[storage] created user ${user.id} (${user.parent_email}, age ${user.kid_age}, consent_required=${consentRequired}, token=${token.slice(0, 8)}...)`);
+    console.log(`[storage] created user ${user.id} (${user.parent_email}, age ${user.kid_age}, consent_required=${consentRequired}, knownParent=${knownParent}, purpose=${purpose}, token=${token.slice(0, 8)}...)`);
 
     return { user, tokenRow };
   } catch (err) {
@@ -207,6 +269,29 @@ async function consumeToken(rawToken, opts = {}) {
       );
       updatedUser = r.rows[0];
       action = 'consent_granted';
+    } else if (t.purpose === 'add_child_consent') {
+      // Multi-kid abbreviated flow. The row was created pre-verified
+      // (email already proven via a sibling), so we just record consent
+      // and activate. consent_given is only meaningful for ages 10-12
+      // (consent_required) — for 13-16 it stays FALSE but the account
+      // still activates because consent isn't required. consent_method
+      // marks this as the known-parent path for audit purposes.
+      const r = await client.query(
+        `UPDATE users
+            SET consent_given = (CASE WHEN consent_required THEN TRUE ELSE consent_given END),
+                consent_method = 'known_parent_click',
+                consent_timestamp = NOW(),
+                consent_ip = $2,
+                email_verified = TRUE,
+                email_verified_at = COALESCE(email_verified_at, NOW()),
+                is_active = TRUE,
+                updated_at = NOW()
+          WHERE id = $1
+          RETURNING *`,
+        [userRow.id, opts.ip || null]
+      );
+      updatedUser = r.rows[0];
+      action = 'child_added';
     } else {
       await client.query('ROLLBACK');
       return { ok: false, reason: 'not_found' };
@@ -232,6 +317,16 @@ async function consumeToken(rawToken, opts = {}) {
 /**
  * Record a parent-initiated deletion request. If an active user matches the
  * parent_email, soft-delete them in the same transaction.
+ *
+ * Multi-kid: pass `input.userId` to target a SPECIFIC child (the deletion
+ * still verifies that child belongs to `parent_email`, so a parent can't
+ * delete some other family's kid by guessing an id). Without `userId` we
+ * fall back to the original "match one active user by email" behavior
+ * (single-kid backward compat).
+ *
+ * Returns the deletion_requests audit row, plus `matchedKidName` (captured
+ * BEFORE the scrub overwrites kid_first_name) so callers can build a
+ * per-kid acknowledgment email.
  */
 async function recordDeletionRequest(input) {
   const parentEmail = input.parent_email.trim();
@@ -239,15 +334,28 @@ async function recordDeletionRequest(input) {
   try {
     await client.query('BEGIN');
 
-    // Match against an active user.
-    const matchRes = await client.query(
-      `SELECT id, parent_email FROM users
-        WHERE LOWER(parent_email) = $1 AND deleted_at IS NULL
-        FOR UPDATE
-        LIMIT 1`,
-      [emailKey(parentEmail)]
-    );
+    // Match against an active user. With userId, target that specific
+    // child but STILL require it to belong to this parent email — defends
+    // against a forged id deleting someone else's account.
+    const matchRes = input.userId
+      ? await client.query(
+          `SELECT id, parent_email, kid_first_name FROM users
+            WHERE id = $1
+              AND LOWER(parent_email) = $2
+              AND deleted_at IS NULL
+            FOR UPDATE
+            LIMIT 1`,
+          [input.userId, emailKey(parentEmail)]
+        )
+      : await client.query(
+          `SELECT id, parent_email, kid_first_name FROM users
+            WHERE LOWER(parent_email) = $1 AND deleted_at IS NULL
+            FOR UPDATE
+            LIMIT 1`,
+          [emailKey(parentEmail)]
+        );
     const matched = matchRes.rows[0] || null;
+    const matchedKidName = matched ? matched.kid_first_name : null;
 
     let matchedUserId = null;
     let processedAt = null;
@@ -347,7 +455,9 @@ async function recordDeletionRequest(input) {
       console.log(`[storage] deletion request logged for unmatched email: ${parentEmail}`);
     }
 
-    return reqRes.rows[0];
+    // matchedKidName captured before the scrub — callers use it to build a
+    // per-kid acknowledgment email.
+    return { ...reqRes.rows[0], matchedKidName };
   } catch (err) {
     await client.query('ROLLBACK').catch(() => {});
     throw err;
@@ -385,5 +495,7 @@ export const storage = {
   recordDeletionRequest,
   findActiveUserByEmail,
   findUserById,
+  getActiveChildrenByParentEmail,
+  isKnownConsentedParent,
   counts,
 };

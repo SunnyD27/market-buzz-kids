@@ -14,8 +14,10 @@ CREATE TABLE IF NOT EXISTS users (
   -- Identity (signup form)
   -- parent_email + kid_age are nullable so storage.recordDeletionRequest()
   -- can scrub them when a parent requests deletion (COPPA compliance).
-  -- The partial index `users_parent_email_active` (deleted_at IS NULL) means
-  -- a NULLed-out deleted row never blocks the same email from re-signing up.
+  -- parent_email is NON-unique as of the multi-kid feature — one parent
+  -- email can have several active child rows (siblings). The lookup index
+  -- `idx_users_parent_email` (deleted_at IS NULL) keeps parent-email queries
+  -- fast without enforcing uniqueness.
   -- kid_first_name stays NOT NULL — the scrub writes the sentinel 'deleted'
   -- so any downstream null-deref doesn't blow up.
   parent_email        VARCHAR(255),
@@ -72,8 +74,12 @@ CREATE TABLE IF NOT EXISTS users (
   updated_at          TIMESTAMPTZ  NOT NULL DEFAULT NOW()
 );
 
--- One active user per parent_email (allow re-signup after deletion).
-CREATE UNIQUE INDEX IF NOT EXISTS users_parent_email_active
+-- Parent-email lookup index. NON-unique as of the multi-kid feature — a
+-- single parent email can register multiple children (siblings), so we no
+-- longer enforce one-active-user-per-email. Case-insensitive, active rows
+-- only. (Was a UNIQUE index pre-multi-kid; see
+-- src/migrations/add-multi-kid-support.sql for the drop+recreate.)
+CREATE INDEX IF NOT EXISTS idx_users_parent_email
   ON users (LOWER(parent_email))
   WHERE deleted_at IS NULL;
 
@@ -97,7 +103,7 @@ CREATE TABLE IF NOT EXISTS verification_tokens (
   user_id       UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
   -- Phase 7 added 'password_reset'; older deployments need the migration in
   -- src/migrations/add-auth-columns.sql to expand this CHECK.
-  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset')),
+  purpose       VARCHAR(20)  NOT NULL CHECK (purpose IN ('email_verify', 'parental_consent', 'password_reset', 'add_child_consent')),
   expires_at    TIMESTAMPTZ  NOT NULL,
   used_at       TIMESTAMPTZ,
   created_at    TIMESTAMPTZ  NOT NULL DEFAULT NOW()

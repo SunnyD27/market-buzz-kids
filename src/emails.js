@@ -58,6 +58,22 @@ function escapeHTML(s) {
     ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
 }
 
+// Multi-kid name joiners. joinNames → plain Oxford-comma list ("Riley",
+// "Riley and Jordan", "Riley, Jordan, and Sam"). possessiveNames appends
+// "'s" for subject lines ("Riley and Jordan's"). Callers pass already-safe
+// strings or escape downstream.
+function joinNames(names) {
+  const n = (names || []).filter(Boolean);
+  if (n.length === 0) return '';
+  if (n.length === 1) return n[0];
+  if (n.length === 2) return `${n[0]} and ${n[1]}`;
+  return `${n.slice(0, -1).join(', ')}, and ${n[n.length - 1]}`;
+}
+function possessiveNames(names) {
+  const joined = joinNames(names);
+  return joined ? `${joined}'s` : '';
+}
+
 /**
  * Layout shared by all transactional emails — branded header, content slot,
  * footer with the working /parent/delete-data link.
@@ -190,6 +206,99 @@ export function renderConsentEmail(user, link) {
 }
 
 // ============================================================
+// 1b) Add-child consent (multi-kid abbreviated flow)
+// ============================================================
+// Sent when a KNOWN parent (already has an active, verified child) signs
+// up a sibling. The email is the consent gate — we skip re-verifying the
+// address (already proven) but the parent still clicks a link in their own
+// inbox to activate the child, keeping consent email-gated.
+//
+// Copy varies by age (D2): full COPPA parent/guardian framing for 10-12,
+// a lighter "confirm you're adding" framing for 13-16 (COPPA doesn't apply
+// to 13+, but we keep the consistent confirm-by-email UX).
+export function renderAddChildConsentEmail(user, link) {
+  const kid = escapeHTML(user.kid_first_name);
+  const deleteLink = appUrl('/parent/delete-data');
+  const isUnder13 = user.kid_age >= 10 && user.kid_age <= 12;
+
+  const subject = `Confirm you're adding ${kid} to Market Juice`;
+  const preheader = `One click to add ${kid} to your Market Juice family.`;
+
+  const introLine = isUnder13
+    ? `You're adding <strong>${kid}</strong>, age ${user.kid_age}, to your Market Juice family. Because ${kid} is under 13, U.S. law (COPPA) requires your consent before we collect their information.`
+    : `You're adding <strong>${kid}</strong>, age ${user.kid_age}, to your Market Juice family. One click confirms it's really you.`;
+
+  const ctaLabel = isUnder13
+    ? `✅ I'm ${kid}'s parent/guardian — create their account`
+    : `✅ Confirm — create ${kid}'s account`;
+
+  const closingLine = isUnder13
+    ? `By clicking, you confirm you are ${kid}'s parent or legal guardian.`
+    : `By clicking, you confirm you're adding ${kid} with your permission.`;
+
+  const body = `
+    <h1 style="font-size:24px;font-weight:700;color:#1c2030;margin:0 0 12px 0;letter-spacing:-0.5px;">
+      Add ${kid} to Market Juice
+    </h1>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
+      ${introLine}
+    </p>
+
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"
+           style="background:#f7f4ff;border:1px solid #e8defc;border-left:4px solid ${BRAND.accent};border-radius:8px;margin:0 0 24px 0;">
+      <tr><td style="padding:16px 18px;">
+        <div style="font-size:13px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:${BRAND.accent};margin-bottom:10px;">What we collect for ${kid}</div>
+        <ul style="margin:0;padding-left:20px;color:#454a5b;font-size:14px;line-height:1.7;">
+          <li>First name and age</li>
+          <li>Username and password (for login)</li>
+          <li>Quiz answers, game activity, and learning progress (Market Coins, streaks, badges)</li>
+          <li>Daily digest interaction data</li>
+        </ul>
+        <p style="margin:14px 0 0 0;font-size:13px;color:#6b7280;line-height:1.6;">
+          We use this only to deliver the daily digest and track ${kid}'s progress. We don't share it with third parties.
+          You can <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">review or delete ${kid}'s data</a> anytime.
+        </p>
+      </td></tr>
+    </table>
+
+    <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 22px 0;">
+      <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
+        <a href="${escapeHTML(link)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;letter-spacing:0.2px;">
+          ${ctaLabel}
+        </a>
+      </td></tr>
+    </table>
+
+    <p style="margin:0 0 4px 0;font-size:13px;color:#8b91a3;">Or paste this link into your browser:</p>
+    <p style="margin:0 0 18px 0;font-size:12px;color:${BRAND.blue};word-break:break-all;">${escapeHTML(link)}</p>
+    <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
+      ${closingLine} This link expires in 7 days. If you didn't request this, ignore this email — nothing happens until you click.
+    </p>
+  `;
+
+  return {
+    subject,
+    html: shell({ preheader, body }),
+    text: [
+      `Add ${kid} to Market Juice`,
+      '',
+      isUnder13
+        ? `You're adding ${kid} (age ${user.kid_age}). Because ${kid} is under 13, U.S. COPPA law requires your consent before we collect their information.`
+        : `You're adding ${kid} (age ${user.kid_age}) to your Market Juice family. One click confirms it's really you.`,
+      '',
+      `We collect for ${kid}: first name + age, username + password, quiz/game activity and learning progress, and daily digest interaction data. We don't share it with third parties.`,
+      '',
+      `Click to confirm and create ${kid}'s account:`,
+      link,
+      '',
+      `${closingLine.replace(/<[^>]+>/g, '')}`,
+      `Delete data anytime: ${deleteLink}`,
+      'Link expires in 7 days.',
+    ].join('\n'),
+  };
+}
+
+// ============================================================
 // 2) Email verification (ages 13-16)
 // ============================================================
 export function renderVerifyEmail(user, link) {
@@ -244,13 +353,21 @@ export function renderVerifyEmail(user, link) {
 // ============================================================
 // 3) Welcome email (fires once on activation)
 // ============================================================
-export function renderWelcomeEmail(user) {
+export function renderWelcomeEmail(user, opts = {}) {
   const kid = escapeHTML(user.kid_first_name);
   const username = escapeHTML(user.username || '');
   const digestLink = appUrl('/digest');
   const loginLink = appUrl('/login');
   const progressLink = appUrl('/progress');
-  const subject = `${kid} is in — today's digest is live!`;
+  const deleteLink = appUrl('/parent/delete-data');
+  // Multi-kid: when a known parent adds a sibling, this welcome email
+  // doubles as the safety net. A "didn't set this up?" line gives the
+  // real parent an immediate undo path (consent was email-gated, so this
+  // is belt-and-suspenders rather than the primary safeguard).
+  const addChild = opts.addChild === true;
+  const subject = addChild
+    ? `${kid} has been added to Market Juice`
+    : `${kid} is in — today's digest is live!`;
   const preheader = `Welcome to Market Juice — here's what to expect.`;
 
   // Phase 7: include kid's login credentials block when a username is on
@@ -297,6 +414,10 @@ export function renderWelcomeEmail(user) {
       and unlock badges. See the full profile any time at
       <a href="${escapeHTML(progressLink)}" style="color:${BRAND.accent};">${escapeHTML(progressLink)}</a>.
     </p>
+    ${addChild ? `
+    <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
+      Didn't set this up? <a href="${escapeHTML(deleteLink)}" style="color:${BRAND.blue};text-decoration:underline;">Remove ${kid} here</a> — or just reply to this email and we'll take care of it.
+    </p>` : ''}
     <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
       Reply to this email any time. We read every message.
     </p>
@@ -310,47 +431,64 @@ export function renderWelcomeEmail(user) {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `${kid} is in! Today's digest is live now.`,
+      addChild ? `${kid} has been added to Market Juice.` : `${kid} is in! Today's digest is live now.`,
       credentialsText,
       `See today's digest: ${digestLink}`,
       '',
       'On iPhone or iPad: tap the share button in Safari → "Add to Home Screen" so the digest opens like an app.',
       '',
       `As ${kid} plays, they'll earn Market Coins, climb investor ranks, and unlock badges. See the full profile at ${progressLink}.`,
+      addChild ? `\nDidn't set this up? Remove ${kid}: ${deleteLink} — or reply to this email.` : '',
       '',
       'Reply to this email any time. We read every message.',
-    ].join('\n'),
+    ].filter(Boolean).join('\n'),
   };
 }
 
 // ============================================================
 // 4) Deletion acknowledgement
 // ============================================================
-// Sent for every /api/delete-data submission regardless of whether a match
-// existed — same body either way so we never leak existence.
-export function renderDeletionAckEmail({ parent_email }) {
+// Sent for every /api/delete-data submission. When specific kids were
+// deleted (multi-kid selection), name them (`kidNames` captured before the
+// scrub). When no match existed, the generic copy keeps us from leaking
+// existence through the email channel.
+export function renderDeletionAckEmail({ parent_email, kidNames }) {
   const email = escapeHTML(parent_email);
+  const names = Array.isArray(kidNames) ? kidNames.filter(Boolean) : [];
   const subject = `Your Market Juice deletion request`;
   const preheader = `We received your deletion request.`;
+
+  // When we know which kids were deleted, lead with that — it's clearer
+  // and reassuring for the parent. Names are escaped for the HTML body.
+  const namesHTML = names.length ? escapeHTML(joinNames(names)) : '';
+  const confirmLine = names.length
+    ? `<p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
+         <strong>${namesHTML}</strong>'s Market Juice account${names.length === 1 ? ' has' : 's have'} been deleted. All personal information was removed; we retain only an anonymized record that a deletion request was made, as required for compliance.
+       </p>`
+    : `<p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
+         If an account existed at that address, all personal information has been
+         deleted. We retain only an anonymized record that a deletion request was
+         made, as required for compliance. If no account existed, no further
+         action is needed — we logged the request anyway for the same reason.
+       </p>`;
 
   const body = `
     <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.3px;">
       Deletion request received
     </h1>
     <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
-      We received a request to delete the Market Juice account associated with
+      We received a request to delete Market Juice ${names.length > 1 ? 'accounts' : 'data'} associated with
       <strong>${email}</strong>.
     </p>
-    <p style="margin:0 0 16px 0;font-size:15px;color:#454a5b;">
-      If an account existed at that address, all personal information has been
-      deleted. We retain only an anonymized record that a deletion request was
-      made, as required for compliance. If no account existed, no further
-      action is needed — we logged the request anyway for the same reason.
-    </p>
+    ${confirmLine}
     <p style="margin:0;font-size:14px;color:#454a5b;">
       Didn't request this? Reply to this email and we'll look into it.
     </p>
   `;
+
+  const confirmText = names.length
+    ? `${joinNames(names)}'s Market Juice account${names.length === 1 ? ' has' : 's have'} been deleted. All personal information was removed; we retain only an anonymized compliance record.`
+    : 'If an account existed at that address, all personal information has been deleted. We retain only an anonymized record that a deletion request was made, as required for compliance. If no account existed, no further action is needed — we logged the request anyway for the same reason.';
 
   return {
     subject,
@@ -358,10 +496,8 @@ export function renderDeletionAckEmail({ parent_email }) {
     text: [
       'Deletion request received',
       '',
-      `We received a request to delete the Market Juice account associated with ${parent_email}.`,
-      'If an account existed at that address, all personal information has been deleted.',
-      'We retain only an anonymized record that a deletion request was made, as required for compliance.',
-      'If no account existed, no further action is needed — we logged the request anyway for the same reason.',
+      `We received a request to delete Market Juice data associated with ${parent_email}.`,
+      confirmText,
       '',
       "Didn't request this? Reply and we'll look into it.",
     ].join('\n'),
@@ -376,7 +512,12 @@ export function renderDeletionAckEmail({ parent_email }) {
 // The teaser is intentionally minimal — its only job is to get the kid into
 // the web digest.
 export function renderDailyTeaserEmail(user, content) {
-  const kid = escapeHTML(user.kid_first_name);
+  // Multi-kid: `user.kidNames` (array) when one parent has several kids;
+  // falls back to the single `kid_first_name` for the one-kid path.
+  const names = Array.isArray(user.kidNames) && user.kidNames.length
+    ? user.kidNames
+    : [user.kid_first_name];
+  const kid = escapeHTML(joinNames(names));   // "Riley" or "Riley and Jordan"
   const digestLink = appUrl('/digest');
 
   const vibe = content?.marketVibe || 'mixed'; // 'green' | 'red' | 'mixed'
@@ -488,6 +629,56 @@ export function renderPasswordResetEmail(user, link) {
       "If you didn't request this, you can safely ignore this email.",
     ].join('\n'),
   };
+}
+
+// Multi-kid: when a parent email has 2+ children, we send ONE reset email
+// listing each child with their own reset link (rather than N separate
+// emails, or leaking the child list in an in-browser screen). The parent
+// picks the right child inside their own inbox. `resets` is an array of
+// { kidName, username, link }.
+export function renderMultiKidPasswordResetEmail(resets) {
+  const subject = `Reset a password for your Market Juice kids`;
+  const preheader = `Pick which child's password to reset. Links expire in 1 hour.`;
+
+  const rows = resets.map(r => {
+    const kid = escapeHTML(r.kidName || 'your kid');
+    const uname = r.username ? `<span style="color:#8b91a3;font-size:13px;"> (username: ${escapeHTML(r.username)})</span>` : '';
+    return `
+      <tr><td style="padding:12px 0;border-bottom:1px solid #eef0f4;">
+        <div style="font-size:15px;font-weight:600;color:#1c2030;margin-bottom:8px;">${kid}${uname}</div>
+        <a href="${escapeHTML(r.link)}" style="display:inline-block;padding:10px 20px;background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});color:#fff;font-size:14px;font-weight:700;text-decoration:none;border-radius:999px;">
+          Reset ${kid}'s password →
+        </a>
+      </td></tr>`;
+  }).join('');
+
+  const body = `
+    <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 14px 0;letter-spacing:-0.3px;">
+      🔐 Reset a password
+    </h1>
+    <p style="margin:0 0 18px 0;font-size:15px;color:#454a5b;">
+      You have more than one child on Market Juice. Pick which account you want to reset:
+    </p>
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0">
+      ${rows}
+    </table>
+    <p style="margin:18px 0 0 0;font-size:13px;color:#8b91a3;">
+      Each link expires in 1 hour. If you didn't request this, you can safely ignore this email — all current passwords still work.
+    </p>
+  `;
+
+  const text = [
+    `Reset a password for your Market Juice kids`,
+    '',
+    'Pick which child to reset:',
+    '',
+    ...resets.map(r => `- ${r.kidName}${r.username ? ` (username: ${r.username})` : ''}: ${r.link}`),
+    '',
+    'Each link expires in 1 hour.',
+    "If you didn't request this, you can safely ignore this email.",
+  ].join('\n');
+
+  return { subject, html: shell({ preheader, body }), text };
 }
 
 // ============================================================
