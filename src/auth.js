@@ -39,9 +39,19 @@ const THIRTY_DAYS_MS = 30 * 24 * 60 * 60 * 1000;
  * Reading from signedCookies is therefore sufficient for tamper checking.
  */
 export async function requireAuth(req, res, next) {
+  // How to refuse an unauthenticated request. Page routes (/digest, /progress)
+  // redirect to the login screen so a kid clicking the morning-email link in a
+  // fresh tab lands somewhere useful. API routes (/api/*) instead return a
+  // 401 JSON so fetch callers get a clean, parseable error rather than an HTML
+  // login page (a 302→HTML would break JSON parsing on the client).
+  const reject = () =>
+    req.path.startsWith('/api/')
+      ? res.status(401).json({ error: 'Authentication required.' })
+      : res.redirect('/login');
+
   const raw = req.signedCookies?.[COOKIE_NAME];
   if (!raw) {
-    return res.redirect('/login');
+    return reject();
   }
 
   // Cookie format is `${userId}:${session_version}`. Legacy cookies (pre
@@ -51,7 +61,7 @@ export async function requireAuth(req, res, next) {
   const sep = raw.indexOf(':');
   if (sep === -1) {
     clearSession(res);
-    return res.redirect('/login');
+    return reject();
   }
   const userId = raw.slice(0, sep);
   const cookieVersion = raw.slice(sep + 1);
@@ -71,7 +81,7 @@ export async function requireAuth(req, res, next) {
       // Cookie was valid but the account is gone / deactivated / soft-
       // deleted. Clear the dead cookie so the browser stops sending it.
       clearSession(res);
-      return res.redirect('/login');
+      return reject();
     }
     const user = rows[0];
 
@@ -79,7 +89,7 @@ export async function requireAuth(req, res, next) {
     // password reset bumps session_version, so old cookies stop working.
     if (String(user.session_version) !== cookieVersion) {
       clearSession(res);
-      return res.redirect('/login');
+      return reject();
     }
 
     req.user = user;
@@ -96,9 +106,9 @@ export async function requireAuth(req, res, next) {
     next();
   } catch (err) {
     console.error('[auth] session lookup failed:', err.message);
-    // DB outage: fail closed. Better to send the kid to /login than
-    // accidentally serve content without knowing who they are.
-    return res.redirect('/login');
+    // DB outage: fail closed. Better to send the kid to /login (or 401 an API
+    // call) than accidentally serve content without knowing who they are.
+    return reject();
   }
 }
 
