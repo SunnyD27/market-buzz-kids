@@ -12,7 +12,7 @@ import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
-import { getDigestForDate, saveDigest } from './digest-store.js';
+import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
 
 const __filename = fileURLToPath(import.meta.url);
@@ -110,6 +110,13 @@ export async function generateDigest(opts = {}) {
     console.log(`[Generate]   Avoiding ${recentFacts.length} recent fact(s)`);
   }
 
+  // Recent standard-edition digests for story + quiz dedup (mirrors the
+  // word/fact dedup above). `today` honors DATE_OVERRIDE via getEditionDate(),
+  // so override-based testing sees the right history window — that's why we
+  // pass `today` here rather than digest-store's todayNY().
+  const recentDigests = await getRecentStories(today);
+  console.log(`[Generate]   Loaded ${recentDigests.length} recent digest(s) for story dedup`);
+
   // Two parallel Claude tracks:
   //   - generateContent: scoreboard + stories + quiz + didYouKnow + wordOfDay (existing)
   //   - hydrateDailyGames: today's 3-game daily challenge (new, Phase 6.5)
@@ -118,6 +125,7 @@ export async function generateDigest(opts = {}) {
   const content = await generateContent(marketData, news, movers, topMover, {
     recentWords,
     recentFacts,
+    recentDigests,
     edition,
   });
 
