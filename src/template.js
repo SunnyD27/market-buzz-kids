@@ -968,9 +968,12 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
     }};
   }
 
-  // Today's hydrated bundle, baked in at generation time. The .replace
-  // escapes '<' to \\u003c so a stray "</script>" inside the (AI-generated)
-  // data can't break out of this inline <script> tag.
+  // Today's hydrated bundle, baked in at generation time. The .replace below
+  // escapes every '<' in the (AI-generated) data to \\u003c so a stray
+  // close-script sequence can't break out of this inline script block.
+  // NOTE: keep this comment free of literal script-tag sequences — the HTML
+  // parser ends the element at the first close-script token even inside a JS
+  // comment, which is exactly the bug this guards against.
   var __DC_BUNDLE = ${JSON.stringify({ games: dailyChallenge.games.map(g => ({ type: g.type, data: g.data })) }).replace(/</g, '\\u003c')};
   (function () {
     var host = document.getElementById('daily-challenge-host');
