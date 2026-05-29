@@ -360,6 +360,7 @@
     // confirmation chip persists across page reloads. Runs before the
     // network fetch so the swap happens immediately on slow connections.
     restoreAskParentState();
+    hideAskParentIntroIfSeen();
 
     try {
       state = await fetchState();
@@ -410,6 +411,10 @@
     const digestDate = window.__digestDate || null;
     if (!section) return;
 
+    // Any 💬 tap means the kid has discovered the feature — retire the
+    // one-time intro card for good (and persist so it stays gone).
+    dismissAskParentIntro(true);
+
     // Idempotency guard. localStorage may be unavailable (private mode),
     // but the server dedup gate covers that case.
     let alreadySent = false;
@@ -452,6 +457,35 @@
         }
       } catch (_) { /* private mode — leave button as-is */ }
     });
+  }
+
+  // ---- One-time "Ask my parent" intro card -----------------------------
+  //
+  // A small callout above the first story explains the 💬 feature to new
+  // users. It disappears forever once dismissed ("Got it") OR once the kid
+  // taps any 💬 button — both set the 'mj-ask-parent-intro-seen' flag.
+
+  /** Fade out + remove the intro card. persist=true sets the seen flag so it
+   *  never shows again. */
+  function dismissAskParentIntro(persist) {
+    if (persist) {
+      try { localStorage.setItem('mj-ask-parent-intro-seen', 'true'); } catch (_) {}
+    }
+    const el = document.getElementById('askParentIntro');
+    if (!el) return;
+    el.classList.add('mj-ask-parent-intro--out');
+    setTimeout(function () { if (el && el.parentNode) el.remove(); }, 300);
+  }
+
+  /** On load: if the kid already saw/dismissed the intro in a prior session,
+   *  remove it immediately (no fade). */
+  function hideAskParentIntroIfSeen() {
+    try {
+      if (localStorage.getItem('mj-ask-parent-intro-seen')) {
+        const el = document.getElementById('askParentIntro');
+        if (el) el.remove();
+      }
+    } catch (_) { /* private mode — leave card as-is */ }
   }
 
   // ---- Misc helpers ----------------------------------------------------

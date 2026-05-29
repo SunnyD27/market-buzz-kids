@@ -810,6 +810,12 @@ export function buildHTML(content, opts = {}) {
     <div class="line"></div>
   </div>
 
+  ${!opts.isSample ? `
+  <div class="mj-ask-parent-intro" id="askParentIntro">
+    <p><strong>Got a question?</strong> If something in today's digest is confusing or interesting, tap <span class="mj-ask-parent-btn-inline">💬 Ask my parent about this</span> and your parent will get a note about it tonight with a way to talk about it with you.</p>
+    <button class="mj-ask-parent-intro-dismiss" onclick="this.parentElement.classList.add('mj-ask-parent-intro--out');try{localStorage.setItem('mj-ask-parent-intro-seen','true')}catch(e){}setTimeout(function(){var el=document.getElementById('askParentIntro');if(el)el.remove();},300)">Got it</button>
+  </div>` : ''}
+
   ${storiesHTML}
 
   <div class="section-header">
