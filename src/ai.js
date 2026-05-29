@@ -98,6 +98,98 @@ PRINCIPLE APPLICATION GUIDE — When generating content, smartly associate each 
 - Aim for variety across the day's content — don't assign the same principle to every block. A single digest should ideally touch 4-6 different principles.
 `.trim();
 
+// ── Story dedup (mirrors the recentWords / recentFacts pattern) ────────
+// generate.js loads the last few standard-edition digests via
+// digest-store.getRecentStories() and threads them in as `recentDigests`.
+// These helpers turn that raw history into prompt text. Built once and
+// interpolated into all three prompt builders so the dedup wording stays
+// identical across editions (no drift between three pasted copies).
+
+/** Coerce a pg DATE (Date object or string) to a clean YYYY-MM-DD label. */
+function fmtDigestDate(v) {
+  if (v == null) return '';
+  if (typeof v === 'string') return v.slice(0, 10);
+  if (v instanceof Date) {
+    const y = v.getUTCFullYear();
+    const m = String(v.getUTCMonth() + 1).padStart(2, '0');
+    const d = String(v.getUTCDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+  return String(v);
+}
+
+/** Render recent coverage (date + story titles + big-picture snippet). */
+export function formatRecentCoverage(recentDigests) {
+  if (!recentDigests || recentDigests.length === 0) {
+    return 'No recent story history available.';
+  }
+  return recentDigests.map(row => {
+    const date = fmtDigestDate(row.digest_date);
+    const stories = Array.isArray(row.stories) ? row.stories : [];
+    const storyLines = stories.map(s => `  - "${s && s.title ? s.title : ''}"`).join('\n');
+    const bp = typeof row.big_picture === 'string' ? row.big_picture : '';
+    const bigPicture = bp ? `  - Big Picture: "${bp.substring(0, 100)}"` : '';
+    return `${date}:\n${storyLines}${bigPicture ? '\n' + bigPicture : ''}`;
+  }).join('\n\n');
+}
+
+/** The full STORY DEDUP rules block, with this run's coverage spliced in. */
+export function storyDedupBlock(recentDigests) {
+  const count = (recentDigests || []).length;
+  return `STORY DEDUP RULES — READ CAREFULLY:
+
+Here are the stories covered in the last ${count} days:
+
+${formatRecentCoverage(recentDigests)}
+
+DO NOT repeat a company or topic from this list UNLESS all of these are true:
+1. There is a genuinely NEW catalyst — a new event that happened AFTER the previous coverage. Examples of new catalysts: new earnings report, acquisition announced, CEO fired, regulatory ruling, IPO filed, product launch, major partnership.
+2. The new catalyst is DIFFERENT from what was previously covered. "Stock continues to rise" is NOT a new catalyst. "Stock rises because they announced a $6B deal" IS a new catalyst, but only if the deal was not mentioned in the previous coverage.
+3. A 10-year-old who read both days would learn something NEW today that they didn't learn from the previous day's story.
+
+If a company from the recent list appears in today's FMP top movers but FAILS all three tests above, SKIP IT. Pick the next most interesting company from the movers list or news feed instead.
+
+WHAT COUNTS AS A NEW CATALYST:
+- Company reported NEW earnings (different quarter than previously covered)
+- Company announced an acquisition, merger, or major partnership
+- CEO/leadership change
+- Regulatory action (lawsuit filed, antitrust ruling, FDA approval)
+- IPO filing or pricing (not just "IPO is coming" repeated)
+- Product launch or major product failure
+- Stock crash (down 10%+) or surge (up 15%+) that represents a REVERSAL or MAGNITUDE CHANGE from previous coverage
+- A completely different aspect of the company (covered for product launch Monday, covered for antitrust ruling Wednesday)
+
+WHAT DOES NOT COUNT AS A NEW CATALYST:
+- Stock continues moving in the same direction on the same news
+- Analysts react to the same event that was already covered
+- "Markets respond to..." the same catalyst from a prior day
+- A company in the same sector doing the same thing (if Snowflake was covered for cloud earnings, don't cover Salesforce for cloud earnings the next day unless Salesforce has a distinctly different story)
+- Price recovery after a drop, unless the recovery itself is driven by new news
+- General market movement correlated with a previously covered event
+
+SLOW NEWS DAYS:
+If most of today's top movers overlap with the recent list and fail the three tests:
+- Look deeper in the news feed for stories about companies NOT on the recent list
+- Cover a broader market trend or sector story instead of a single company
+- Cover an international market event
+- Cover a lesser-known company with an interesting story a kid would find engaging
+NEVER pad the digest with a repeat just to fill space. A fresh story about a less famous company is ALWAYS better than a repeat about a well-known one.
+
+IMPORTANT: This applies to the Big Picture section too. If the Big Picture covered "oil prices and their ripple effects" yesterday, don't cover oil prices again today unless there's a genuinely new catalyst (OPEC decision, refinery explosion, new sanctions). Find a different macro angle.`;
+}
+
+/** The QUIZ DEDUP block — recent quiz questions Claude must not re-test. */
+export function quizDedupBlock(recentDigests) {
+  const list = (recentDigests || [])
+    .map(r => (r.quiz_question ? `- ${r.quiz_question}` : ''))
+    .filter(Boolean)
+    .join('\n') || 'No recent quizzes.';
+  return `QUIZ DEDUP: Here are recent quiz questions — do not test the same concept:
+${list}
+
+Today's quiz should test a concept from TODAY'S stories that was NOT quizzed in the last 5 days.`;
+}
+
 /**
  * Build the STANDARD weekday prompt (Tuesday–Saturday, no holiday yesterday).
  *
@@ -105,7 +197,7 @@ PRINCIPLE APPLICATION GUIDE — When generating content, smartly associate each 
  * text itself is unchanged from the battle-tested version. Only the
  * surrounding plumbing (function wrapper + parameter list) is new.
  */
-function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel) {
+function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = []) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
@@ -146,6 +238,8 @@ STORY SELECTION RULES (CRITICAL):
 - Every "Why It Matters" box must explicitly teach an investing concept through the lens of the story. Examples: Nvidia earnings → what does "priced in" mean? SpaceX IPO → what's an IPO and why do companies do it? Oil crash → how commodity prices flow through the entire economy.
 - If the news feed is genuinely thin on a given day, 2 strong stories beats 3 padded ones — but the bar to drop below 3 is high.
 
+${storyDedupBlock(recentDigests)}
+
 TODAY'S MOVER RULES:
 - The TOP MOVER below is the biggest absolute-% mover today from a curated list of kid-recognizable companies. Use IT — do not substitute a different stock.
 - Write a one-liner connecting the move to WHY it happened (search the news if needed). "Nike dropped 4% because they said fewer people are buying running shoes this quarter" — concrete, business-driven, never random.
@@ -170,6 +264,8 @@ ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none ye
 QUIZ:
 - Classic multiple choice tied to today's news or an investing concept.
 - The explanation must teach the concept, not just confirm the answer. End the explanation with a sentence that ties to one of the 11 principles.
+
+${quizDedupBlock(recentDigests)}
 
 WORD OF THE DAY:
 - One investing/financial term with a kid-friendly analogy. Tied to today's news when possible.
@@ -295,7 +391,7 @@ RULES ON OUTPUT:
  * public/games/sunday-challenge.js — it reads `sundayChallenge.type` and
  * dispatches to the right sub-renderer.
  */
-function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr) {
+function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — use web_search to identify the week\'s biggest mover from a kid-recognizable name.';
@@ -423,6 +519,8 @@ WEEKLY WRAP STORY RULES (CRITICAL — different from a daily digest):
 - Stories should reference the week's arc (e.g. "Nvidia kicked off the week at $135 and ended at $148 — here's why...") — not a single day in isolation.
 - Every "Why It Matters" connects the week's theme to one of the 11 principles.
 
+${storyDedupBlock(recentDigests)}
+
 TODAY'S MOVER (weekly edition):
 - Identify the WEEK'S BIGGEST mover from the curated kid-recognizable list using web search. The FMP data below shows Friday's single-day winner — that MAY or may not match the week's biggest mover. Use the week's winner.
 - Write a one-liner connecting the WEEK'S move to WHY it happened. End with a tiny nod to one of the 11 principles.
@@ -442,6 +540,8 @@ ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none ye
 QUIZ — WEEKLY REVIEW:
 - A multiple-choice question that draws on something from THIS WEEK's headlines. Example: "On Tuesday, [Company] reported earnings that crushed expectations. What does it mean when a stock is 'priced in'?"
 - The explanation teaches the concept and ends with a tie to one of the 11 principles.
+
+${quizDedupBlock(recentDigests)}
 
 WORD OF THE DAY — WEEKLY EDITION:
 - Pick a slightly more advanced investing term than a typical weekday — examples: "yield curve", "P/E ratio", "guidance", "free cash flow", "moat", "market cap", "consensus estimate".
@@ -790,7 +890,7 @@ RULES ON OUTPUT:
  * Forward-looking preview instead of a recap; stories highlight upcoming
  * earnings/events; word-of-day picks a forward-looking term.
  */
-function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr) {
+function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover from Friday — use the broader movers list or web search to pick a kid-recognizable name.';
@@ -833,6 +933,8 @@ WEEK-AHEAD STORY RULES (CRITICAL — different from a daily digest):
 - Second story badge label MUST be "ALSO COMING UP" — a secondary watch-item.
 - Every "Why It Matters" explains how the upcoming event could move markets and ties to a principle.
 
+${storyDedupBlock(recentDigests)}
+
 TODAY'S MOVER (week-ahead edition):
 - Use the curated FMP mover (${prevDayName}'s biggest curated mover) — it gives the scoreboard's gold card something concrete.
 - "change" is ${prevDayName}'s single-day change. "vibe" should reference "where we left off" — what to watch into the new week.
@@ -850,6 +952,8 @@ ${recentFacts.length ? recentFacts.map(f => `  - ${f}`).join('\n') : '  (none ye
 QUIZ:
 - Test general investing knowledge OR reference something from last week. Multiple choice, four options.
 - The explanation teaches the concept, ends with a tie to a principle.
+
+${quizDedupBlock(recentDigests)}
 
 WORD OF THE DAY — FORWARD-LOOKING:
 - Pick a forward-looking investing/business term. Strong fits: "earnings report", "forecast", "guidance", "consensus estimate", "economic indicator", "interest rate", "Fed", "FOMC", "yield", "outlook".
@@ -984,6 +1088,9 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   //                      from src/calendar.js; defaults to 'standard'.
   const recentWords = Array.isArray(opts.recentWords) ? opts.recentWords : [];
   const recentFacts = Array.isArray(opts.recentFacts) ? opts.recentFacts : [];
+  // recentDigests (string[] of recent standard-edition rows from
+  // digest-store.getRecentStories) drives the story + quiz dedup blocks.
+  const recentDigests = Array.isArray(opts.recentDigests) ? opts.recentDigests : [];
   const edition = opts.edition || { editionType: 'standard', reason: 'weekday' };
 
   // The dateStr is generated from real-now for production, or from the
@@ -1011,13 +1118,13 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   let prompt;
   switch (edition.editionType) {
     case 'weekly-wrap':
-      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr);
+      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests);
       break;
     case 'week-ahead':
-      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr);
+      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests);
       break;
     default:
-      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel);
+      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests);
   }
 
   console.log(`[AI] Building ${edition.editionType} prompt (reason=${edition.reason})`);

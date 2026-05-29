@@ -62,6 +62,41 @@ export function getTodaysDigest() {
 }
 
 /**
+ * Recent story history for the AI dedup prompt (mirrors the recentWords /
+ * recentFacts pattern, but for stories). Returns up to `lookbackDays` of
+ * STANDARD-edition digests strictly before `todayStr`, newest first.
+ *
+ * Weekly-wrap and week-ahead editions are excluded: they're recap/preview
+ * formats, so they shouldn't suppress a fresh standard-day story. Standard
+ * editions don't emit an `editionType` field (it's NULL), and
+ * `NULL IS DISTINCT FROM 'weekly-wrap'` is TRUE, so they pass the filter;
+ * weekly-wrap / week-ahead rows are filtered out.
+ *
+ * Each row exposes the fields the prompt builder needs: the stories array,
+ * the big-picture text, and the word/fact/quiz strings (for cross-checking).
+ */
+export async function getRecentStories(todayStr, lookbackDays = 5) {
+  const { rows } = await query(
+    `SELECT
+       digest_date,
+       content->'stories'                  AS stories,
+       content->'wordOfDay'->>'word'       AS word_of_day,
+       content->'didYouKnow'->>'fact'      AS did_you_know,
+       content->'quiz'->>'question'        AS quiz_question,
+       content->>'bigPicture'              AS big_picture
+     FROM daily_digests
+     WHERE digest_date < $1
+       AND digest_date >= ($1::date - $2 * INTERVAL '1 day')
+       AND content->>'editionType' IS DISTINCT FROM 'weekly-wrap'
+       AND content->>'editionType' IS DISTINCT FROM 'week-ahead'
+     ORDER BY digest_date DESC
+     LIMIT $2`,
+    [todayStr, lookbackDays]
+  );
+  return rows;
+}
+
+/**
  * Idempotent INSERT. Returns { inserted: true, row } on first call of
  * the day; { inserted: false, row } on every subsequent call (with the
  * existing row's content).
