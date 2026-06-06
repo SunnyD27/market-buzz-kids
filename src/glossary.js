@@ -32,17 +32,17 @@
 export const GLOSSARY = {
   // ─── The big three (always in the scoreboard) ───────────────────────────────
   'S&P 500': {
-    def: 'A scoreboard that tracks 500 of the biggest companies in America. When people ask "how did the market do today?", this is usually what they mean.',
+    def: 'A single number that combines 500 of the biggest companies in America to show how they\'re doing as a group. When the number goes up, the stock prices of most of those companies went up that day; when it goes down, their prices went down. People look at it to answer one question: "did American companies do well today?"',
     principle: 5,
     aliases: ['S&P', 'SP500', 'S and P 500'],
   },
   'Nasdaq': {
-    def: 'A scoreboard packed with tech companies like Apple and Nvidia. It tends to bounce around more than the other scoreboards.',
+    def: 'A single number that combines mostly technology companies, like Apple, Microsoft, and Nvidia, to show how they\'re doing as a group. When the number goes up, the stock prices of most of those companies went up that day; when it goes down, their prices went down. People look at it to answer one question: "did tech companies do well today?"',
     principle: 4,
     aliases: ['Nasdaq Composite'],
   },
   'Dow Jones': {
-    def: 'The oldest market scoreboard. It follows just 30 huge, famous companies, so it gives a quick snapshot rather than the whole picture.',
+    def: 'A single number that combines 30 large, famous American companies to show how they\'re doing as a group. When the number goes up, the stock prices of most of those companies went up that day; when it goes down, their prices went down. People look at it to answer one question: "did big-name companies do well today?"',
     principle: 6,
     aliases: ['Dow', 'Dow Jones Industrial Average', 'DJIA'],
   },

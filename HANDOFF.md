@@ -858,3 +858,9 @@ where they show up in a sentence; the tiles were left plain in PR #29.)
   Enter/Space open, Escape closes, `role=button`/`tabindex=0`/`aria-controls`→
   `role=region`, aria-expanded synced. Screenshot of the open S&P 500 tile taken.
 - Everything here was verified live; no code-review-only gaps this session.
+
+---
+
+## Session: Big-three glossary defs reworded
+
+Reworded the `def` strings for the three scoreboard indices (`S&P 500`, `Nasdaq`, `Dow Jones`) in `src/glossary.js` for clarity — "a single number that combines N companies… did they do well today?" framing. Content-only; keys/`principle`/`aliases`/helpers untouched. Seed terms, so they ship via deploy (not the live approved-term path). `node --check` + lookups + `scripts/test-glossary.js` (56 assertions) green; `/sample` tile drawers render the new wording without layout breakage.
