@@ -864,3 +864,44 @@ where they show up in a sentence; the tiles were left plain in PR #29.)
 ## Session: Big-three glossary defs reworded
 
 Reworded the `def` strings for the three scoreboard indices (`S&P 500`, `Nasdaq`, `Dow Jones`) in `src/glossary.js` for clarity — "a single number that combines N companies… did they do well today?" framing. Content-only; keys/`principle`/`aliases`/helpers untouched. Seed terms, so they ship via deploy (not the live approved-term path). `node --check` + lookups + `scripts/test-glossary.js` (56 assertions) green; `/sample` tile drawers render the new wording without layout breakage.
+
+---
+
+## Session: Match game — fix name-leaks, add guardrail, +20 companies
+
+The Match game (`public/games/match.js`) shows company names on the left and
+`shortModel` business-model clues on the right; the kid pairs them by reasoning.
+**Bug:** some clues repeated the company's own name, so the kid could match by
+spotting the word instead of thinking.
+
+- **`public/data/company-models.json`** — reworded **14** leaking `shortModel`s
+  (the 13 named in the task + **Meta**, which the guardrail caught: its display
+  name's parenthetical products "Instagram & Facebook" appeared verbatim in the
+  clue — the same leak class). Each reworded clue keeps the reasoning challenge
+  (describes the money-making mechanism) but drops the name and any significant
+  name-word. Only `shortModel` touched; `name`/`surprise` left alone (the
+  `surprise` reveal is shown after answering, so the name there is fine).
+- **Added 20 new companies** (37 → **57**): Sony, Mattel, Hasbro, Funko, Crocs,
+  Lululemon, e.l.f. Beauty, Chewy, PepsiCo, Mondelez, Hershey, Roku, Snap,
+  Reddit, Duolingo, Planet Fitness, Garmin, GoPro, Warby Parker, Carvana —
+  varied industries, kid-recognizable, each with a non-obvious "how do they make
+  money?" reveal. Every new `shortModel` follows the anti-leak rule from the
+  start (passes the guardrail with no rewrites); same schema/reading-level/length
+  as existing entries.
+- **`scripts/test-company-models.js`** (new) — guardrail: scans all 57 entries,
+  fails on any `shortModel` that leaks its own name. Name-word extraction strips
+  corporate suffixes, splits on whitespace/hyphen, KEEPS brand + parenthetical
+  words, and is possessive-aware (drops `'s` so "Costco's"/"Disney's" reduce to
+  the stem). Matching uses a normalized whole-word TOKEN SET (not naive
+  substring), so it catches "McDonald's collects rent" but never false-matches a
+  stem like "ea" inside "team". On a hit it prints entry + offending word + full
+  clue; inline `ALLOWLIST` (starts empty) absorbs common-word coincidences
+  (e.g. a future clue using "snap" the verb).
+
+**Verified:** JSON parses; `node --check`; the guardrail passes across all 57 and
+is non-vacuous (confirmed it flags reconstructed McDonald's/Costco/Coca-Cola/
+Meta leaks); existing `test-games.js` + `test-glossary.js` still pass; live in
+`games-preview.html?game=match` a round drew Meta/Salesforce/PepsiCo/Planet
+Fitness (two new entries + fixed Meta) with no company name in any right-side
+clue — screenshot taken. Ships via deploy (static dataset), not the live
+approved-term path.

@@ -3,7 +3,7 @@
     "ticker": "GOOGL",
     "name": "Google",
     "emoji": "🔎",
-    "shortModel": "Makes most of its money showing ads — mostly on Google Search and YouTube.",
+    "shortModel": "Makes almost all its money showing ads — mostly on its search engine and on YouTube.",
     "surprise": "Google ads bring in over $200 billion a year. The 'free' search isn't free — advertisers pay every time someone clicks.",
     "principle": 4,
     "confidence": "high"
@@ -12,7 +12,7 @@
     "ticker": "META",
     "name": "Meta (Instagram & Facebook)",
     "emoji": "📱",
-    "shortModel": "Nearly all of its money comes from ads in Instagram and Facebook feeds.",
+    "shortModel": "Nearly all of its money comes from ads slipped into the feeds of its photo-sharing and social apps.",
     "surprise": "About 98% of Meta's revenue is advertising. You are not the customer — advertisers are.",
     "principle": 4,
     "confidence": "high"
@@ -93,7 +93,7 @@
     "ticker": "KO",
     "name": "Coca-Cola",
     "emoji": "🥤",
-    "shortModel": "Sells concentrated syrup to bottling companies — Coca-Cola the company doesn't actually deliver soda to stores.",
+    "shortModel": "Sells concentrated syrup to bottling companies — the company itself mostly doesn't deliver the drinks to stores.",
     "surprise": "The famous red truck? That's a bottler, not Coke itself. Coca-Cola the company is mainly a giant syrup supplier.",
     "principle": 4,
     "confidence": "high"
@@ -102,7 +102,7 @@
     "ticker": "MCD",
     "name": "McDonald's",
     "emoji": "🍔",
-    "shortModel": "Most McDonald's are owned by franchisees — McDonald's collects rent and royalties from them.",
+    "shortModel": "Most locations are owned by franchisees — the company collects rent and royalties from them.",
     "surprise": "McDonald's is basically a giant real-estate company. They own the land and buildings and rent them to franchisees.",
     "principle": 4,
     "confidence": "high"
@@ -120,7 +120,7 @@
     "ticker": "CMG",
     "name": "Chipotle",
     "emoji": "🌯",
-    "shortModel": "Sells burritos and bowls at company-owned restaurants — Chipotle doesn't franchise.",
+    "shortModel": "Sells burritos and bowls at restaurants the company owns itself — none are franchised.",
     "surprise": "Every single Chipotle in the world is owned by Chipotle the company. No franchisees.",
     "principle": 4,
     "confidence": "high"
@@ -129,7 +129,7 @@
     "ticker": "DPZ",
     "name": "Domino's Pizza",
     "emoji": "🍕",
-    "shortModel": "Most stores are franchised — Domino's the company makes money from royalties plus selling dough and supplies to franchisees.",
+    "shortModel": "Most stores are run by franchisees — the company earns royalties and also sells them dough and supplies.",
     "surprise": "Domino's also runs a huge dough-making and supply business, selling ingredients to its own franchisees.",
     "principle": 4,
     "confidence": "high"
@@ -147,7 +147,7 @@
     "ticker": "UBER",
     "name": "Uber",
     "emoji": "🚙",
-    "shortModel": "Takes a cut of every ride and every Uber Eats food delivery — it doesn't own the cars.",
+    "shortModel": "Takes a cut of every ride and every food-delivery order booked through its app — it doesn't own the cars.",
     "surprise": "Uber doesn't own a single car. Drivers own them. Uber just runs the app that connects riders to drivers.",
     "principle": 4,
     "confidence": "high"
@@ -156,7 +156,7 @@
     "ticker": "ABNB",
     "name": "Airbnb",
     "emoji": "🏠",
-    "shortModel": "Takes a service fee on every booking — Airbnb doesn't own any of the houses.",
+    "shortModel": "Takes a service fee on every booking — it doesn't own any of the homes people stay in.",
     "surprise": "Airbnb owns zero properties. They just run the marketplace and take a cut from both the host and the guest.",
     "principle": 4,
     "confidence": "high"
@@ -174,7 +174,7 @@
     "ticker": "RBLX",
     "name": "Roblox",
     "emoji": "🎮",
-    "shortModel": "Roblox takes a cut every time someone buys Robux to spend in games other kids made.",
+    "shortModel": "Takes a cut every time someone buys the in-game currency that players spend on games other kids built.",
     "surprise": "Roblox itself doesn't make most of the games. Kid developers do — and Roblox keeps a big slice of every purchase.",
     "principle": 4,
     "confidence": "high"
@@ -183,7 +183,7 @@
     "ticker": "EA",
     "name": "EA Sports",
     "emoji": "🏈",
-    "shortModel": "Sells sports games like Madden, FIFA (EA Sports FC), and NHL — plus in-game purchases for Ultimate Team.",
+    "shortModel": "Sells yearly football, soccer, and hockey video games — and earns even more from in-game card packs you buy to build your team.",
     "surprise": "EA makes more money from Ultimate Team card packs than from selling the games themselves.",
     "principle": 4,
     "confidence": "high"
@@ -210,7 +210,7 @@
     "ticker": "DIS",
     "name": "Disney",
     "emoji": "🏰",
-    "shortModel": "Theme parks, cruises, and resort tickets are now Disney's largest profit source — bigger than movies.",
+    "shortModel": "Theme parks, cruises, and resort tickets are now its biggest profit source — bigger than movies.",
     "surprise": "When a hit Disney movie comes out, it really pays off years later: as a parks ride, merch, and a Disney+ show.",
     "principle": 4,
     "confidence": "high"
@@ -228,7 +228,7 @@
     "ticker": "COST",
     "name": "Costco",
     "emoji": "🛒",
-    "shortModel": "Most of Costco's profit comes from membership fees — not from the markup on items it sells.",
+    "shortModel": "Most of the profit comes from membership fees, not the markup on the items it sells.",
     "surprise": "Costco sells stuff at almost zero markup. The annual membership fee is the real moneymaker.",
     "principle": 4,
     "confidence": "high"
@@ -246,7 +246,7 @@
     "ticker": "SHOP",
     "name": "Shopify",
     "emoji": "🛍️",
-    "shortModel": "Monthly subscriptions to small businesses to run their online stores — plus a cut of payments processed through Shopify.",
+    "shortModel": "Charges small businesses a monthly subscription to run their online stores — plus a cut of the payments those stores process.",
     "surprise": "Lots of brands you see on Instagram and TikTok ads are actually running on Shopify behind the scenes.",
     "principle": 4,
     "confidence": "high"
@@ -255,7 +255,7 @@
     "ticker": "PYPL",
     "name": "PayPal",
     "emoji": "💸",
-    "shortModel": "Takes a small fee on each payment processed through PayPal or Venmo.",
+    "shortModel": "Takes a small fee on each payment processed through its app or its money-sending service to friends.",
     "surprise": "PayPal owns Venmo. The 'free' Venmo payments to friends are free — but PayPal makes money from businesses that accept Venmo.",
     "principle": 4,
     "confidence": "high"
@@ -329,6 +329,186 @@
     "emoji": "🎤",
     "shortModel": "Concert tickets (it owns Ticketmaster) plus sponsorships and concession sales at venues.",
     "surprise": "Live Nation owns Ticketmaster — that's why those service fees on concert tickets feel so big.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "SONY",
+    "name": "Sony",
+    "emoji": "🕹️",
+    "shortModel": "Earns from a popular game console and a cut of the games sold on it — and quietly makes the camera sensors inside most smartphones.",
+    "surprise": "Sony makes the image sensors in the cameras of most iPhones and Android phones — so it earns money even when you buy a rival's phone.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "MAT",
+    "name": "Mattel",
+    "emoji": "🧸",
+    "shortModel": "Sells toys like dolls and toy cars — and licenses those characters out for movies, clothes, and theme parks.",
+    "surprise": "Mattel owns Barbie and Hot Wheels. The Barbie movie earned it a fortune in licensing without Mattel having to film it.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "HAS",
+    "name": "Hasbro",
+    "emoji": "🎲",
+    "shortModel": "Sells board games, foam dart blasters, and action figures — but a fantasy trading-card game quietly earns the most.",
+    "surprise": "Hasbro owns Magic: The Gathering and Dungeons & Dragons. Those card and tabletop games out-earn many of its classic toys.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "FNKO",
+    "name": "Funko",
+    "emoji": "🦸",
+    "shortModel": "Pays for licenses to make collectible figures of famous characters from movies, games, and sports.",
+    "surprise": "Funko owns almost none of its characters — it rents the rights to nearly every figure it makes, from superheroes to cartoon stars.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "CROX",
+    "name": "Crocs",
+    "emoji": "🐊",
+    "shortModel": "Sells comfy foam clogs — plus the little snap-in charms people buy to decorate them.",
+    "surprise": "Crocs were once mocked as the world's ugliest shoe. The clip-on charms (Jibbitz) became a billion-dollar business of their own.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "LULU",
+    "name": "Lululemon",
+    "emoji": "🧘",
+    "shortModel": "Sells premium workout clothes mostly through its own stores and app, skipping outside retailers — and rarely puts them on sale.",
+    "surprise": "Lululemon's stretchy leggings often cost $100+ and almost never go on sale. Keeping prices high is the whole strategy.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "ELF",
+    "name": "e.l.f. Beauty",
+    "emoji": "💄",
+    "shortModel": "Sells low-price makeup that mimics pricey brands, pushed hard through short videos and social media.",
+    "surprise": "e.l.f. became a teen favorite by selling $6 versions of $30 makeup and going viral on TikTok.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "CHWY",
+    "name": "Chewy",
+    "emoji": "🐾",
+    "shortModel": "Ships pet food and supplies to your door, often on an automatic repeat-order subscription.",
+    "surprise": "Chewy mails handwritten cards, pet portraits, and even flowers when a pet dies — small touches that keep customers for years.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "PEP",
+    "name": "PepsiCo",
+    "emoji": "🥨",
+    "shortModel": "Sells soft drinks — but its chips and other salty snacks quietly earn even more profit than the sodas.",
+    "surprise": "PepsiCo owns Doritos, Cheetos, Lay's, and Gatorade. Its snack business earns more profit than its famous sodas.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "MDLZ",
+    "name": "Mondelez",
+    "emoji": "🍪",
+    "shortModel": "Owns famous cookie, cracker, and candy brands and sells them to grocery stores all over the world.",
+    "surprise": "Mondelez is the company behind Oreo. It sells tens of billions of Oreo cookies every year.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "HSY",
+    "name": "Hershey",
+    "emoji": "🍫",
+    "shortModel": "Makes and sells chocolate bars and candy to stores everywhere; Halloween is its single biggest season.",
+    "surprise": "Hershey is controlled by a charity that funds a school for kids in need — so buying its chocolate helps pay for that.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "ROKU",
+    "name": "Roku",
+    "emoji": "📺",
+    "shortModel": "Sells cheap streaming sticks at almost no profit — then earns from ads and a slice of the subscriptions people sign up for.",
+    "surprise": "Roku makes more money from ads and subscription referrals than from the streaming devices it sells.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "SNAP",
+    "name": "Snap",
+    "emoji": "👻",
+    "shortModel": "Almost all its money comes from ads slipped between disappearing photo and video messages.",
+    "surprise": "Snapchat is free to use. Snap earns by selling ads and sponsored AR filters to brands.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "RDDT",
+    "name": "Reddit",
+    "emoji": "🧵",
+    "shortModel": "Runs huge topic-based discussion boards, sells ads on them, and now licenses its piles of conversations to train AI.",
+    "surprise": "Reddit now charges AI companies to use its years of human conversations as training data — a brand-new income stream.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "DUOL",
+    "name": "Duolingo",
+    "emoji": "🦉",
+    "shortModel": "A free language-learning app that earns from ads plus a paid plan that removes them and unlocks extras.",
+    "surprise": "Duolingo's owl mascot nags you with notifications to protect your streak. Those streaks are what nudge people into paying.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "PLNT",
+    "name": "Planet Fitness",
+    "emoji": "🏋️",
+    "shortModel": "Charges very cheap monthly gym memberships and profits because most members rarely show up.",
+    "surprise": "Planet Fitness signs up far more members than its gyms could ever hold at once. The business counts on people not coming in.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "GRMN",
+    "name": "Garmin",
+    "emoji": "🧭",
+    "shortModel": "Sells GPS watches and gadgets for runners, hikers, pilots, divers, and drivers — hardware you buy once, not a subscription.",
+    "surprise": "Garmin started with car GPS units. When phones killed that, it pivoted to pricey sport and aviation devices and thrived.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "GPRO",
+    "name": "GoPro",
+    "emoji": "📷",
+    "shortModel": "Sells rugged little action cameras — and a cloud subscription that backs up and auto-edits your clips.",
+    "surprise": "GoPro now pushes a subscription because selling cameras alone is up-and-down. Recurring fees are steadier money.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "WRBY",
+    "name": "Warby Parker",
+    "emoji": "👓",
+    "shortModel": "Sells affordable eyeglasses online and in its own shops, cutting out the traditional eyewear middlemen.",
+    "surprise": "Warby Parker started by mailing five frames to try at home for free — undercutting brands that mark glasses up enormously.",
+    "principle": 4,
+    "confidence": "high"
+  },
+  {
+    "ticker": "CVNA",
+    "name": "Carvana",
+    "emoji": "🚘",
+    "shortModel": "Sells used cars entirely online and delivers them — sometimes from giant coin-operated car 'vending machine' towers.",
+    "surprise": "Carvana skips traditional dealerships and even drops your used car from a multi-story glass vending-machine tower.",
     "principle": 4,
     "confidence": "high"
   }
