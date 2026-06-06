@@ -160,7 +160,7 @@ Parent-facing flows dedup by email: the morning teaser sends **one email per par
 | `games/*.js` | 5 game modules (quiz is inline in the template). |
 | `games/daily-challenge.js` | Picker UI + 8-day rotation. **Rotation logic is duplicated in `src/games.js` — keep both in sync.** |
 | `games/sunday-challenge.js` | Sunday Challenge renderer. Single entry point (`window.MJGames.sundayChallenge.render`) dispatches to 4 sub-renderers (trading-floor, ceo, investathon, dilemma) based on `data.type`. Reads `sundayChallenge` from the digest JSON, calls `MarketJuice.recordEvent('sunday-challenge-completed', {type, digestDate, bonus})` on completion. Replay-safe via `mj-sunday-challenge-<date>` localStorage flag. |
-| `data/company-models.json` | 37 companies for Match + Price-is-Right. |
+| `data/company-models.json` | 57 companies for Match + Price-is-Right. Each `shortModel` (the clue the kid matches to a name) must NOT contain the company's own name or any significant name-word — that would let the kid match by spotting the word instead of reasoning. Enforced by `scripts/test-company-models.js`. |
 | `data/time-machine-prices.json` | 7 verified Time Machine scenarios. |
 | `data/historical-charts.json` | 10 verified Bull-or-Bear scenarios. |
 | `data/sample-digest.json` | Static curated sample. Served by `/sample`. Edit manually to refresh. |
@@ -177,6 +177,7 @@ Parent-facing flows dedup by email: the morning teaser sends **one email per par
 | `inspect-db.js` | Print recent rows across all tables. |
 | `test-games.js` | Hydrate daily-challenge games standalone. Flags: `--ai`, `--fmp`, `--date YYYY-MM-DD`. |
 | `test-glossary.js` | Glossary smoke test (pure/offline, no DB/secrets). Covers longest-first matching, first-occurrence-only, alias resolution, word-of-day self-skip, principle tie-in, tag/markup safety, the kill-switch, the seed+approved merge, and `filterGlossaryNominations`. |
+| `test-company-models.js` | Match-game guardrail (pure/offline). Scans every `company-models.json` entry and fails if a `shortModel` leaks the company's own name or a significant name-word (possessive- and parenthetical-aware, word-boundary token match, not naive substring). Prints the entry + offending word + clue on failure; has an inline `ALLOWLIST` (starts empty) for common-word coincidences. |
 
 ### Ephemeral state (gitignored)
 
@@ -544,7 +545,7 @@ No auth gate, by design. Signup is for 7 AM email delivery, not access control. 
 - **`/generate` admin endpoint times out.** Takes ~60s, hits Railway's 30s proxy timeout. Browser sees `ERR_CONNECTION_RESET` but server completes. Fix: refactor to 202 + fire-async.
 - **`ADMIN_KEY` unset = open endpoint.** `undefined !== undefined` evaluates to `false`, so the guard passes. Always set `ADMIN_KEY` in production.
 - **No retries.** If FMP or Anthropic is down at 7 AM, the digest skips. Add retry logic (7:00, 7:15, 7:30) before scaling.
-- **Game datasets are small.** 10 bull-bear + 7 time-machine + 37 company-models scenarios. Kids on 2-week streaks see repeats. Expand pools before growth push.
+- **Game datasets are small.** 10 bull-bear + 7 time-machine + 57 company-models scenarios. Kids on 2-week streaks see repeats. Expand pools before growth push.
 - **Content rotation ephemeral.** `state/content-history.json` resets on Railway restart. Move to Postgres when deploy frequency increases.
 - **`/health` lastGenerated is in-memory.** Resets on restart. Cosmetic — digest file is still served.
 
