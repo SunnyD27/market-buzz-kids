@@ -3,6 +3,127 @@
 // replaces Coming Up. Engagement systems (XP, ranks, streaks, games) come in
 // later phases.
 
+import { getActiveGlossary } from './glossary-runtime.js';
+
+// Short principle labels for the glossary tooltip's "Ties to:" tie-in line.
+// Server-side mirror of public/games/shared.js PRINCIPLES, trimmed to fit the
+// small tip card. Indexed 1-11 to match glossary.js entry.principle.
+const GLOSS_PRINCIPLES = {
+  1: 'Pay yourself first',
+  2: 'Make your money work for you',
+  3: 'Spend less than you earn',
+  4: 'Understand what you own',
+  5: "Don't put all your eggs in one basket",
+  6: 'Be patient — think in years, not days',
+  7: "Control your emotions",
+  8: 'Think like an owner, not a gambler',
+  9: 'Stay consistent',
+  10: 'Know the difference between price and value',
+  11: 'Make money while you sleep',
+};
+
+/**
+ * Build a per-digest glossary linker (tap-to-reveal tooltips).
+ *
+ * Returns { link(rawText, opts) } that wraps the FIRST occurrence — across the
+ * WHOLE digest, since the seen-set is shared — of each known glossary term in a
+ * tappable tooltip, and escapes everything else. Later occurrences of an
+ * already-linked term stay plain (escaped) text, so a term is defined once, the
+ * first time the kid could meet it.
+ *
+ * Why it's built this way:
+ *  - We run the matcher on the RAW field text (pre-escape), not on rendered
+ *    HTML. Every field we link (bigPicture, story bodies, the DYK fact, the
+ *    word-of-day definition, …) is plain text the template would otherwise pass
+ *    through escapeHTML(). Matching the raw text and escaping INSIDE the linker
+ *    avoids two traps at once: (a) we never match across the `&amp;`/`&lt;`
+ *    entity boundaries escaping introduces (so "S&P 500" matches cleanly), and
+ *    (b) with glossary OFF, link() === escapeHTML(), so output is byte-identical
+ *    to the pre-feature template.
+ *  - "Never match inside a tag/attribute" is satisfied BY CONSTRUCTION here:
+ *    because we link the raw field (which is plain prose) and escape everything
+ *    that isn't a matched term, the only markup in the output is the gloss
+ *    spans WE emit — there are no live tags to corrupt. We deliberately do NOT
+ *    pass `<…>` spans through untouched (the obvious "split on tags" approach):
+ *    on raw input that would emit attacker-influenced angle brackets unescaped
+ *    and undo the XSS protection escapeHTML gives us. Any literal "<" in a
+ *    field is escaped to "&lt;" exactly as the pre-feature template did.
+ *  - Matching uses the active view's MATCHABLE_TERMS (longest-first) so
+ *    "bull market" beats "bull" and "S&P 500" beats "S&P". Boundaries treat
+ *    [A-Za-z0-9] as word chars via lookbehind/lookahead, so "fed" doesn't fire
+ *    inside "federal" and the literal "&"/"-"/space inside multiword terms work.
+ *  - The term source is the merged seed + approved-DB view (glossary-runtime),
+ *    cached per process — so approved nominations grow the glossary live.
+ */
+export function makeGlossaryLinker(view, { enabled = true } = {}) {
+  const seen = new Set(); // canonical (lowercased) terms already linked this digest
+  const terms = (view && view.MATCHABLE_TERMS) || [];
+
+  const re = terms.length
+    ? new RegExp(
+        `(?<![A-Za-z0-9])(?:${terms.map(escapeRegExp).join('|')})(?![A-Za-z0-9])`,
+        'gi',
+      )
+    : null;
+
+  function renderGloss(visibleText, entry) {
+    const principleLine = entry.principle
+      ? `Ties to: ${GLOSS_PRINCIPLES[entry.principle] || ''}`
+      : '';
+    const newClass = entry.isNew ? ' is-new' : '';
+    return (
+      `<span class="gloss${newClass}" tabindex="0" role="button" aria-expanded="false">` +
+      escapeHTML(visibleText) +
+      `<span class="tip" role="tooltip">` +
+      `<span class="tip-term">${escapeHTML(entry.term)}</span>` +
+      escapeHTML(entry.def || '') +
+      (principleLine ? `<span class="tip-principle">${escapeHTML(principleLine)}</span>` : '') +
+      `</span>` +
+      `</span>`
+    );
+  }
+
+  function linkSegment(text, skipLower) {
+    if (!re) return escapeHTML(text);
+    let out = '';
+    let last = 0;
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(text)) !== null) {
+      const matchText = m[0];
+      const entry = view.lookup(matchText);
+      if (!entry) continue;
+      const canonLower = entry.term.toLowerCase();
+      // Already defined earlier in the digest, or the word-of-day self-skip →
+      // leave it plain. We don't advance `last`, so the match text falls into
+      // the next escaped slice untouched.
+      if (seen.has(canonLower) || (skipLower && canonLower === skipLower)) continue;
+      seen.add(canonLower);
+      out += escapeHTML(text.slice(last, m.index));
+      out += renderGloss(matchText, entry);
+      last = m.index + matchText.length;
+    }
+    out += escapeHTML(text.slice(last));
+    return out;
+  }
+
+  function link(rawText, opts = {}) {
+    const s = String(rawText == null ? '' : rawText);
+    if (!enabled || !re) return escapeHTML(s);
+    const skipLower = opts.skipTerm ? String(opts.skipTerm).toLowerCase() : null;
+    // Single pass over the raw prose: matched terms become gloss spans, every
+    // other character (incl. any literal "<", ">", "&") is HTML-escaped. No raw
+    // passthrough → no way to corrupt or inject a tag.
+    return linkSegment(s, skipLower);
+  }
+
+  return { link };
+}
+
+function escapeRegExp(s) {
+  return String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
 /**
  * Build the daily digest HTML.
  *
@@ -39,6 +160,38 @@ export function buildHTML(content, opts = {}) {
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
 
+  // ── Glossary tap-to-reveal (first-occurrence-per-digest) ───────────────
+  // Wrap the FIRST mention of each known term, ONCE across the whole digest,
+  // walking sections in teaching order: big picture → scoreboard → stories →
+  // did-you-know → word-of-day. (The quiz/Daily Challenge is client-rendered
+  // from a JSON bundle, not server HTML, so it's outside this pass.) Within
+  // the scoreboard region we link the prose — the vibe-bar summary and the
+  // "why the mover moved" callout — but leave the tiny per-index card blurbs
+  // plain so a tooltip can't overflow a 14px card.
+  //
+  // The call ORDER below IS the first-occurrence priority. Default ON; gated
+  // off via opts.glossary === false. Appears on /digest AND /sample (harmless
+  // on sample, and it helps the funnel) — unlike the sample-suppressed
+  // 💬 ask-parent buttons.
+  const glossaryOn = opts.glossary !== false;
+  const _linker = makeGlossaryLinker(getActiveGlossary(), { enabled: glossaryOn });
+  const lk = {
+    bigPicture: _linker.link(bigPicture),
+    vibeSummary: _linker.link(vibeSummary),
+    topMoverVibe: scoreboard.topMover?.vibe ? _linker.link(scoreboard.topMover.vibe) : '',
+    stories: (stories || []).map(s => ({
+      title: _linker.link(s.title),
+      body: _linker.link(s.body),
+      whyItMatters: _linker.link(s.whyItMatters),
+    })),
+    dykFact: _linker.link(didYouKnow?.fact || ''),
+    dykConnection: didYouKnow?.connection ? _linker.link(didYouKnow.connection) : '',
+    // Skip the word-of-day's own word inside its own definition card — that's
+    // circular. (It can still be tooltipped earlier in the digest if it appears
+    // there first.)
+    wordDef: _linker.link(wordOfDay.definition, { skipTerm: wordOfDay.word }),
+  };
+
   // Phase 12 — "Ask my parent" buttons. One-tap flag per section (no
   // free-text from kids — COPPA). Hidden on /sample since unauthenticated
   // visitors have no parent email to deliver to. `section` is the dedup
@@ -67,10 +220,10 @@ export function buildHTML(content, opts = {}) {
   const storiesHTML = stories.map((story, i) => `
     <div class="story-card" style="animation-delay: ${0.15 + i * 0.1}s">
       <span class="badge ${badgeClasses[story.badge] || 'new'}">${badgeEmojis[story.badge] || '📰'} ${escapeHTML(story.badgeLabel)}</span>
-      <h3>${escapeHTML(story.title)}</h3>
-      <p>${escapeHTML(story.body)}</p>
+      <h3>${lk.stories[i]?.title ?? escapeHTML(story.title)}</h3>
+      <p>${lk.stories[i]?.body ?? escapeHTML(story.body)}</p>
       <div class="why-it-matters">
-        <strong>💡 Why it matters:</strong> ${escapeHTML(story.whyItMatters)}
+        <strong>💡 Why it matters:</strong> ${lk.stories[i]?.whyItMatters ?? escapeHTML(story.whyItMatters)}
       </div>
       ${askParentBtn(`story-${i}`, story.title)}
     </div>
@@ -216,7 +369,7 @@ export function buildHTML(content, opts = {}) {
   const topMoverWhyHTML = scoreboard.topMover?.vibe
     ? `
       <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
-        ⭐ <strong style="color: var(--yellow);">Why ${escapeHTML(scoreboard.topMover.name)} moved:</strong> ${escapeHTML(scoreboard.topMover.vibe)}
+        ⭐ <strong style="color: var(--yellow);">Why ${escapeHTML(scoreboard.topMover.name)} moved:</strong> ${lk.topMoverVibe}
       </p>`
     : '';
 
@@ -349,6 +502,71 @@ export function buildHTML(content, opts = {}) {
   .word-card .the-word { font-size: 28px; font-weight: 700; color: var(--yellow); margin-bottom: 4px; }
   .word-card .word-type { font-size: 12px; color: var(--text-dim); font-style: italic; margin-bottom: 10px; }
   .word-card .word-def { font-size: 15px; color: var(--text); line-height: 1.55; max-width: 500px; margin: 0 auto; }
+  /* ── Glossary tap-to-reveal ───────────────────────────────────────────
+     Visual treatment locked in glossary-demo.html: dotted citrus-orange
+     underline on the term; a dark tooltip card with a citrus-yellow term
+     label, the definition, and an optional principle tie-in under a hairline
+     divider; an optional NEW superscript for freshly auto-grown terms. Colors
+     are the demo's exact juice palette. One adaptation for the dark digest:
+     the tip carries a hairline border + stronger shadow so the near-black card
+     separates from the near-black page background. */
+  .gloss {
+    position: relative;
+    cursor: pointer;
+    color: var(--text-bright);
+    font-weight: 500;
+    text-decoration: underline;
+    text-decoration-style: dotted;
+    text-decoration-color: #FF7A1A;
+    text-underline-offset: 3px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .gloss:focus-visible {
+    outline: 2px solid #FFC23C;
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+  .gloss.is-new::after {
+    content: "NEW";
+    font-family: 'Space Mono', monospace;
+    font-size: 8px; vertical-align: super;
+    color: var(--green); margin-left: 2px; letter-spacing: 0.5px;
+  }
+  .gloss .tip {
+    position: absolute;
+    left: 50%; bottom: calc(100% + 10px);
+    transform: translateX(-50%) translateY(6px) scale(0.96);
+    width: min(260px, 78vw);
+    background: #1C1A17; color: #FFF8EE;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; padding: 12px 14px;
+    font-size: 13.5px; line-height: 1.5; font-weight: 400;
+    font-family: 'Fredoka', sans-serif;
+    text-align: left; text-decoration: none;
+    opacity: 0; pointer-events: none;
+    transition: opacity .16s ease, transform .16s ease;
+    z-index: 30;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.55);
+  }
+  .gloss .tip::after {
+    content: ""; position: absolute; top: 100%; left: 50%;
+    transform: translateX(-50%);
+    border: 7px solid transparent; border-top-color: #1C1A17;
+  }
+  .gloss .tip .tip-term {
+    font-family: 'Space Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: #FFC23C; display: block; margin-bottom: 4px;
+  }
+  .gloss .tip .tip-principle {
+    display: block; margin-top: 8px; padding-top: 8px;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    font-size: 11.5px; color: #C9BFB0;
+  }
+  .gloss.open .tip {
+    opacity: 1; pointer-events: auto;
+    transform: translateX(-50%) translateY(0) scale(1);
+  }
   .vibe-bar { margin-top: 16px; text-align: center; background: linear-gradient(135deg, rgba(63,185,80,0.06), rgba(88,166,255,0.06)); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; animation: fadeIn 0.5s ease-out both; }
   .big-picture { margin-top: 16px; background: linear-gradient(135deg, rgba(88,166,255,0.12), rgba(88,166,255,0.03)); border: 1px solid rgba(88,166,255,0.25); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
   .big-picture .bp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
@@ -790,7 +1008,7 @@ export function buildHTML(content, opts = {}) {
 
   <div class="vibe-bar">
     <p style="font-size: 16px; font-weight: 500; color: var(--text-bright);">
-      ${vibeCircle} <strong>${marketVibe === 'green' ? 'Green day!' : marketVibe === 'red' ? 'Red day.' : 'Mixed day.'}</strong> ${escapeHTML(vibeSummary)}
+      ${vibeCircle} <strong>${marketVibe === 'green' ? 'Green day!' : marketVibe === 'red' ? 'Red day.' : 'Mixed day.'}</strong> ${lk.vibeSummary}
     </p>
     ${topMoverWhyHTML}
   </div>
@@ -800,7 +1018,7 @@ export function buildHTML(content, opts = {}) {
       <span class="emoji">🌎</span>
       <h3>The Big Picture</h3>
     </div>
-    <p>${escapeHTML(bigPicture)}</p>
+    <p>${lk.bigPicture}</p>
     ${askParentBtn('big-picture', "Today's Big Picture")}
   </div>
 
@@ -826,8 +1044,8 @@ export function buildHTML(content, opts = {}) {
 
   <div class="dyk-card">
     <div class="dyk-label">🧠 ${escapeHTML(didYouKnow?.category || 'mind-blowing numbers')}</div>
-    <div class="dyk-fact">${escapeHTML(didYouKnow?.fact || '')}</div>
-    ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${escapeHTML(didYouKnow.connection)}</div>` : ''}
+    <div class="dyk-fact">${lk.dykFact}</div>
+    ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${lk.dykConnection}</div>` : ''}
     ${askParentBtn('did-you-know', `Did You Know: ${didYouKnow?.category || 'today’s fact'}`)}
   </div>
 
@@ -846,7 +1064,7 @@ export function buildHTML(content, opts = {}) {
     <div class="the-word">${escapeHTML(wordOfDay.word)}</div>
     <div class="word-type">${escapeHTML(wordOfDay.type)} · ${escapeHTML(wordOfDay.context)}</div>
     <button type="button" class="word-reveal-btn" id="wordRevealBtn" onclick="revealWord()">Tap to reveal definition</button>
-    <div class="word-def word-def-hidden" id="wordDef">${escapeHTML(wordOfDay.definition)}</div>
+    <div class="word-def word-def-hidden" id="wordDef">${lk.wordDef}</div>
     ${askParentBtn('word-of-day', `Word of the Day: ${wordOfDay.word}`)}
   </div>
 
@@ -896,6 +1114,39 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
       });
     }
   }
+
+  // ---- Glossary tap-to-reveal ----
+  // Tap/click toggles a term's tip; only one open at a time; tap-outside
+  // closes. Keyboard: Enter/Space toggles, Escape closes. aria-expanded is
+  // kept in sync. The .tip markup is already in the HTML (emitted server-side),
+  // so this only wires interaction — no DOM building, no dependencies.
+  (function () {
+    var glossTerms = Array.prototype.slice.call(document.querySelectorAll('.gloss'));
+    if (!glossTerms.length) return;
+    function closeAll(except) {
+      glossTerms.forEach(function (t) {
+        if (t !== except) { t.classList.remove('open'); t.setAttribute('aria-expanded', 'false'); }
+      });
+    }
+    function toggle(el) {
+      var willOpen = !el.classList.contains('open');
+      closeAll(el);
+      el.classList.toggle('open', willOpen);
+      el.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    }
+    glossTerms.forEach(function (el) {
+      el.addEventListener('click', function (e) { e.stopPropagation(); toggle(el); });
+      el.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
+          e.preventDefault(); toggle(el);
+        } else if (e.key === 'Escape') {
+          el.classList.remove('open'); el.setAttribute('aria-expanded', 'false'); el.blur();
+        }
+      });
+    });
+    document.addEventListener('click', function () { closeAll(null); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(null); });
+  })();
 
   // ---- Phase 7: logout link ----
   // Tiny click handler instead of inline onclick="…" so the CSP-friendly

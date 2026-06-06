@@ -745,6 +745,91 @@ async function counts() {
   };
 }
 
+// ---- Glossary auto-grow (pending_glossary) -------------------------------
+//
+// AI-nominated glossary terms awaiting human review. These are market
+// vocabulary, NOT user PII — intentionally out of scope for the COPPA deletion
+// scrub (recordDeletionRequest leaves them alone).
+
+/**
+ * Insert a nomination, or bump an existing row's recurrence counters. Dedup is
+ * on LOWER(term) via the unique index, so a re-nominated term (including one
+ * already approved or rejected) just bumps times_seen + last_seen_date — it
+ * never resurrects a rejected term into the pending queue or overwrites an
+ * admin's edits. Genuinely recurring terms float to the top of the review list.
+ */
+async function nominateGlossaryTerm({ term, definition, principle = null, nyDate = null }) {
+  const t = String(term || '').trim();
+  if (!t) throw new Error('nominateGlossaryTerm: term required');
+  const { rows } = await query(
+    `INSERT INTO pending_glossary (term, definition, principle, first_seen_date, last_seen_date)
+     VALUES ($1, $2, $3, $4, $4)
+     ON CONFLICT (LOWER(term)) DO UPDATE
+       SET times_seen     = pending_glossary.times_seen + 1,
+           last_seen_date = COALESCE(EXCLUDED.last_seen_date, pending_glossary.last_seen_date)
+     RETURNING *`,
+    [t, String(definition || '').trim(), principle == null ? null : principle, nyDate],
+  );
+  return rows[0];
+}
+
+/** Pending nominations for the /admin review card, most-seen first. */
+async function getPendingGlossary() {
+  const { rows } = await query(
+    `SELECT * FROM pending_glossary
+      WHERE status = 'pending'
+      ORDER BY times_seen DESC, last_seen_date DESC NULLS LAST, created_at DESC`,
+  );
+  return rows;
+}
+
+/** All rows in a given status. 'approved' drives the live glossary merge. */
+async function getGlossaryByStatus(status) {
+  const { rows } = await query(
+    `SELECT * FROM pending_glossary
+      WHERE status = $1
+      ORDER BY times_seen DESC, created_at DESC`,
+    [status],
+  );
+  return rows;
+}
+
+/**
+ * Approve a nomination, optionally editing the wording first (the admin may
+ * tweak term/definition/principle on approval). Only the fields actually
+ * supplied are changed. `principle` may be a number (1-11) or null/'' to clear.
+ */
+async function approveGlossaryTerm(id, { term, definition, principle } = {}) {
+  const sets = [`status = 'approved'`, `approved_at = NOW()`];
+  const vals = [id];
+  let i = 2;
+  if (term != null && String(term).trim()) { sets.push(`term = $${i++}`); vals.push(String(term).trim()); }
+  if (definition != null && String(definition).trim()) { sets.push(`definition = $${i++}`); vals.push(String(definition).trim()); }
+  if (principle !== undefined) {
+    const p = principle === null || principle === '' ? null : Number(principle);
+    sets.push(`principle = $${i++}`);
+    vals.push(Number.isInteger(p) && p >= 1 && p <= 11 ? p : null);
+  }
+  const { rows } = await query(
+    `UPDATE pending_glossary SET ${sets.join(', ')} WHERE id = $1 RETURNING *`,
+    vals,
+  );
+  return rows[0] || null;
+}
+
+/**
+ * Reject a nomination. The row is KEPT (status='rejected') so the same term
+ * isn't re-nominated into the queue forever — nominateGlossaryTerm's dedup
+ * lands on the rejected row and just bumps its counter.
+ */
+async function rejectGlossaryTerm(id) {
+  const { rows } = await query(
+    `UPDATE pending_glossary SET status = 'rejected' WHERE id = $1 RETURNING *`,
+    [id],
+  );
+  return rows[0] || null;
+}
+
 // ---- Module surface ------------------------------------------------------
 
 export const storage = {
@@ -761,4 +846,9 @@ export const storage = {
   getActiveChildrenByParentEmail,
   isKnownConsentedParent,
   counts,
+  nominateGlossaryTerm,
+  getPendingGlossary,
+  getGlossaryByStatus,
+  approveGlossaryTerm,
+  rejectGlossaryTerm,
 };

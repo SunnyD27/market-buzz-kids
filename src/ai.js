@@ -1,4 +1,5 @@
 import Anthropic from '@anthropic-ai/sdk';
+import { knownTermList, isKnownTerm } from './glossary.js';
 
 // Lazy client init. Constructing at module load runs before dotenv
 // finishes overriding stale env (real gotcha on macOS where launchd can
@@ -97,6 +98,65 @@ PRINCIPLE APPLICATION GUIDE — When generating content, smartly associate each 
 - "Why It Matters" boxes should end with a one-sentence principle connection: "This teaches us Principle 7: don't follow the crowd just because everyone else is panicking."
 - Aim for variety across the day's content — don't assign the same principle to every block. A single digest should ideally touch 4-6 different principles.
 `.trim();
+
+// ── Glossary nomination (auto-grow the kid glossary) ───────────────────
+// The digest already wraps the first mention of each KNOWN glossary term in a
+// tap-to-reveal tooltip (src/template.js + src/glossary.js). To grow that
+// glossary over time, we ask the model — in the SAME generateContent response,
+// no extra API call — to nominate financial terms it just used that a typical
+// 12-year-old wouldn't know and that aren't already covered. Nominations land
+// in pending_glossary and surface in /admin for approve/edit/reject; nothing
+// reaches kids until an adult approves.
+
+/** The rules block injected into every prompt (mirrors PARENT EXPLAINER RULES
+ *  style). Splices in the current known-term list so the model only proposes
+ *  genuinely new terms. */
+function glossaryNominationBlock() {
+  return `GLOSSARY NOMINATION RULES (auto-grow the kid glossary):
+- We keep a tap-to-reveal glossary of investing terms for kids. In "glossaryNominations", list financial/market terms that ACTUALLY APPEAR in the digest you just wrote AND that a typical 12-year-old would not already know AND that are NOT already in the glossary list below (ignore obvious singular/plural/alias variants of listed terms).
+- For each nomination provide: a canonical, lowercase-friendly "term"; a 1-2 sentence kid-level "definition" following the SAME rules as a Word of the Day (no undefined jargon, an analogy a 10-14 year-old gets, <=30 words); and the "principle" number 1-11 it ties to, or null if purely mechanical.
+- Only nominate terms that genuinely occur in today's content. Cap at 5 to avoid noise. If nothing qualifies, return an empty array [].
+- These are SUGGESTIONS for human review — they do NOT go live to kids until an adult approves them, so it's fine to be selective.
+
+TERMS ALREADY IN THE GLOSSARY (do NOT nominate these or their variants):
+${knownTermList().join(', ')}`;
+}
+
+// The JSON schema fragment appended to every prompt's "Return ONLY a JSON
+// object" example. Kept identical across the three editions so the parser sees
+// the same shape everywhere.
+const GLOSSARY_NOMINATION_SCHEMA = `  "glossaryNominations": [
+    { "term": "lowercase-friendly term", "definition": "kid-level definition, <=30 words, no undefined jargon", "principle": 1 }
+  ]`;
+
+/**
+ * Server-side belt-and-suspenders filter for the model's glossaryNominations.
+ * Drops anything malformed, already-known (via the seed glossary incl.
+ * aliases), or duplicated within the response; normalizes principle to an int
+ * 1-11 or null; caps at 5. Exported for the smoke test.
+ */
+export function filterGlossaryNominations(raw) {
+  if (!Array.isArray(raw)) return [];
+  const out = [];
+  const seen = new Set();
+  for (const n of raw) {
+    if (!n || typeof n.term !== 'string' || typeof n.definition !== 'string') continue;
+    const term = n.term.trim();
+    const definition = n.definition.trim();
+    if (!term || !definition) continue;
+    if (isKnownTerm(term)) continue; // already covered (incl. seed aliases)
+    const key = term.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let principle = n.principle == null ? null : Number(n.principle);
+    if (principle != null && (!Number.isInteger(principle) || principle < 1 || principle > 11)) {
+      principle = null;
+    }
+    out.push({ term, definition, principle });
+    if (out.length >= 5) break;
+  }
+  return out;
+}
 
 // ── Story dedup (mirrors the recentWords / recentFacts pattern) ────────
 // generate.js loads the last few standard-edition digests via
@@ -286,6 +346,8 @@ PARENT EXPLAINER RULES (Phase 12):
 - The conversationStarter should test understanding or spark curiosity using today's specifics. The parent should be able to say "I saw you learned about Nike today..." and have the question flow naturally.
 - The summary should give the parent enough context to actually have the conversation even if they don't know finance well themselves.
 
+${glossaryNominationBlock()}
+
 TODAY'S DATE: ${dateStr}
 TRADING DAY: Data is from ${tradingDayLabel}'s market close.
 
@@ -372,11 +434,13 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "summary": "1 sentence for the parent defining today's term in plain language. See PARENT EXPLAINER RULES.",
       "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + today's news context."
     }
-  }
+  },
+${GLOSSARY_NOMINATION_SCHEMA}
 }
 
 RULES ON OUTPUT:
 - "stories" array length: 3 by default. Only drop to 2 if the news genuinely doesn't support a third. Never 1, never 4+.
+- "glossaryNominations": up to 5 financial terms that appear in today's content but are NOT already in the glossary list above (empty array [] if none). See GLOSSARY NOMINATION RULES.
 - "principle" fields are integers 1-11 matching the numbered list at the top of this prompt.
 - Stories should be from the provided news + web search — don't invent them.
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
@@ -557,6 +621,8 @@ PARENT EXPLAINER RULES (Phase 12):
   - GOOD: "Ask [kid] why they think Nike's stock dropped 8% this week after the earnings miss."
   - BAD: "Ask [kid] what they think about stock market drops." (generic)
 - The summary should give the parent enough context to actually have the conversation even if they don't know finance well themselves.
+
+${glossaryNominationBlock()}
 
 SUNDAY CHALLENGE — THE WEEKLY GAME
 
@@ -871,11 +937,13 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "conversationStarter": "Ask [kid] ... 1 question referencing this week's specific word + recent news context."
     }
   },
-  ${sundayChallengeSchemaSnippet}
+  ${sundayChallengeSchemaSnippet},
+${GLOSSARY_NOMINATION_SCHEMA}
 }
 
 RULES ON OUTPUT:
 - "stories" array length: EXACTLY 2. Never 3, never 4.
+- "glossaryNominations": up to 5 financial terms that appear in this week's content but are NOT already in the glossary list above (empty array [] if none). See GLOSSARY NOMINATION RULES.
 - editionType MUST be exactly "weekly-wrap"; editionLabel MUST be exactly "The Weekly Wrap 📋".
 - "principle" fields are integers 1-11.
 - Stories should reference the WEEK's arc, not a single day.
@@ -969,6 +1037,8 @@ PARENT EXPLAINER RULES (Phase 12):
   - GOOD: "Ask [kid] what they predict will happen if Nvidia beats their earnings on Wednesday."
   - BAD: "Ask [kid] what they think about earnings reports." (generic)
 - The summary should give the parent enough context to have the conversation even if they don't know finance well themselves.
+
+${glossaryNominationBlock()}
 
 (NO sundayChallenge field — that's Sunday-only.)
 
@@ -1067,11 +1137,13 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "summary": "1 sentence for the parent defining today's term in plain language. See PARENT EXPLAINER RULES.",
       "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + week-ahead context."
     }
-  }
+  },
+${GLOSSARY_NOMINATION_SCHEMA}
 }
 
 RULES ON OUTPUT:
 - "stories" array length: EXACTLY 2 forward-looking entries. Never 3, never 4.
+- "glossaryNominations": up to 5 financial terms that appear in today's preview but are NOT already in the glossary list above (empty array [] if none). See GLOSSARY NOMINATION RULES.
 - editionType MUST be exactly "week-ahead"; editionLabel MUST be exactly "The Week Ahead 🔮".
 - DO NOT include a "sundayChallenge" field — that's Sunday-only.
 - "principle" fields are integers 1-11.
@@ -1162,7 +1234,15 @@ export async function generateContent(marketData, news, movers, topMover, opts =
     .map(block => block.text)
     .join('');
 
-  return parseAndScrubDigestJSON(text);
+  const parsed = parseAndScrubDigestJSON(text);
+  // Server-side gate on the model's nominations: drop anything already known
+  // (incl. seed aliases), malformed, or duplicated; cap at 5. Definitions were
+  // already run through scrubProfanity by parseAndScrubDigestJSON above.
+  parsed.glossaryNominations = filterGlossaryNominations(parsed.glossaryNominations);
+  if (parsed.glossaryNominations.length) {
+    console.log(`[AI] glossaryNominations after filter: ${parsed.glossaryNominations.map(n => n.term).join(', ')}`);
+  }
+  return parsed;
 }
 
 // ============================================================

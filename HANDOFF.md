@@ -50,6 +50,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **11** Server-side engagement overhaul — Market Coins, 4 new tables, 12-rank ladder, 6 badge families, personal records, Emergency Fund, unlock popups, `/progress` page, full namespace sweep `MB*`→`MJ*`. | ✅ | Shipped via PR #13 (`3b4ae9c`). Dedup-gate security fix (replay attack) shipped as follow-up commit `6b78f97` — landed in `dev` after merge. |
 | **12** "Ask My Parent" buttons + Evening Parent Recap email — `parentExplainer` on every digest section, 💬 button per section (hidden on `/sample`), evening cron with timezone-bucketed recap/nudge variants. | ✅ | On `dev` awaiting next PR (4 commits: Batch A prompts, Batch B UI, Batch C email pipeline, Batch D polish + docs). |
 | **13** Multi-kid support — one parent email, up to 5 children. Dropped the unique parent-email index; known-parent abbreviated consent flow; teaser dedup; consolidated reset email; 2-step deletion picker. | ✅ | On `dev` awaiting next PR. 51 assertions green. Fast-follows: evening-recap dedup, email-gated deletion. |
+| **14** Glossary tap-to-reveal + AI nomination gate — first-occurrence tooltips per digest (`template.js` `makeGlossaryLinker`), `glossaryNominations` in all 3 AI builders, `pending_glossary` table + storage helpers + boot migration, `/admin` review card + ADMIN_KEY-gated approve/reject endpoints, live seed+approved merge (`glossary-runtime.js`). | ✅ | On `dev` awaiting next PR. 36 glossary assertions green; full nomination lifecycle verified against live Neon. |
 | **Polish** Logo PNG on digest header (was 📈 emoji) | ✅ | On `dev` (`206bae9`). |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
@@ -719,3 +720,83 @@ the webhook endpoint returns 401 and Email Analytics shows an empty state.
 Not done (future): no caching (fine at prelaunch; add a 60s in-memory cache if
 slow); no pre-deletion warning emails; spec's "—" assumption for compound/
 time-machine correct-rate doesn't hold against live data (see deviation note).
+
+---
+
+## Session: Phase 14 — Glossary tap-to-reveal + AI nomination gate
+
+**Goal:** (1) auto-wrap the first mention of each known glossary term per digest
+in a tap-to-reveal tooltip; (2) let the digest generator nominate new financial
+terms it used, gated behind admin approval before anything reaches kids.
+
+**Files**
+- `src/glossary.js` — the 44-term seed map (provided, **consumed not rewritten**):
+  `GLOSSARY`, `lookup()`, `isKnownTerm()`, `knownTermList()`, `MATCHABLE_TERMS`.
+- `src/glossary-runtime.js` (new) — the LIVE merged view = seed + approved
+  `pending_glossary` rows. `getActiveGlossary()` (sync, render-path safe),
+  `refreshActiveGlossary()` (async, lazy storage import). Seed-only until first
+  refresh → tooltips work with no DB.
+- `src/template.js` — `makeGlossaryLinker(view)` (exported for tests) + inline
+  CSS (locked to `glossary-demo.html`) + vanilla tap/keyboard toggle. Wired into
+  `buildHTML` via an ordered `lk` block (big picture → scoreboard prose →
+  stories → DYK → word-of-day). Gated by `opts.glossary !== false`; on `/digest`
+  AND `/sample`. **Design choice:** linker runs on RAW field text and escapes
+  inside, so `&`-bearing terms match and there's no tag-injection path (we do
+  NOT pass `<…>` spans through — that would undo `escapeHTML`).
+- `src/ai.js` — `glossaryNominationBlock()` + `GLOSSARY_NOMINATION_SCHEMA` in all
+  three builders; `filterGlossaryNominations()` (exported) drops already-known/
+  malformed, normalizes principle, caps at 5. Rides the existing call (no new
+  API request).
+- `src/storage.js` — `nominateGlossaryTerm` (insert-or-bump via
+  `ON CONFLICT (LOWER(term))`), `getPendingGlossary`, `getGlossaryByStatus`,
+  `approveGlossaryTerm` (edits on approve), `rejectGlossaryTerm`.
+- `src/generate.js` — persists filtered nominations ONLY on a real INSERT (never
+  cached replay); `refreshActiveGlossary()` on both paths.
+- `src/admin.js` — Glossary Nominations card (pending, sorted by `times_seen`,
+  inline approve/edit/reject forms), fault-tolerant getter.
+- `src/server.js` — boot migration for `pending_glossary`; ADMIN_KEY-gated
+  `POST /api/admin/glossary/:id/approve|reject` (urlencoded, route-local parser,
+  fail-closed); boot-time `refreshActiveGlossary()`.
+- `src/schema.sql` + `src/migrations/add-pending-glossary.sql` — table DDL.
+- `scripts/test-glossary.js` — 36 assertions (pure/offline).
+
+**Promotion path:** option **(b)** — approved rows merge with the seed at render
+time (`glossary-runtime`), cached per process, refreshed on generation + on
+approval. No redeploy to grow the glossary. (Option (a), codegen into
+`glossary.js`, was rejected — it's the manual/redeploy path Sunny doesn't want.)
+
+**Decisions / notes**
+- Quiz/Daily Challenge is client-rendered JSON, so it's outside the server-side
+  wrapping pass (the task's section order lists "quiz", but it isn't in the
+  server HTML here). Tiny per-index scoreboard card blurbs are left plain so a
+  tooltip can't overflow a 14px card; the scoreboard "pass" links the vibe-bar
+  summary + the "why the mover moved" callout.
+- Added an `approved_at` column (not in the original spec's column list) to drive
+  the demo's ≤14-day "NEW" superscript and ordering — documented in `schema.sql`.
+- `first_seen_date`/`last_seen_date` stored as TEXT NY date strings to match
+  `todayNY()` usage.
+
+**Verified**
+- `node scripts/test-glossary.js` → 36/36 green (longest-first, first-occurrence
+  across sections, alias resolution, word-of-day self-skip, principle tie-in,
+  tag/markup safety, kill-switch off-path, seed+approved merge, nomination filter).
+- `node --check` on every changed file.
+- **Live `/sample`** (port 3199): 11 tooltips render; opened the EARNINGS tip —
+  dark card, citrus-yellow label, "Ties to: Think like an owner…" tie-in;
+  aliases resolve (`stocks`→Stock, `The Fed`, `rates`→Interest rate). Screenshot
+  matches `glossary-demo.html`.
+- **Live Neon (end-to-end):** boot DDL creates the canonical table (10 cols, 3
+  indexes, clean status CHECK); `nominateGlossaryTerm` insert → re-nominate bumps
+  `times_seen` 1→2 + updates `last_seen_date` without overwriting the definition;
+  pending list shows it; `approveGlossaryTerm` with edit flips `status='approved'`
+  + sets `approved_at`; `refreshActiveGlossary()` makes it live + matchable;
+  `rejectGlossaryTerm` keeps the row as `rejected`. Test rows cleaned up; the
+  canonical empty table is left in Neon.
+- `/admin` card + approve/reject endpoints verified by code review (the live
+  Neon box has no `ADMIN_KEY` set, so the gated HTTP path wasn't exercised
+  end-to-end — the underlying storage helpers + refresh were, directly).
+
+**Open / future**
+- `/admin` approve form clears principle if left blank; the select pre-fills the
+  current value so normal approves keep it.
+- No pagination on the nominations card (LIMIT 100) — fine at prelaunch.
