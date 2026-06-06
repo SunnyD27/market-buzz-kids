@@ -50,7 +50,8 @@ the door for future sponsored content with a 30-day parent notice).
 | **11** Server-side engagement overhaul — Market Coins, 4 new tables, 12-rank ladder, 6 badge families, personal records, Emergency Fund, unlock popups, `/progress` page, full namespace sweep `MB*`→`MJ*`. | ✅ | Shipped via PR #13 (`3b4ae9c`). Dedup-gate security fix (replay attack) shipped as follow-up commit `6b78f97` — landed in `dev` after merge. |
 | **12** "Ask My Parent" buttons + Evening Parent Recap email — `parentExplainer` on every digest section, 💬 button per section (hidden on `/sample`), evening cron with timezone-bucketed recap/nudge variants. | ✅ | On `dev` awaiting next PR (4 commits: Batch A prompts, Batch B UI, Batch C email pipeline, Batch D polish + docs). |
 | **13** Multi-kid support — one parent email, up to 5 children. Dropped the unique parent-email index; known-parent abbreviated consent flow; teaser dedup; consolidated reset email; 2-step deletion picker. | ✅ | On `dev` awaiting next PR. 51 assertions green. Fast-follows: evening-recap dedup, email-gated deletion. |
-| **14** Glossary tap-to-reveal + AI nomination gate — first-occurrence tooltips per digest (`template.js` `makeGlossaryLinker`), `glossaryNominations` in all 3 AI builders, `pending_glossary` table + storage helpers + boot migration, `/admin` review card + ADMIN_KEY-gated approve/reject endpoints, live seed+approved merge (`glossary-runtime.js`). | ✅ | On `dev` awaiting next PR. 36 glossary assertions green; full nomination lifecycle verified against live Neon. |
+| **14** Glossary tap-to-reveal + AI nomination gate — first-occurrence tooltips per digest (`template.js` `makeGlossaryLinker`), `glossaryNominations` in all 3 AI builders, `pending_glossary` table + storage helpers + boot migration, `/admin` review card + ADMIN_KEY-gated approve/reject endpoints, live seed+approved merge (`glossary-runtime.js`). | ✅ | Shipped via PR #29 (merged). 36 glossary assertions green; full nomination lifecycle verified against live Neon. |
+| **14.1** Follow-up — always-tappable scoreboard index tiles (S&P 500 / Nasdaq / Dow) revealing their glossary definition in a full-width drawer, independent of the prose pass (`template.js` `scoreboardGloss`). | ✅ | On `dev` awaiting next PR. +19 assertions (55 total); verified live on `/sample` incl. an index absent from prose. |
 | **Polish** Logo PNG on digest header (was 📈 emoji) | ✅ | On `dev` (`206bae9`). |
 | **Polish** Model migration → `claude-sonnet-4-6` | ✅ | `10c069e` |
 | **Polish** Market-closed note above scoreboard | ✅ | Shipped via PR #3 |
@@ -800,3 +801,60 @@ approval. No redeploy to grow the glossary. (Option (a), codegen into
 - `/admin` approve form clears principle if left blank; the select pre-fills the
   current value so normal approves keep it.
 - No pagination on the nominations card (LIMIT 100) — fine at prelaunch.
+
+---
+
+## Session: Phase 14 follow-up — tappable scoreboard index tiles
+
+**Goal:** make the three scoreboard tiles (S&P 500 / Nasdaq / Dow Jones) always
+tappable, every digest, revealing that index's glossary definition — even on
+days the index name never appears in prose. (The prose linker only links terms
+where they show up in a sentence; the tiles were left plain in PR #29.)
+
+**Files**
+- `src/template.js` —
+  - `scoreboardGloss(view, term, enabled)` (new, exported) — the single
+    "is this tile tappable?" decision: resolves via the same `view.lookup()`
+    the prose linker uses (seed + approved DB rows), returns null on glossary-off
+    or lookup-miss. **No second hardcoded copy of the definitions.**
+  - `scoreCard(key, label, term)` now renders a tappable tile (`role=button`,
+    `tabindex=0`, `aria-expanded`, `aria-controls`) with a dotted-underline + ⓘ
+    affordance on the index name when an entry resolves; plain otherwise.
+  - `scoreGlossPanel(...)` renders a full-width `.score-gloss-panel` drawer below
+    the scoreboard grid (the prose `.tip` bubble clips on a small tile). Same
+    brand styling as the prose tip (dark surface, citrus-yellow term label,
+    "Ties to:" principle line under a hairline).
+  - **Independence:** tiles call `lookup()` directly, NOT the linker — they never
+    touch the first-occurrence seen-set, so a tile and a prose mention of the
+    same term don't suppress each other.
+  - **Unified client controller:** one IIFE now wires both `.gloss` terms and
+    `.score-card.tappable` tiles, so one-open-at-a-time + tap-outside + keyboard
+    span both affordances. Panel clicks `stopPropagation` so reading the drawer
+    doesn't count as tap-outside. Scope: the 3 index tiles only — TODAY'S MOVER
+    is untouched.
+- `scripts/test-glossary.js` — Section 10 added (19 assertions): each index tile
+  resolves an entry; alias label "DOW"→Dow Jones; lookup-miss → null; kill-switch
+  → null; all 3 tiles tappable + 3 panels render with canonical terms; Nasdaq
+  tile tappable though absent from prose; S&P 500 prose-linked AND tile tappable
+  (no mutual suppression); panel placement below the grid; unified controller
+  selector; kill-switch renders plain tiles.
+
+**Decisions**
+- Placement = expanding full-width drawer below the scoreboard row (chosen over
+  tile-flip / per-tile popover — it has room for the definition + principle line
+  and can't overflow a 14px tile).
+- Affordance = dotted underline + small ⓘ on the index name (consistent with the
+  prose dotted underline; ⓘ makes "tap me" explicit without clutter).
+
+**Verified**
+- `node scripts/test-glossary.js` → **all green** (existing 36 + 19 new).
+- `node --check src/template.js`.
+- **Live `/sample`** (port 3199): all 3 tiles tappable; on that day's sample data
+  none of S&P 500 / Nasdaq / Dow appear in prose (`proseGlossTerms` confirmed),
+  yet every tile reveals its drawer — the core "works without a prose mention"
+  requirement. Drawer fits the container width (left 22 / right 670 within 6–686,
+  no clip). One-open-at-a-time verified in all directions (tile↔tile, tile↔prose,
+  prose↔tile), tap-outside closes, tap-inside-panel stays open. Keyboard:
+  Enter/Space open, Escape closes, `role=button`/`tabindex=0`/`aria-controls`→
+  `role=region`, aria-expanded synced. Screenshot of the open S&P 500 tile taken.
+- Everything here was verified live; no code-review-only gaps this session.

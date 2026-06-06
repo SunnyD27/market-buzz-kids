@@ -125,6 +125,21 @@ function escapeRegExp(s) {
 }
 
 /**
+ * Resolve a scoreboard index tile's glossary entry — the single source of truth
+ * for "is this tile tappable?". Returns the merged-view entry, or null when
+ * glossary is disabled or the term isn't in the view (→ the tile renders plain,
+ * no broken affordance). Resolution goes through the SAME view.lookup() the
+ * prose linker uses (seed + approved DB rows), so there's no second hardcoded
+ * copy of the definitions, and it's independent of the prose first-occurrence
+ * pass. Exported so the smoke test can exercise the hit / miss / kill-switch
+ * branches directly.
+ */
+export function scoreboardGloss(view, term, enabled = true) {
+  if (!enabled || !view || typeof view.lookup !== 'function') return null;
+  return view.lookup(term) || null;
+}
+
+/**
  * Build the daily digest HTML.
  *
  * @param {object} content  The full digest JSON payload (from the DB row or
@@ -167,14 +182,22 @@ export function buildHTML(content, opts = {}) {
   // from a JSON bundle, not server HTML, so it's outside this pass.) Within
   // the scoreboard region we link the prose — the vibe-bar summary and the
   // "why the mover moved" callout — but leave the tiny per-index card blurbs
-  // plain so a tooltip can't overflow a 14px card.
+  // plain. The three index TILES are instead made always-tappable separately
+  // (see scoreCard / scoreGlossPanel below): they resolve their definition via
+  // _glossView.lookup() DIRECTLY, bypassing this first-occurrence pass, so a
+  // tile is interactive every digest regardless of what the prose mentions.
   //
   // The call ORDER below IS the first-occurrence priority. Default ON; gated
   // off via opts.glossary === false. Appears on /digest AND /sample (harmless
   // on sample, and it helps the funnel) — unlike the sample-suppressed
   // 💬 ask-parent buttons.
   const glossaryOn = opts.glossary !== false;
-  const _linker = makeGlossaryLinker(getActiveGlossary(), { enabled: glossaryOn });
+  // The merged seed+approved view, shared by the prose linker AND the
+  // scoreboard tiles. Tiles call `_glossView.lookup()` DIRECTLY (never the
+  // linker), so they don't consume the linker's first-occurrence Set — a tile
+  // and a prose mention of the same term stay independent.
+  const _glossView = getActiveGlossary();
+  const _linker = makeGlossaryLinker(_glossView, { enabled: glossaryOn });
   const lk = {
     bigPicture: _linker.link(bigPicture),
     vibeSummary: _linker.link(vibeSummary),
@@ -319,17 +342,68 @@ export function buildHTML(content, opts = {}) {
   <div id="daily-challenge-host"></div>
   ` : '';
 
-  function scoreCard(key, label) {
+  // The three index tiles are ALWAYS tappable (every digest), revealing that
+  // index's glossary definition in an expanding panel below the scoreboard
+  // row — independent of whether the index name shows up in any sentence.
+  // `term` is the canonical glossary key to resolve (lookup is alias- and
+  // case-insensitive, so 'NASDAQ'→Nasdaq and 'DOW'→Dow Jones also work, but we
+  // pass the canonical term to be explicit). Each tappable tile owns a panel
+  // built by scoreGlossPanel(); the two are linked by `aria-controls`.
+  const SCORE_INDICES = [
+    { key: 'sp500', label: 'S&P 500', term: 'S&P 500' },
+    { key: 'nasdaq', label: 'NASDAQ', term: 'Nasdaq' },
+    { key: 'dow', label: 'DOW', term: 'Dow Jones' },
+  ];
+  const scoreGlossPanelId = (key) => `score-gloss-${key}`;
+
+  // The glossary entry for a tile, or null when glossary is off or the lookup
+  // misses (→ the tile renders plain, no broken affordance). Delegates to the
+  // exported decision fn so the template and the tests agree.
+  function scoreGlossEntry(term) {
+    return scoreboardGloss(_glossView, term, glossaryOn);
+  }
+
+  function scoreCard(key, label, term) {
     const s = scoreboard[key];
     if (!s) return '';
     const dir = s.direction === 'up' ? 'up' : 'down';
     const arrow = s.direction === 'up' ? 'arrow-up' : 'arrow-down';
+    const entry = scoreGlossEntry(term);
+    const nameCell = entry
+      // Affordance cue: dotted citrus underline on the index name + a small ⓘ,
+      // consistent with the prose tooltip treatment.
+      ? `<div class="name"><span class="sg-name">${escapeHTML(label)}</span><span class="sg-i" aria-hidden="true">ⓘ</span></div>`
+      : `<div class="name">${escapeHTML(label)}</div>`;
+    const tappableAttrs = entry
+      ? ` tappable" role="button" tabindex="0" aria-expanded="false" aria-controls="${scoreGlossPanelId(key)}" aria-label="${escapeHTML(label)} — tap for a kid-friendly definition`
+      : '';
     return `
-      <div class="score-card ${dir}">
-        <div class="name">${escapeHTML(label)}</div>
+      <div class="score-card ${dir}${tappableAttrs}">
+        ${nameCell}
         <div class="price">${escapeHTML(s.price)}</div>
         <div class="change"><span class="${arrow}"></span> ${escapeHTML(s.change)}</div>
         <div class="vibe">${escapeHTML(s.vibe)}</div>
+      </div>
+    `;
+  }
+
+  // The reveal panel for one index tile — a full-width drawer (so it can't
+  // overflow the small tile) placed right below the scoreboard grid. Dark
+  // surface + citrus-yellow term label + "Ties to:" principle line under a
+  // hairline — the same brand styling as the prose .tip. Returns '' when the
+  // tile isn't tappable (glossary off or lookup miss).
+  function scoreGlossPanel(key, label, term) {
+    if (!scoreboard[key]) return '';
+    const entry = scoreGlossEntry(term);
+    if (!entry) return '';
+    const principleLine = entry.principle
+      ? `Ties to: ${GLOSS_PRINCIPLES[entry.principle] || ''}`
+      : '';
+    return `
+      <div class="score-gloss-panel" id="${scoreGlossPanelId(key)}" role="region" aria-label="${escapeHTML(label)} definition">
+        <span class="sg-term">${escapeHTML(entry.term)}</span>
+        <span class="sg-def">${escapeHTML(entry.def || '')}</span>
+        ${principleLine ? `<span class="sg-principle">${escapeHTML(principleLine)}</span>` : ''}
       </div>
     `;
   }
@@ -566,6 +640,53 @@ export function buildHTML(content, opts = {}) {
   .gloss.open .tip {
     opacity: 1; pointer-events: auto;
     transform: translateX(-50%) translateY(0) scale(1);
+  }
+  /* ── Scoreboard tile glossary (tap-to-reveal) ─────────────────────────
+     The 3 index tiles are always tappable. A small tile can't host the prose
+     .tip bubble (it clips), so tapping expands a full-width drawer below the
+     scoreboard row instead. Same brand surface as the prose tip: dark card,
+     citrus-yellow term label, "Ties to:" principle line under a hairline. */
+  .score-card.tappable { cursor: pointer; }
+  .score-card.tappable .sg-name {
+    text-decoration: underline; text-decoration-style: dotted;
+    text-decoration-color: #FF7A1A; text-underline-offset: 3px;
+  }
+  .score-card.tappable .sg-i {
+    font-family: 'Space Mono', monospace;
+    font-size: 10px; vertical-align: super;
+    color: #FF7A1A; margin-left: 3px; opacity: 0.85;
+  }
+  .score-card.tappable:focus-visible {
+    outline: 2px solid #FFC23C; outline-offset: 2px;
+  }
+  /* Active tile cue while its drawer is open. */
+  .score-card.tappable.open {
+    border-color: rgba(240,192,64,0.55);
+    box-shadow: 0 4px 20px rgba(240,192,64,0.18);
+  }
+  .score-gloss-panel {
+    display: none;
+    margin-top: 12px;
+    background: #1C1A17; color: #FFF8EE;
+    border: 1px solid rgba(255,255,255,0.12);
+    border-radius: 12px; padding: 14px 16px;
+    text-align: left;
+    font-family: 'Fredoka', sans-serif;
+    box-shadow: 0 10px 28px rgba(0,0,0,0.45);
+  }
+  .score-gloss-panel.open { display: block; animation: fadeIn 0.25s ease-out both; }
+  .score-gloss-panel .sg-term {
+    font-family: 'Space Mono', monospace; font-size: 11px;
+    text-transform: uppercase; letter-spacing: 0.6px;
+    color: #FFC23C; display: block; margin-bottom: 6px;
+  }
+  .score-gloss-panel .sg-def {
+    display: block; font-size: 14.5px; line-height: 1.55;
+  }
+  .score-gloss-panel .sg-principle {
+    display: block; margin-top: 10px; padding-top: 10px;
+    border-top: 1px solid rgba(255,255,255,0.15);
+    font-size: 12px; color: #C9BFB0;
   }
   .vibe-bar { margin-top: 16px; text-align: center; background: linear-gradient(135deg, rgba(63,185,80,0.06), rgba(88,166,255,0.06)); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; animation: fadeIn 0.5s ease-out both; }
   .big-picture { margin-top: 16px; background: linear-gradient(135deg, rgba(88,166,255,0.12), rgba(88,166,255,0.03)); border: 1px solid rgba(88,166,255,0.25); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
@@ -1000,11 +1121,10 @@ export function buildHTML(content, opts = {}) {
   </div>
 
   <div class="scoreboard">
-    ${scoreCard('sp500', 'S&P 500')}
-    ${scoreCard('nasdaq', 'NASDAQ')}
-    ${scoreCard('dow', 'DOW')}
+    ${SCORE_INDICES.map(ix => scoreCard(ix.key, ix.label, ix.term)).join('')}
     ${topMoverCard()}
   </div>
+  ${SCORE_INDICES.map(ix => scoreGlossPanel(ix.key, ix.label, ix.term)).join('')}
 
   <div class="vibe-bar">
     <p style="font-size: 16px; font-weight: 500; color: var(--text-bright);">
@@ -1116,33 +1236,54 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
   }
 
   // ---- Glossary tap-to-reveal ----
-  // Tap/click toggles a term's tip; only one open at a time; tap-outside
-  // closes. Keyboard: Enter/Space toggles, Escape closes. aria-expanded is
-  // kept in sync. The .tip markup is already in the HTML (emitted server-side),
-  // so this only wires interaction — no DOM building, no dependencies.
+  // ONE controller for both affordances so "only one open at a time" spans
+  // prose terms AND scoreboard tiles:
+  //   - prose: a .gloss span whose .tip bubble is a child (toggled via the
+  //     .gloss.open class).
+  //   - scoreboard: a .score-card.tappable tile whose definition lives in a
+  //     separate full-width .score-gloss-panel below the grid, linked by
+  //     aria-controls (toggled via the panel's .open class).
+  // Tap/click toggles; tapping a second trigger (tile OR prose) closes the
+  // first; tap-outside closes; Enter/Space toggles, Escape closes. The markup
+  // is all server-rendered — this only wires interaction, no DOM building.
   (function () {
-    var glossTerms = Array.prototype.slice.call(document.querySelectorAll('.gloss'));
-    if (!glossTerms.length) return;
+    var triggers = Array.prototype.slice.call(
+      document.querySelectorAll('.gloss, .score-card.tappable')
+    );
+    if (!triggers.length) return;
+    function panelFor(el) {
+      var id = el.getAttribute('aria-controls');
+      return id ? document.getElementById(id) : null;
+    }
+    function setOpen(el, open) {
+      el.classList.toggle('open', open);
+      el.setAttribute('aria-expanded', open ? 'true' : 'false');
+      var panel = panelFor(el);
+      if (panel) panel.classList.toggle('open', open);
+    }
     function closeAll(except) {
-      glossTerms.forEach(function (t) {
-        if (t !== except) { t.classList.remove('open'); t.setAttribute('aria-expanded', 'false'); }
-      });
+      triggers.forEach(function (t) { if (t !== except) setOpen(t, false); });
     }
     function toggle(el) {
       var willOpen = !el.classList.contains('open');
       closeAll(el);
-      el.classList.toggle('open', willOpen);
-      el.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+      setOpen(el, willOpen);
     }
-    glossTerms.forEach(function (el) {
+    triggers.forEach(function (el) {
       el.addEventListener('click', function (e) { e.stopPropagation(); toggle(el); });
       el.addEventListener('keydown', function (e) {
         if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') {
           e.preventDefault(); toggle(el);
         } else if (e.key === 'Escape') {
-          el.classList.remove('open'); el.setAttribute('aria-expanded', 'false'); el.blur();
+          setOpen(el, false); el.blur();
         }
       });
+    });
+    // Tapping inside an open scoreboard drawer shouldn't count as "tap-outside"
+    // (the panel is a sibling of the tile, so its clicks would otherwise bubble
+    // straight to the document handler and close it mid-read).
+    Array.prototype.forEach.call(document.querySelectorAll('.score-gloss-panel'), function (p) {
+      p.addEventListener('click', function (e) { e.stopPropagation(); });
     });
     document.addEventListener('click', function () { closeAll(null); });
     document.addEventListener('keydown', function (e) { if (e.key === 'Escape') closeAll(null); });
