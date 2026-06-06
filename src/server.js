@@ -22,6 +22,7 @@ import { requireAuth, setSession, clearSession } from './auth.js';
 import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate } from './engagement.js';
 import { EVENT_TYPES } from './progression.js';
 import { gatherAdminData, buildAdminHTML } from './admin.js';
+import { refreshActiveGlossary } from './glossary-runtime.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -1213,6 +1214,48 @@ app.get('/admin', async (req, res) => {
   }
 });
 
+// ============================================================
+// Admin write endpoints — glossary nomination review
+// ============================================================
+// Approve / reject a pending_glossary nomination from the /admin card. Same
+// ADMIN_KEY query-param gate as /admin + /generate, fail-closed when ADMIN_KEY
+// is unset. The admin page renders plain server-side <form>s that POST
+// urlencoded, so we parse that route-locally (the global parser is JSON). On
+// approve we refresh the in-process glossary view so the term goes live to kids
+// immediately — no redeploy. Both paths redirect back to /admin.
+function adminKeyOk(req) {
+  const expected = process.env.ADMIN_KEY;
+  return !!expected && req.query.key === expected;
+}
+function backToAdmin(res, key) {
+  return res.redirect(303, `/admin?key=${encodeURIComponent(key || '')}`);
+}
+
+app.post('/api/admin/glossary/:id/approve', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!adminKeyOk(req)) return res.status(403).send('Unauthorized');
+  try {
+    await storage.approveGlossaryTerm(req.params.id, {
+      term: req.body.term,
+      definition: req.body.definition,
+      principle: req.body.principle, // '' clears, '1'..'11' sets
+    });
+    await refreshActiveGlossary(); // approved term is live on the next render
+  } catch (err) {
+    console.error('[admin] glossary approve failed:', err.message);
+  }
+  return backToAdmin(res, req.query.key);
+});
+
+app.post('/api/admin/glossary/:id/reject', express.urlencoded({ extended: false }), async (req, res) => {
+  if (!adminKeyOk(req)) return res.status(403).send('Unauthorized');
+  try {
+    await storage.rejectGlossaryTerm(req.params.id);
+  } catch (err) {
+    console.error('[admin] glossary reject failed:', err.message);
+  }
+  return backToAdmin(res, req.query.key);
+});
+
 app.get('/health', (req, res) => {
   res.json({ status: 'ok', lastGenerated: process.env.LAST_GENERATED || 'never' });
 });
@@ -1757,6 +1800,41 @@ async function runBootMigrations() {
   } catch (err) {
     console.error('[migrations] email_events migration failed (admin email analytics + webhook will error until fixed):', err.message);
   }
+
+  // Glossary auto-grow — pending_glossary table (AI nomination gate). Standalone
+  // DDL also in src/schema.sql + src/migrations/add-pending-glossary.sql. Detect
+  // via the table's presence so this is idempotent (mirrors the email_events
+  // pattern above).
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'pending_glossary'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating pending_glossary table (glossary auto-grow)…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS pending_glossary (
+          id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+          term            TEXT         NOT NULL,
+          definition      TEXT         NOT NULL,
+          principle       INT,
+          status          TEXT         NOT NULL DEFAULT 'pending'
+                            CHECK (status IN ('pending', 'approved', 'rejected')),
+          times_seen      INT          NOT NULL DEFAULT 1,
+          first_seen_date TEXT,
+          last_seen_date  TEXT,
+          approved_at     TIMESTAMPTZ,
+          created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS pending_glossary_term_lower_uniq
+          ON pending_glossary (LOWER(term));
+        CREATE INDEX IF NOT EXISTS pending_glossary_status_idx
+          ON pending_glossary (status, times_seen DESC);
+      `);
+      console.log('[migrations] ✅ pending_glossary table created.');
+    }
+  } catch (err) {
+    console.error('[migrations] pending_glossary migration failed (glossary nominations + admin card will error until fixed):', err.message);
+  }
 }
 
 app.listen(PORT, () => {
@@ -1781,7 +1859,13 @@ app.listen(PORT, () => {
   // work on the next request after a fresh deploy), then bootstrap the
   // digest. Both are fire-and-forget so a slow DB on boot doesn't block
   // the listener (Railway healthchecks would fail).
-  runBootMigrations().then(() => bootstrapTodaysDigest());
+  runBootMigrations().then(() => {
+    // Warm the merged glossary view (seed + approved DB rows) so /digest and
+    // /sample render approved tooltips immediately after a deploy, even on a
+    // quiet day where today's digest comes from the cached path. Guarded.
+    refreshActiveGlossary().catch(() => {});
+    return bootstrapTodaysDigest();
+  });
 });
 
 // ============================================================

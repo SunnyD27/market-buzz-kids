@@ -14,6 +14,8 @@ import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
+import { storage } from './storage.js';
+import { refreshActiveGlossary } from './glossary-runtime.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -62,6 +64,12 @@ export async function generateDigest(opts = {}) {
     const existing = await getDigestForDate(today);
     if (existing) {
       console.log(`[Generate] Today's digest (${today}) already exists in DB — using cached copy. No API calls.`);
+      // Warm the merged glossary view (seed + approved DB terms) before baking
+      // the disk copy so tooltips reflect any approved nominations. Guarded — a
+      // glossary hiccup must never block serving the cached digest. (We do NOT
+      // re-nominate on this cached-replay path — nomination only happens on a
+      // real insert below.)
+      await refreshActiveGlossary();
       mkdirSync(publicDir, { recursive: true });
       const html = buildHTML(existing.content);
       writeFileSync(htmlPath, html, 'utf-8');
@@ -158,12 +166,38 @@ export async function generateDigest(opts = {}) {
       record('fact', content.didYouKnow.fact);
       console.log(`[Generate]   Did You Know fact recorded to rotation history`);
     }
+
+    // Glossary nominations — ONLY on a real insert (never on the cached-replay
+    // path), mirroring the word/fact rotation recording above. These ride the
+    // existing generateContent response (one extra JSON field, no extra API
+    // call). Per-term failures are swallowed so a glossary hiccup never fails
+    // digest generation. Survivors were already filtered server-side in ai.js
+    // (dropped if already-known/malformed; scrubbed; capped at 5).
+    const nominations = Array.isArray(content.glossaryNominations) ? content.glossaryNominations : [];
+    if (nominations.length) {
+      let recorded = 0;
+      for (const n of nominations) {
+        try {
+          await storage.nominateGlossaryTerm({
+            term: n.term, definition: n.definition, principle: n.principle, nyDate: today,
+          });
+          recorded++;
+        } catch (err) {
+          console.error(`[Generate]   glossary nomination failed for "${n.term}":`, err.message);
+        }
+      }
+      console.log(`[Generate]   Glossary: ${recorded}/${nominations.length} nomination(s) recorded to pending_glossary`);
+    }
   } else {
     console.log(`[Generate]   ⚠ Lost race — today's row was inserted by another process. Using their content.`);
   }
 
   // Use whichever content is in the DB (either ours or the race winner's).
   const canonical = saveResult.row?.content || fullPayload;
+
+  // Refresh the merged glossary view so the disk bake (and the running server's
+  // per-request renders) reflect any approved terms + this run's state. Guarded.
+  await refreshActiveGlossary();
 
   mkdirSync(publicDir, { recursive: true });
   const html = buildHTML(canonical);

@@ -92,6 +92,7 @@ export async function gatherAdminData() {
     emailStats,
     rankDistribution,
     gamePopularity,
+    glossaryNominations,
   ] = await Promise.all([
     getUserStats(),
     getEngagementStats(),
@@ -100,6 +101,7 @@ export async function gatherAdminData() {
     getEmailStats(),
     getRankDistribution(),
     getGamePopularity(),
+    getGlossaryNominations(),
   ]);
 
   return {
@@ -111,7 +113,29 @@ export async function gatherAdminData() {
     emailStats,
     rankDistribution,
     gamePopularity,
+    glossaryNominations,
   };
+}
+
+// Pending glossary nominations awaiting review (most-seen first). Individually
+// fault-tolerant: if pending_glossary doesn't exist yet (migration pending) or
+// the query errors, the card renders an empty/error state instead of 500-ing
+// the whole page (matches the Phase 13 getEmailStats pattern).
+async function getGlossaryNominations() {
+  try {
+    const { rows } = await query(`
+      SELECT id, term, definition, principle, times_seen,
+             first_seen_date, last_seen_date, created_at
+        FROM pending_glossary
+       WHERE status = 'pending'
+       ORDER BY times_seen DESC, last_seen_date DESC NULLS LAST, created_at DESC
+       LIMIT 100
+    `);
+    return { items: rows };
+  } catch (err) {
+    console.error('[admin] getGlossaryNominations failed:', err.message);
+    return { items: [], _error: err.message };
+  }
 }
 
 async function getUserStats() {
@@ -635,6 +659,74 @@ function fmtDay(v) {
   }
 }
 
+function buildGlossaryNominationsSection(gloss, adminKey) {
+  const keyParam = encodeURIComponent(adminKey || '');
+  const items = (gloss && gloss.items) || [];
+  if (gloss && gloss._error) {
+    return `
+      <section class="card">
+        <h2>Glossary Nominations</h2>
+        <p class="empty">Couldn't load nominations. The pending_glossary table may not be created yet (migration pending), or the query errored.</p>
+        <p class="err">${esc(gloss._error)}</p>
+      </section>`;
+  }
+  if (!items.length) {
+    return `
+      <section class="card">
+        <h2>Glossary Nominations</h2>
+        <p class="empty">No pending nominations. The digest generator proposes new terms here as it writes each day's content; approved terms grow the kid glossary live.</p>
+      </section>`;
+  }
+
+  // Principle <select> options, blank + 1-11. Pre-selects the row's value.
+  const principleOptions = (cur) => {
+    let html = `<option value="">—</option>`;
+    for (let p = 1; p <= 11; p++) {
+      html += `<option value="${p}"${Number(cur) === p ? ' selected' : ''}>${p}</option>`;
+    }
+    return html;
+  };
+
+  const rows = items.map(n => {
+    const approveAction = `/api/admin/glossary/${esc(n.id)}/approve?key=${keyParam}`;
+    const rejectAction = `/api/admin/glossary/${esc(n.id)}/reject?key=${keyParam}`;
+    const firstSeen = n.first_seen_date ? esc(String(n.first_seen_date).slice(0, 10)) : '—';
+    const lastSeen = n.last_seen_date ? esc(String(n.last_seen_date).slice(0, 10)) : '—';
+    return `
+      <tr>
+        <td>
+          <form method="POST" action="${approveAction}" class="gloss-form">
+            <input class="gloss-input" type="text" name="term" value="${esc(n.term)}" aria-label="term" />
+            <textarea class="gloss-input gloss-def" name="definition" rows="2" aria-label="definition">${esc(n.definition)}</textarea>
+            <div class="gloss-row">
+              <label class="gloss-lbl">Principle
+                <select name="principle" class="gloss-input gloss-sel">${principleOptions(n.principle)}</select>
+              </label>
+              <button type="submit" class="gloss-btn gloss-approve">✓ Approve</button>
+            </div>
+          </form>
+        </td>
+        <td class="num">${n.times_seen}</td>
+        <td>${firstSeen}<div class="sub">last ${lastSeen}</div></td>
+        <td>
+          <form method="POST" action="${rejectAction}" onsubmit="return confirm('Reject this term? It stays recorded so it won\\'t be re-nominated into the queue.');">
+            <button type="submit" class="gloss-btn gloss-reject">✕ Reject</button>
+          </form>
+        </td>
+      </tr>`;
+  }).join('');
+
+  return `
+    <section class="card">
+      <h2>Glossary Nominations (${items.length} pending)</h2>
+      <p class="note">AI-proposed terms that appeared in a digest but aren't in the seed glossary. Edit the wording if needed, then Approve to grow the kid glossary live (no redeploy), or Reject. Sorted by times-seen.</p>
+      <table class="gloss-table">
+        <thead><tr><th>Term · definition · principle</th><th class="num">Seen</th><th>First / last</th><th>Reject</th></tr></thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </section>`;
+}
+
 export function buildAdminHTML(data, adminKey) {
   const keyParam = encodeURIComponent(adminKey || '');
   return `<!DOCTYPE html>
@@ -715,6 +807,25 @@ export function buildAdminHTML(data, adminKey) {
   .empty { color: ${C.muted}; font-size: 14px; }
   .today-line { margin-top: 14px; font-size: 13px; color: ${C.text}; }
   .today-line b { color: ${C.num}; font-family: 'SF Mono','Menlo','Consolas',monospace; }
+  .gloss-table td { vertical-align: top; }
+  .gloss-form { display: flex; flex-direction: column; gap: 8px; }
+  .gloss-input {
+    background: ${C.bg}; color: ${C.text}; border: 1px solid ${C.border};
+    border-radius: 6px; padding: 7px 9px; font-size: 13px; width: 100%;
+    font-family: inherit;
+  }
+  .gloss-input:focus { outline: none; border-color: ${C.accent}; }
+  .gloss-def { resize: vertical; min-height: 40px; }
+  .gloss-row { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .gloss-lbl { font-size: 11px; color: ${C.muted}; display: inline-flex; align-items: center; gap: 6px; }
+  .gloss-sel { width: auto; padding: 5px 7px; }
+  .gloss-btn {
+    border: none; border-radius: 6px; padding: 7px 14px; font-size: 13px;
+    font-weight: 600; cursor: pointer; font-family: inherit; color: #fff;
+  }
+  .gloss-approve { background: ${C.good}; }
+  .gloss-reject { background: ${C.alert}; }
+  .gloss-btn:hover { opacity: 0.9; }
   footer { text-align: center; color: ${C.muted}; font-size: 12px; margin-top: 24px; }
   @media (max-width: 600px) {
     .metrics { grid-template-columns: repeat(2, 1fr); }
@@ -735,6 +846,7 @@ export function buildAdminHTML(data, adminKey) {
     </header>
 
     ${buildUsersSection(data.userStats)}
+    ${buildGlossaryNominationsSection(data.glossaryNominations, adminKey)}
     ${buildEngagementSection(data.engagementStats)}
     ${buildStreaksSection(data.engagementStats)}
     ${buildRankSection(data.rankDistribution)}

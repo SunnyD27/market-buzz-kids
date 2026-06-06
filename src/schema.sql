@@ -258,3 +258,46 @@ CREATE INDEX IF NOT EXISTS idx_email_events_created
   ON email_events (created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_email_events_kind
   ON email_events (email_kind);
+
+-- ============================================================
+-- pending_glossary (Glossary auto-grow — AI nomination gate)
+-- ============================================================
+-- The digest generator (src/ai.js) proposes financial terms that appear in a
+-- day's content but aren't in the static seed glossary (src/glossary.js).
+-- Proposals land here as 'pending' and surface on /admin for approve / edit /
+-- reject. Nothing reaches kids until an adult approves. Approved rows are
+-- merged with the static seed at RENDER time (src/glossary-runtime.js), so the
+-- glossary grows live with no redeploy.
+--
+-- Dedup is on LOWER(term): a re-nominated term bumps times_seen +
+-- last_seen_date instead of inserting a duplicate, so recurring terms float to
+-- the top of the review queue. Rejected rows are KEPT (status='rejected') so
+-- the same term isn't re-nominated into the queue forever.
+--
+-- COPPA: these are AI-generated market-vocabulary rows, NOT user PII — they are
+-- intentionally OUT OF SCOPE for storage.recordDeletionRequest()'s scrub.
+-- first_seen_date / last_seen_date are NY date strings (todayNY()); approved_at
+-- timestamps approval (drives the "NEW" auto-grow tag in the template).
+CREATE TABLE IF NOT EXISTS pending_glossary (
+  id              UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  term            TEXT         NOT NULL,
+  definition      TEXT         NOT NULL,
+  principle       INT,
+  status          TEXT         NOT NULL DEFAULT 'pending'
+                    CHECK (status IN ('pending', 'approved', 'rejected')),
+  times_seen      INT          NOT NULL DEFAULT 1,
+  first_seen_date TEXT,
+  last_seen_date  TEXT,
+  approved_at     TIMESTAMPTZ,
+  created_at      TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+-- Case-insensitive uniqueness so re-nominations dedup via ON CONFLICT
+-- (LOWER(term)). term is NOT NULL, so unlike the users.username index this one
+-- needs no partial predicate.
+CREATE UNIQUE INDEX IF NOT EXISTS pending_glossary_term_lower_uniq
+  ON pending_glossary (LOWER(term));
+
+-- Review-queue ordering: by status, most-seen first.
+CREATE INDEX IF NOT EXISTS pending_glossary_status_idx
+  ON pending_glossary (status, times_seen DESC);
