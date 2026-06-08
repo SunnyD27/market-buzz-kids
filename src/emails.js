@@ -539,37 +539,101 @@ export function renderDailyTeaserEmail(user, content) {
   const vibeColor = vibe === 'green' ? BRAND.green : vibe === 'red' ? BRAND.red : '#8a6a00';
   const vibeBg = vibe === 'green' ? BRAND.greenBg : vibe === 'red' ? BRAND.redBg : '#fff7d6';
 
-  const topMover = content?.scoreboard?.topMover;
-  const topMoverLine = topMover
-    ? `${escapeHTML(topMover.name)} (${escapeHTML(topMover.ticker)}) — ${escapeHTML(topMover.change)}`
-    : null;
-
-  const headline = content?.stories?.[0]?.title || 'Today\'s biggest market story';
+  const headline = content?.stories?.[0]?.title || "Today's biggest market story";
   const dateLabel = escapeHTML(content?.date || new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }));
 
-  const subject = `${vibeEmoji} Today's Juice: ${dateLabel}`;
-  const preheader = topMoverLine
-    ? `Today's mover: ${topMoverLine}. Tap to read.`
-    : `Today's digest is live — tap to read.`;
+  // ── Edition-aware framing ────────────────────────────────────────────
+  // Drive subject + body copy off the authoritative `editionType` from
+  // calendar.js, NOT a fresh day-of-week calculation here. The two
+  // special editions reframe the teaser as a recap (Sunday) or preview
+  // (Monday/post-holiday); the standard path is byte-identical to before.
+  const editionType = content?.editionType || 'standard';
+
+  let subject;
+  let kidLine;     // The "Hey X — your daily juice is ready" sentence
+  let moverLine;   // The optional ⭐ mover/watch line under the headline
+  let moverTextLine; // The plain-text version for the text/* alt
+  let vibeChipLabel; // "Market vibe" vs "Where we left off" framing on chip
+  let preheader;
+
+  if (editionType === 'weekly-wrap') {
+    // Sunday — recap of the week that just ended. Markets were closed
+    // this weekend; this is a look BACK.
+    subject = `📋 Market Juice — Your Weekly Wrap (${dateLabel})`;
+    kidLine = `Hey ${kid} — your Weekly Wrap is ready. A look back at this past week in markets.`;
+    vibeChipLabel = 'How the week wrapped';
+    const wkMover = content?.scoreboard?.topMover;
+    if (wkMover) {
+      const wkLine = `${escapeHTML(wkMover.name)} (${escapeHTML(wkMover.ticker)}) — ${escapeHTML(wkMover.change)}`;
+      moverLine = `
+      <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;">
+        ⭐ <strong>Week's biggest mover:</strong> ${wkLine}
+      </p>`;
+      moverTextLine = `Week's biggest mover: ${escapeHTML(wkMover.name)} (${escapeHTML(wkMover.ticker)}) — ${escapeHTML(wkMover.change)}`;
+    } else {
+      moverLine = '';
+      moverTextLine = '';
+    }
+    preheader = `Looking back at this past week. Tap to read the wrap.`;
+  } else if (editionType === 'week-ahead') {
+    // Monday / post-holiday — preview of the upcoming week. Forward-looking.
+    subject = `🔮 Market Juice — The Week Ahead (${dateLabel})`;
+    kidLine = `Hey ${kid} — The Week Ahead is ready. Here's what to watch this coming week.`;
+    vibeChipLabel = 'Where we left off';
+    // `oneToWatch` is conditional — populated only when there's a real,
+    // specific catalyst this week. Quiet weeks omit the line entirely
+    // rather than show a stale Friday mover wearing a "today" label.
+    const otw = content?.oneToWatch;
+    if (otw && otw.name) {
+      const otwLine = otw.catalyst
+        ? `${escapeHTML(otw.name)}${otw.ticker ? ` (${escapeHTML(otw.ticker)})` : ''} — ${escapeHTML(otw.catalyst)}`
+        : `${escapeHTML(otw.name)}${otw.ticker ? ` (${escapeHTML(otw.ticker)})` : ''}`;
+      moverLine = `
+      <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;">
+        ⭐ <strong>One to watch:</strong> ${otwLine}
+      </p>`;
+      moverTextLine = `One to watch: ${escapeHTML(otw.name)}${otw.ticker ? ` (${escapeHTML(otw.ticker)})` : ''}${otw.catalyst ? ` — ${escapeHTML(otw.catalyst)}` : ''}`;
+    } else {
+      moverLine = '';
+      moverTextLine = '';
+    }
+    preheader = `Here's what's coming this week. Tap to read the preview.`;
+  } else {
+    // Standard Tue–Sat — unchanged from prior behavior.
+    subject = `${vibeEmoji} Today's Juice: ${dateLabel}`;
+    kidLine = `Hey ${kid} — your daily juice is ready. 3 minutes, 3 games, real markets.`;
+    vibeChipLabel = 'Market vibe';
+    const topMover = content?.scoreboard?.topMover;
+    if (topMover) {
+      const topMoverLine = `${escapeHTML(topMover.name)} (${escapeHTML(topMover.ticker)}) — ${escapeHTML(topMover.change)}`;
+      moverLine = `
+      <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;">
+        ⭐ <strong>Today's mover:</strong> ${topMoverLine}
+      </p>`;
+      moverTextLine = `Today's mover: ${escapeHTML(topMover.name)} (${escapeHTML(topMover.ticker)}) — ${escapeHTML(topMover.change)}`;
+      preheader = `Today's mover: ${topMoverLine}. Tap to read.`;
+    } else {
+      moverLine = '';
+      moverTextLine = '';
+      preheader = `Today's digest is live — tap to read.`;
+    }
+  }
 
   const body = `
     <div style="display:inline-block;background:${vibeBg};color:${vibeColor};font-size:12px;font-weight:700;letter-spacing:1px;text-transform:uppercase;padding:6px 12px;border-radius:999px;margin-bottom:14px;">
-      ${vibeEmoji}&nbsp; Market vibe: ${vibeWord}
+      ${vibeEmoji}&nbsp; ${vibeChipLabel}: ${vibeWord}
     </div>
     <h1 style="font-size:22px;font-weight:700;color:#1c2030;margin:0 0 10px 0;letter-spacing:-0.3px;">
       ${escapeHTML(headline)}
     </h1>
-    ${topMoverLine ? `
-      <p style="margin:0 0 18px 0;font-size:14px;color:#454a5b;">
-        ⭐ <strong>Today's mover:</strong> ${topMoverLine}
-      </p>` : ''}
+    ${moverLine}
     <p style="margin:0 0 22px 0;font-size:15px;color:#454a5b;">
-      Hey ${kid} — your daily juice is ready. 3 minutes, 3 games, real markets.
+      ${kidLine}
     </p>
     <table role="presentation" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 18px 0;">
       <tr><td style="background:linear-gradient(135deg,${BRAND.accent},${BRAND.blue});border-radius:999px;">
         <a href="${escapeHTML(digestLink)}" style="display:inline-block;padding:14px 28px;color:#ffffff;font-size:16px;font-weight:700;text-decoration:none;">
-          Read today's Juice →
+          ${editionType === 'weekly-wrap' ? 'Read the Weekly Wrap →' : editionType === 'week-ahead' ? 'Read the Week Ahead →' : "Read today's Juice →"}
         </a>
       </td></tr>
     </table>
@@ -578,15 +642,21 @@ export function renderDailyTeaserEmail(user, content) {
     </p>
   `;
 
+  const textHeader = editionType === 'weekly-wrap'
+    ? `Market Juice — Weekly Wrap — ${dateLabel}`
+    : editionType === 'week-ahead'
+      ? `Market Juice — The Week Ahead — ${dateLabel}`
+      : `Today's Market Juice — ${dateLabel}`;
+
   return {
     subject,
     html: shell({ preheader, body }),
     text: [
-      `Today's Market Juice — ${dateLabel}`,
+      textHeader,
       '',
-      `Market vibe: ${vibeWord}`,
+      `${vibeChipLabel}: ${vibeWord}`,
       headline,
-      topMoverLine ? `Today's mover: ${topMoverLine}` : '',
+      moverTextLine,
       '',
       `Read it: ${digestLink}`,
     ].filter(Boolean).join('\n'),

@@ -958,11 +958,13 @@ RULES ON OUTPUT:
  * Forward-looking preview instead of a recap; stories highlight upcoming
  * earnings/events; word-of-day picks a forward-looking term.
  */
-function buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
-  const topMoverBlock = topMover
-    ? JSON.stringify(topMover, null, 2)
-    : 'null  // no curated mover from Friday — use the broader movers list or web search to pick a kid-recognizable name.';
-
+function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
+  // NOTE: `topMover` (Friday's biggest curated mover) is intentionally NOT
+  // surfaced in this prompt — a forward-looking preview has no "today's
+  // mover," and Friday's % move wearing a "today" label is the bug we're
+  // fixing. The Week Ahead instead uses `oneToWatch` — a forward,
+  // catalyst-driven pick chosen by Claude from upcoming events. The card
+  // is conditional: omitted on quiet weeks (see ONE TO WATCH rules below).
   const postHolidayLine = edition.reason === 'post-holiday' && edition.holidayName
     ? `\nPOST-HOLIDAY NOTE: Yesterday was ${edition.holidayName} (a market holiday). Open vibeSummary with: "Hope you had a great ${edition.holidayName}!" then transition into the week-ahead preview.\n`
     : '';
@@ -1003,9 +1005,15 @@ WEEK-AHEAD STORY RULES (CRITICAL — different from a daily digest):
 
 ${storyDedupBlock(recentDigests)}
 
-TODAY'S MOVER (week-ahead edition):
-- Use the curated FMP mover (${prevDayName}'s biggest curated mover) — it gives the scoreboard's gold card something concrete.
-- "change" is ${prevDayName}'s single-day change. "vibe" should reference "where we left off" — what to watch into the new week.
+ONE TO WATCH (week-ahead edition — REPLACES Today's Mover):
+- This is a FORWARD, CATALYST-DRIVEN pick — NOT a backward % mover. Do NOT report ${prevDayName}'s biggest gainer/loser here. That would be stale data wearing a "today" label, which is exactly what we are fixing.
+- Populate "oneToWatch" ONLY when there is a genuine, specific, scheduled, nameable catalyst in the COMING week tied to a kid-recognizable company — a scheduled earnings report, a known product launch, a specific scheduled event (Investor Day, FDA decision, court ruling).
+- If there is no specific, scheduled, nameable catalyst this week, do NOT include a oneToWatch. A missing card is correct and expected on quiet weeks. Never manufacture a reason to fill it.
+- The bar is high. Default to omitting. Better to skip than to invent.
+  - GOOD: "Nvidia reports earnings Wednesday — its stock often makes a big move after it shares how many AI chips it sold." (real scheduled catalyst + kid-friendly reason)
+  - BAD: "Apple is always worth watching." (no specific catalyst — this is the kind of manufactured pick to AVOID; omit instead)
+  - BAD: "Tesla had a big move last Friday." (backward-looking — this is a Today's Mover, not a One to Watch)
+- "catalyst" = the specific upcoming event (with the day of the week if known). "reason" = a 1-2 sentence kid-friendly explanation of why a kid should care, tied to a principle.
 
 THE BIG PICTURE — WEEK AHEAD EDITION:
 - 3-4 sentences previewing the week's biggest themes: which earnings reports matter, what economic data is dropping, any Fed meetings, IPO calendar.
@@ -1048,9 +1056,6 @@ PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${prevDayName})${edition.re
 RAW MARKET DATA (${prevDayName}'s close — for the scoreboard):
 ${JSON.stringify(marketData, null, 2)}
 
-TODAY'S MOVER (${prevDayName}'s curated mover):
-${topMoverBlock}
-
 Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
 
 {
@@ -1070,15 +1075,17 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
   "scoreboard": {
     "sp500":  { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
     "nasdaq": { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
-    "dow":    { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" },
-    "topMover": {
-      "ticker": "TICKER",
-      "name": "Company Name (from the curated entry)",
-      "price": "$XX.XX",
-      "change": "+X.XX%",
-      "direction": "up/down",
-      "vibe": "One sentence on ${prevDayName}'s move + how to watch it next week. Tie to a principle."
-    }
+    "dow":    { "price": "${prevDayName}'s close", "change": "${prevDayName}'s single-day +X.XX%", "direction": "up/down", "vibe": "where-we-left-off comment" }
+  },
+  // OPTIONAL — include ONLY when there is a real, specific, scheduled
+  // catalyst this week tied to a kid-recognizable company. Omit the
+  // field entirely on quiet weeks. See ONE TO WATCH rules above.
+  "oneToWatch": {
+    "name": "Company name (kid-recognizable)",
+    "ticker": "TICKER",
+    "catalyst": "The specific scheduled event with day-of-week when known (e.g. 'Earnings Wednesday', 'iPhone launch event Tuesday')",
+    "reason": "1-2 sentences in kid voice: why a kid should care, tied to a principle.",
+    "principle": 1
   },
   "stories": [
     {
@@ -1146,6 +1153,8 @@ RULES ON OUTPUT:
 - "glossaryNominations": up to 5 financial terms that appear in today's preview but are NOT already in the glossary list above (empty array [] if none). See GLOSSARY NOMINATION RULES.
 - editionType MUST be exactly "week-ahead"; editionLabel MUST be exactly "The Week Ahead 🔮".
 - DO NOT include a "sundayChallenge" field — that's Sunday-only.
+- DO NOT include a "topMover" inside scoreboard — that field is backward-looking and does not belong on a forward-looking preview.
+- "oneToWatch" is OPTIONAL. Include it ONLY when there's a real, specific, scheduled, nameable catalyst this week tied to a kid-recognizable company. When in doubt, OMIT the field entirely. A missing oneToWatch on a quiet week is correct and expected. Never manufacture a reason to fill it.
 - "principle" fields are integers 1-11.
 - Stories must look FORWARD, not backward.
 - Do NOT include any citation tags, <cite> tags, or source references. Plain text only inside JSON string values.`;
