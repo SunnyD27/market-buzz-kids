@@ -233,12 +233,16 @@ export async function fetchQuotes(tickers, apiKey) {
   return Object.fromEntries(results.filter(Boolean));
 }
 
-export async function fetchAllData(apiKey) {
+export async function fetchAllData(apiKey, opts = {}) {
+  // `opts.skipTopMover` lets the week-ahead path skip the Today's Mover
+  // fetch — that edition is forward-looking, so Friday's % mover is stale
+  // and would only show up as a mislabeled card. Saves the per-ticker
+  // fan-out across 75 curated names on Monday/post-holiday runs.
   const [marketData, news, movers, topMover] = await Promise.all([
     fetchMarketData(apiKey),
     fetchNews(apiKey),
     fetchMovers(apiKey),
-    fetchTopMover(apiKey),
+    opts.skipTopMover ? Promise.resolve(null) : fetchTopMover(apiKey),
   ]);
   return { marketData, news, movers, topMover };
 }

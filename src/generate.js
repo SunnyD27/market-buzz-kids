@@ -95,11 +95,17 @@ export async function generateDigest(opts = {}) {
 
   console.log(`[Generate] Generating fresh digest for ${today}...`);
   console.log('[Generate] Step 1/3: Fetching market data from FMP...');
-  const { marketData, news, movers, topMover } = await fetchAllData(fmpKey);
+  // Week-ahead editions are forward-looking — they have no "today's mover"
+  // (Friday's % move is stale data wearing a "today" label, which is the
+  // bug we're fixing). Skip the fetchTopMover call on that path entirely;
+  // the prompt builder ignores topMover for week-ahead and Claude picks a
+  // catalyst-driven `oneToWatch` from upcoming events instead.
+  const skipTopMover = edition.editionType === 'week-ahead';
+  const { marketData, news, movers, topMover } = await fetchAllData(fmpKey, { skipTopMover });
   console.log(`[Generate]   Indices: ${Object.keys(marketData).length} symbols`);
   console.log(`[Generate]   News: ${news.length} articles`);
   console.log(`[Generate]   Movers: ${movers.topGainers.length} gainers, ${movers.topLosers.length} losers`);
-  console.log(`[Generate]   Today's Mover: ${topMover ? `${topMover.ticker} (${topMover.displayName}) ${topMover.changesPercentage?.toFixed?.(2)}%` : 'unavailable'}`);
+  console.log(`[Generate]   Today's Mover: ${skipTopMover ? 'skipped (week-ahead — uses oneToWatch instead)' : (topMover ? `${topMover.ticker} (${topMover.displayName}) ${topMover.changesPercentage?.toFixed?.(2)}%` : 'unavailable')}`);
 
   if (Object.keys(marketData).length === 0) {
     throw new Error('No market data returned from FMP — check API key');

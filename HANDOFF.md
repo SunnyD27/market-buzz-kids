@@ -59,6 +59,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **Polish** Stories-section heading reflects edition type | ✅ | Shipped via PR #3 |
 | **Polish** Week-ahead market-closed copy → "yesterday" | ✅ | Shipped via PR #4 |
 | **Polish** Skip post-holiday Week Ahead when holiday is Monday | ✅ | On `dev`, `9b8dbef` |
+| **Polish** Sunday/Monday edition framing + edition-aware mover label + conditional `oneToWatch` | ✅ | On `dev` awaiting next PR. Edition-aware framing subtitle + mover label resolver in `template.js`; week-ahead drops backward `topMover` (skip `fetchTopMover` in `generate.js`) in favor of an OPTIONAL `oneToWatch` (omit-on-quiet-week, high-bar + GOOD/BAD examples in the prompt). Teaser email is now edition-aware (subject + body framing per edition). |
 | Deploy | ✅ | Railway live |
 
 **Recent commits (most recent first):**
@@ -650,6 +651,83 @@ after a reset. Closed in `f828422`.
 Not verified end-to-end against a live DB (needs a consented test user +
 reset-token flow); `node --check` passes on all three files and the logic was
 confirmed by reading the requireAuth/setSession/reset paths together.
+
+## Session: Sunday/Monday edition framing + conditional One to Watch
+
+The Sunday weekly-wrap and Monday week-ahead were reading like normal
+"today's" digests on both the web surface and the 7 AM teaser email. Two
+concrete bugs were addressed in one PR.
+
+**Diagnostic first (the 2a step).** Confirmed via the cached `daily_digests`
+row for `DATE_OVERRIDE=2026-05-25` (Memorial Day Monday → week-ahead):
+- `fetchTopMover` was being called unconditionally in `src/data.js#fetchAllData`.
+- `buildWeekAheadPrompt` explicitly told Claude to populate `scoreboard.topMover`
+  with Friday's biggest curated mover.
+- The cached row's `topMover` was **Qualcomm `+11.59%`** — Friday's close —
+  and the template rendered it with the gold `TODAY'S MOVER` label. Stale
+  Friday data wearing a "today" label, exactly as described.
+- No `oneToWatch` field existed yet.
+
+**Changes.**
+
+1. **`src/template.js` — edition-aware framing + mover label resolver.**
+   - New framing subtitle `.edition-framing` rendered under `editionLabel`
+     on weekly-wrap ("Looking back at this past week 📋") and week-ahead
+     ("Here's what to watch this coming week 🔮"). Driven off
+     `content.editionType`, not a fresh day-of-week calculation.
+   - New `resolveMoverSpec()` — a single resolver keyed on `editionType`
+     that picks the gold card's label + data source: `TODAY'S MOVER` (standard)
+     / `WEEK'S BIGGEST MOVER` (weekly-wrap) from `scoreboard.topMover`;
+     `ONE TO WATCH` from `content.oneToWatch` on week-ahead. Returns null
+     when the source data is absent → week-ahead with no catalyst this
+     week renders no card at all (no empty card, no fallback to a backward
+     mover).
+   - Vibe-bar callout flows from the same spec: backward
+     "Why X moved: …" on standard/weekly-wrap; forward "Why watch X: …"
+     on week-ahead; nothing when there's no spec.
+   - Standard editions are byte-identical to the prior output (the literal
+     `TODAY'S MOVER` is rendered raw, not escaped, so the apostrophe stays
+     a literal `'`).
+
+2. **`src/ai.js` — week-ahead prompt rewritten.**
+   - `topMover` parameter ignored on the week-ahead path; the "TODAY'S MOVER"
+     section and JSON schema entry removed.
+   - New `ONE TO WATCH` section + `oneToWatch` JSON schema field — OPTIONAL,
+     omit-on-quiet-week, high-bar. GOOD/BAD examples in the prompt:
+     - GOOD: "Nvidia reports earnings Wednesday — its stock often makes a
+       big move after it shares how many AI chips it sold." (real catalyst)
+     - BAD: "Apple is always worth watching." (manufactured pick — omit)
+     - BAD: "Tesla had a big move last Friday." (backward — that's a Today's
+       Mover, not a One to Watch.)
+   - Explicit rule: "If there is no specific, scheduled, nameable catalyst
+     this week, do NOT include a oneToWatch. A missing card is correct and
+     expected on quiet weeks. Never manufacture a reason to fill it."
+
+3. **`src/generate.js` + `src/data.js` — skip `fetchTopMover` on week-ahead.**
+   `fetchAllData` now takes `opts.skipTopMover` and `generate.js` passes
+   `skipTopMover: edition.editionType === 'week-ahead'`. The week-ahead
+   prompt no longer receives any backward mover data — Claude picks
+   `oneToWatch` from web-search results about upcoming events.
+
+4. **`src/emails.js` — teaser email is edition-aware.** Subject + body
+   framing forks on `content.editionType`:
+   - standard: `🟢 Today's Juice: <date>` — unchanged
+   - weekly-wrap: `📋 Market Juice — Your Weekly Wrap (<date>)` — "A look
+     back at this past week", "Week's biggest mover", "Read the Weekly Wrap →"
+   - week-ahead: `🔮 Market Juice — The Week Ahead (<date>)` — "Here's
+     what to watch this coming week", "One to watch" line only when
+     `content.oneToWatch` is present, "Read the Week Ahead →"
+
+**Verified offline** (no API spend) via assertion-based fixture renders +
+the four header/scoreboard screenshots: standard / weekly-wrap / week-ahead
+with `oneToWatch` / week-ahead quiet-week. Glossary smoke test still
+passes (55 assertions). `node --check` clean on all changed files.
+
+**Post-launch watch item:** spot-check a few quiet weeks to confirm
+`oneToWatch` is actually being omitted rather than always filled. Models
+over-produce on open slots; if Claude starts inventing weak picks, raise
+the bar in the prompt (or add a server-side gate that filters out
+catalyst-less submissions).
 
 ## Session: Phase 13 — Lightweight Admin Dashboard
 

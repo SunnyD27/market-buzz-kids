@@ -171,6 +171,13 @@ export function buildHTML(content, opts = {}) {
     // muted "markets closed" note above the scoreboard so kids understand
     // why the numbers haven't changed since Friday.
     editionType, editionLabel, sundayChallenge, weeklyChallenge, marketClosed,
+    // Week-ahead editions can carry an OPTIONAL `oneToWatch` object —
+    // a forward, catalyst-driven pick chosen by Claude when there's a
+    // specific scheduled event this week tied to a kid-recognizable
+    // company. Omitted entirely on quiet weeks (see src/ai.js
+    // buildWeekAheadPrompt). When present, it replaces the gold mover
+    // card with a "One to Watch" card; when absent, no card renders.
+    oneToWatch,
   } = content;
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
@@ -198,10 +205,57 @@ export function buildHTML(content, opts = {}) {
   // and a prose mention of the same term stay independent.
   const _glossView = getActiveGlossary();
   const _linker = makeGlossaryLinker(_glossView, { enabled: glossaryOn });
+
+  // ── Mover-card spec (edition-aware) ────────────────────────────────────
+  // ONE resolver keyed on editionType — the same shape feeds the gold card
+  // and the "why" callout, so the label, source field, and rendering stay
+  // consistent in one place.
+  //   standard      → scoreboard.topMover  · label "TODAY'S MOVER"
+  //   weekly-wrap   → scoreboard.topMover  · label "WEEK'S BIGGEST MOVER"
+  //   week-ahead    → content.oneToWatch   · label "ONE TO WATCH" (OPTIONAL)
+  // Returns null when the source data isn't present — week-ahead with no
+  // catalyst this week renders no card at all (no empty card, no fallback
+  // to a backward mover).
+  function resolveMoverSpec() {
+    if (editionType === 'week-ahead') {
+      if (!oneToWatch || !oneToWatch.name) return null;
+      return {
+        kind: 'forward',
+        label: 'ONE TO WATCH',
+        name: oneToWatch.name,
+        ticker: oneToWatch.ticker || '',
+        catalyst: oneToWatch.catalyst || '',
+        reason: oneToWatch.reason || '',
+      };
+    }
+    const m = scoreboard.topMover;
+    if (!m) return null;
+    const label = editionType === 'weekly-wrap' ? "WEEK'S BIGGEST MOVER" : "TODAY'S MOVER";
+    return {
+      kind: 'backward',
+      label,
+      name: m.name || '',
+      ticker: m.ticker || '',
+      price: m.price || '',
+      change: m.change || '',
+      direction: m.direction || 'up',
+      vibe: m.vibe || '',
+    };
+  }
+  const _moverSpec = resolveMoverSpec();
+
   const lk = {
     bigPicture: _linker.link(bigPicture),
     vibeSummary: _linker.link(vibeSummary),
-    topMoverVibe: scoreboard.topMover?.vibe ? _linker.link(scoreboard.topMover.vibe) : '',
+    // Mover prose — runs whichever field the active edition actually shows
+    // (the backward "vibe" sentence on standard/weekly-wrap, the forward
+    // "reason" sentence on week-ahead). The other field is null/empty so
+    // no extra terms are consumed from the first-occurrence pass.
+    moverProse: _moverSpec
+      ? (_moverSpec.kind === 'forward'
+          ? (_moverSpec.reason ? _linker.link(_moverSpec.reason) : '')
+          : (_moverSpec.vibe ? _linker.link(_moverSpec.vibe) : ''))
+      : '',
     stories: (stories || []).map(s => ({
       title: _linker.link(s.title),
       body: _linker.link(s.body),
@@ -252,11 +306,27 @@ export function buildHTML(content, opts = {}) {
     </div>
   `).join('');
 
-  // Edition label — subtitle under the date for Weekly Wrap (Sunday) and
-  // Week Ahead (Monday/post-holiday) editions. Standard weekday digests
-  // omit this line entirely so the header looks identical to before.
+  // Edition label + framing subtitle — under the date for Weekly Wrap
+  // (Sunday) and Week Ahead (Monday/post-holiday) editions. Standard
+  // weekday digests omit this block entirely so the header looks
+  // byte-identical to before.
+  //
+  // The framing line makes the backward/forward orientation unmistakable
+  // for a kid + skimming parent on the two editions that otherwise read
+  // as if they were a normal "today's" digest. Driven off the
+  // authoritative editionType field — never re-derived from day-of-week
+  // in the template.
+  const editionFraming = editionType === 'weekly-wrap'
+    ? 'Looking back at this past week 📋'
+    : editionType === 'week-ahead'
+      ? "Here's what to watch this coming week 🔮"
+      : null;
   const editionLabelHTML = editionLabel
-    ? `<div class="edition-label">${escapeHTML(editionLabel)}</div>`
+    ? `<div class="edition-label">${escapeHTML(editionLabel)}</div>${
+        editionFraming
+          ? `<div class="edition-framing">${escapeHTML(editionFraming)}</div>`
+          : ''
+      }`
     : '';
 
   // Phase 7 — personalized greeting + logout. Only rendered when a kid
@@ -408,18 +478,36 @@ export function buildHTML(content, opts = {}) {
     `;
   }
 
+  // Renders the gold mover card from the edition-aware spec resolved
+  // above. Three label variants flow from one place; the week-ahead
+  // "ONE TO WATCH" variant is forward-looking and shows a catalyst
+  // line instead of price/% change. Returns '' when the spec is null
+  // — week-ahead with no catalyst this week renders no card at all.
   function topMoverCard() {
-    const s = scoreboard.topMover;
-    if (!s) return '';
-    const dir = s.direction === 'up' ? 'up' : 'down';
-    const arrow = s.direction === 'up' ? 'arrow-up' : 'arrow-down';
+    if (!_moverSpec) return '';
+    // The label is an internal constant ("TODAY'S MOVER" / "WEEK'S BIGGEST MOVER"
+    // / "ONE TO WATCH"), not user content — render it raw so the apostrophe
+    // stays as a literal `'` (matches the prior hardcoded output byte-for-byte
+    // on the standard edition).
+    if (_moverSpec.kind === 'forward') {
+      return `
+      <div class="score-card up mover mover-forward">
+        <div class="mover-badge">${_moverSpec.label}</div>
+        <div class="mover-name">${escapeHTML(_moverSpec.name)}</div>
+        ${_moverSpec.ticker ? `<div class="mover-ticker">${escapeHTML(_moverSpec.ticker)}</div>` : ''}
+        ${_moverSpec.catalyst ? `<div class="mover-catalyst">${escapeHTML(_moverSpec.catalyst)}</div>` : ''}
+      </div>
+    `;
+    }
+    const dir = _moverSpec.direction === 'up' ? 'up' : 'down';
+    const arrow = _moverSpec.direction === 'up' ? 'arrow-up' : 'arrow-down';
     return `
       <div class="score-card ${dir} mover">
-        <div class="mover-badge">TODAY'S MOVER</div>
-        <div class="mover-name">${escapeHTML(s.name)}</div>
-        <div class="mover-ticker">${escapeHTML(s.ticker)}</div>
-        <div class="price">${escapeHTML(s.price)}</div>
-        <div class="change"><span class="${arrow}"></span> ${escapeHTML(s.change)}</div>
+        <div class="mover-badge">${_moverSpec.label}</div>
+        <div class="mover-name">${escapeHTML(_moverSpec.name)}</div>
+        <div class="mover-ticker">${escapeHTML(_moverSpec.ticker)}</div>
+        <div class="price">${escapeHTML(_moverSpec.price)}</div>
+        <div class="change"><span class="${arrow}"></span> ${escapeHTML(_moverSpec.change)}</div>
       </div>
     `;
   }
@@ -437,13 +525,18 @@ export function buildHTML(content, opts = {}) {
     <a class="sample-cta" href="/#signup">Sign up your kid →</a>
   </div>` : '';
 
-  // Today's Mover one-liner gets its own callout row under the scoreboard so
-  // the "WHY it moved" explanation has room to breathe — the vibe text is too
-  // long to fit inside the gold card cleanly.
-  const topMoverWhyHTML = scoreboard.topMover?.vibe
+  // Mover one-liner — its own callout row under the scoreboard so the
+  // explanation has room to breathe. Three framings depending on the
+  // edition-aware mover spec:
+  //   backward (standard / weekly-wrap) → "Why X moved: <vibe>"
+  //   forward  (week-ahead, oneToWatch) → "Why watch X: <reason>"
+  //   no spec  (e.g. week-ahead with no catalyst) → nothing
+  const topMoverWhyHTML = (_moverSpec && lk.moverProse)
     ? `
       <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
-        ⭐ <strong style="color: var(--yellow);">Why ${escapeHTML(scoreboard.topMover.name)} moved:</strong> ${lk.topMoverVibe}
+        ⭐ <strong style="color: var(--yellow);">${_moverSpec.kind === 'forward'
+            ? `Why watch ${escapeHTML(_moverSpec.name)}:`
+            : `Why ${escapeHTML(_moverSpec.name)} moved:`}</strong> ${lk.moverProse}
       </p>`
     : '';
 
@@ -544,6 +637,9 @@ export function buildHTML(content, opts = {}) {
   .mover-badge { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 2px; background: linear-gradient(135deg, var(--yellow), var(--orange)); color: #0d1117; padding: 3px 8px; border-radius: 6px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
   .mover-name { font-size: 14px; font-weight: 700; color: var(--yellow); margin-bottom: 2px; line-height: 1.2; }
   .mover-ticker { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
+  /* Week-ahead "One to Watch" — forward-looking variant of the gold mover
+     card. No price / arrow / % change; the catalyst replaces the numbers. */
+  .mover-catalyst { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35; margin-top: 2px; }
   .story-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-bottom: 14px; animation: fadeIn 0.5s ease-out both; transition: transform 0.2s; }
   .story-card:hover { transform: translateY(-2px); }
   .story-card .badge { display: inline-block; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; font-weight: 700; }
@@ -705,6 +801,15 @@ export function buildHTML(content, opts = {}) {
     -webkit-background-clip: text; background-clip: text;
     -webkit-text-fill-color: transparent;
     letter-spacing: 0.2px;
+  }
+  /* Framing subtitle — sits right under .edition-label on weekly-wrap +
+     week-ahead. Makes the backward/forward orientation unmistakable. */
+  .edition-framing {
+    font-family: 'Fredoka', sans-serif;
+    font-size: 13px; font-weight: 500;
+    margin-top: 2px;
+    color: var(--text-dim);
+    letter-spacing: 0.1px;
   }
   /* Phase 7 — small greeting + logout link in the header. Subtle by
      design: this is for shared-device hygiene, not a daily-visible CTA. */
