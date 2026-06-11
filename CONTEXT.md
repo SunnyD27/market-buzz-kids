@@ -338,6 +338,8 @@ Footer
 
 Self-contained: all CSS inline, Google Fonts (`Fredoka` + `Space Mono`), interactive quiz + games via inline scripts. Mobile-first with 600px media query. Apple PWA meta tags for iPad home-screen.
 
+**Readability tokens (2026-06 overhaul).** Digest body-copy typography is driven off CSS custom properties in `:root`, tuned in ONE place rather than per element: `--body-size: 16.5px`, `--body-leading: 1.72` (line-height — the highest-impact value), `--prose-measure: 42ch` (max line length, applied to flowing prose only — Big Picture, story bodies, the DYK fact — never to scoreboard / challenge / mover layout components), `--para-gap: 0.95em` (gap between split paragraphs), and `--gloss-underline: rgba(255,122,26,0.45)` (softened dotted glossary underline; `text-underline-offset` stays 3px). The capped prose column is **left-aligned** (flush under the heading), not centered. **Paragraph splitting:** `makeGlossaryLinker(...).linkProse(field)` renders a body field as one-or-more `<p>`, splitting on blank-line (`\n\n`) breaks the model already emitted — purely visual, no content is shortened or reworded, and the glossary first-occurrence `seen` set spans all paragraphs. When a field has no `\n\n` (today's common case) it renders as exactly one `<p>`; the readability win on those comes entirely from the size/leading/measure tokens.
+
 ### Step 5 — Persist + serve
 
 `saveDigest()` inserts into `daily_digests` with `ON CONFLICT DO NOTHING`. Writes `public/index.html` and `public/digest-data.json` to disk.

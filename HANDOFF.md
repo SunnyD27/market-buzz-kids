@@ -983,3 +983,51 @@ Meta leaks); existing `test-games.js` + `test-glossary.js` still pass; live in
 Fitness (two new entries + fixed Meta) with no company name in any right-side
 clue — screenshot taken. Ships via deploy (static dataset), not the live
 approved-term path.
+
+---
+
+## Session: Readability overhaul (body typography — visual only)
+
+**Trigger:** the 10-year-old target reader found the digest body "too crammed —
+just a flow of text." A typography/spacing problem, NOT a content problem.
+
+**HARD CONSTRAINT honored:** purely visual. No `src/ai.js` change, no prompt
+change, no rewording/shortening. Every word stays. Verified word-for-word
+(see below). All changes in `src/template.js`.
+
+**What changed (all token-driven in `:root`):**
+- `--body-size: 16.5px` (was ~14–15px), `--body-leading: 1.72` (was ~1.4–1.65),
+  `--prose-measure: 42ch`, `--para-gap: 0.95em`, `--gloss-underline:
+  rgba(255,122,26,0.45)` (was solid `#FF7A1A`; offset still 3px).
+- Applied to body prose: `.story-card p`, `.big-picture p`, `.dyk-fact`,
+  `.dyk-connection`, `.why-it-matters`. The 42ch measure is applied to flowing
+  prose only (Big Picture, story bodies, DYK fact); the capped column is
+  **left-aligned** under the heading (not centered — centering misaligned the
+  body from its story heading). Scoreboard, challenge picker, badges, and mover
+  card are untouched (`max-width: none`, widths unchanged — verified 4×153px).
+- **Multi-`<p>` rendering:** new `makeGlossaryLinker(...).linkProse(field)` splits
+  a body field on blank-line (`\n\n`) breaks the model already emitted and emits
+  one `<p>` per paragraph, sharing the glossary `seen` set so first-occurrence
+  linking spans paragraphs. Wired into `bigPicture` + story `body` (the two
+  fields rendered as standalone `<p>`); removed their outer `<p>` wrappers.
+
+**IMPORTANT — paragraph-splitting is a no-op on today's content.** Probed both
+`sample-digest.json` and a live digest: NO body field currently contains `\n\n`
+(Big Picture ~550–800 chars, story bodies ~180–640 chars are each one block).
+Per the no-content-change constraint we did NOT add breaks by rewriting or by
+touching the prompt — so `linkProse` renders exactly one `<p>` today. The
+readability win on existing/future break-less digests comes entirely from the
+size/leading/measure tokens; the splitter only activates if/when a field ships
+with real `\n\n`.
+
+**Verified (live + code):** rendered `/sample` in a browser at a tall viewport —
+before/after screenshots of Big Picture + a story + the scoreboard. Computed
+styles on the live `.big-picture p`: `font-size 16.5px`, `line-height 28.38px`
+(=16.5×1.72), `max-width 406.6px` (42ch). Word-preservation proven by rendering
+each prose field with glossary OFF and diffing the visible text vs the raw field
+— **word-for-word identical, 0 diffs** across both digests. Glossary suite
+(`test-glossary.js`) passes (first-occurrence-across-paragraphs + tile-not-
+consuming-seen-set both hold); `node --check src/template.js` clean. Live-vs-
+code split: typography + word-preservation verified LIVE in-browser; the multi-
+`<p>` split path verified by unit assertion (synthetic `\n\n` → 2 `<p>`, 1 gloss
+span) since no live content exercises it yet.

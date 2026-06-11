@@ -117,7 +117,26 @@ export function makeGlossaryLinker(view, { enabled = true } = {}) {
     return linkSegment(s, skipLower);
   }
 
-  return { link };
+  // Render a body field as one-or-more <p> tags, splitting on blank-line
+  // (\n\n) paragraph breaks the MODEL already emitted. This is the readability
+  // fix: it re-wraps existing breaks for breathing room WITHOUT removing,
+  // shortening, or rewording a single character — single newlines are left as
+  // whitespace (collapsed), exactly as before. When a field has no internal
+  // breaks (today's common case) this returns exactly one <p>, byte-identical
+  // in text content to wrapping link() in a <p> by hand.
+  //
+  // Crucially, every paragraph is linked through the SAME `link()` closure, so
+  // the glossary `seen` set spans all paragraphs: a term defined in paragraph 1
+  // stays plain in paragraph 3 — first-occurrence-only holds across the whole
+  // field, exactly as the single-string pass did.
+  function linkProse(rawText, opts = {}) {
+    const s = String(rawText == null ? '' : rawText);
+    const paras = s.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+    const list = paras.length ? paras : [s];
+    return list.map(p => `<p>${link(p, opts)}</p>`).join('');
+  }
+
+  return { link, linkProse };
 }
 
 function escapeRegExp(s) {
@@ -245,7 +264,12 @@ export function buildHTML(content, opts = {}) {
   const _moverSpec = resolveMoverSpec();
 
   const lk = {
-    bigPicture: _linker.link(bigPicture),
+    // bigPicture + story bodies render as one-or-more <p> (linkProse) so any
+    // \n\n breaks the model emitted become real paragraphs. The other fields
+    // stay single-block link() — they're short and/or rendered inline after a
+    // label (why-it-matters, the DYK lesson), where a <p> split would break the
+    // inline layout. No content differs either way; this is purely structural.
+    bigPicture: _linker.linkProse(bigPicture),
     vibeSummary: _linker.link(vibeSummary),
     // Mover prose — runs whichever field the active edition actually shows
     // (the backward "vibe" sentence on standard/weekly-wrap, the forward
@@ -258,7 +282,7 @@ export function buildHTML(content, opts = {}) {
       : '',
     stories: (stories || []).map(s => ({
       title: _linker.link(s.title),
-      body: _linker.link(s.body),
+      body: _linker.linkProse(s.body),
       whyItMatters: _linker.link(s.whyItMatters),
     })),
     dykFact: _linker.link(didYouKnow?.fact || ''),
@@ -298,7 +322,7 @@ export function buildHTML(content, opts = {}) {
     <div class="story-card" style="animation-delay: ${0.15 + i * 0.1}s">
       <span class="badge ${badgeClasses[story.badge] || 'new'}">${badgeEmojis[story.badge] || '📰'} ${escapeHTML(story.badgeLabel)}</span>
       <h3>${lk.stories[i]?.title ?? escapeHTML(story.title)}</h3>
-      <p>${lk.stories[i]?.body ?? escapeHTML(story.body)}</p>
+      ${lk.stories[i]?.body ?? `<p>${escapeHTML(story.body)}</p>`}
       <div class="why-it-matters">
         <strong>💡 Why it matters:</strong> ${lk.stories[i]?.whyItMatters ?? escapeHTML(story.whyItMatters)}
       </div>
@@ -579,6 +603,15 @@ export function buildHTML(content, opts = {}) {
     --purple: #bc8cff; --yellow: #f0c040; --yellow-glow: rgba(240,192,64,0.12);
     --text: #e6edf3; --text-dim: #8b949e; --text-bright: #ffffff;
     --orange: #f0883e;
+    /* Readability tokens (2026-06 overhaul). Body-copy typography is driven
+       off these so the reading experience is tuned in ONE place, not per
+       element. Values approved from the before/after mockup. PURELY visual —
+       no content is shortened or reworded anywhere. */
+    --body-size: 16.5px;        /* digest body copy (was ~14–15px) */
+    --body-leading: 1.72;       /* line-height — highest-impact change (was ~1.4–1.65) */
+    --prose-measure: 42ch;      /* max line length for flowing prose only */
+    --para-gap: 0.95em;         /* space between split paragraphs */
+    --gloss-underline: rgba(255,122,26,0.45); /* softened dotted underline (was solid #FF7A1A) */
   }
   body { background: var(--bg); color: var(--text); font-family: 'Fredoka', sans-serif; min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
   .stars { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 0; }
@@ -649,13 +682,18 @@ export function buildHTML(content, opts = {}) {
   .badge.world { background: var(--yellow-glow); color: var(--yellow); border: 1px solid rgba(240,192,64,0.3); }
   .badge.brain { background: rgba(188,140,255,0.12); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
   .story-card h3 { font-size: 18px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; line-height: 1.3; }
-  .story-card p { font-size: 15px; line-height: 1.65; color: var(--text); }
-  .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(88,166,255,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: 14px; color: var(--text); line-height: 1.55; }
+  /* Body prose: bigger, roomier, measure-capped. max-width keeps lines from
+     running the full card width; left-aligned (not centered) so the column
+     stays flush under the story heading. Paragraph gap only applies when the
+     field contains \n\n breaks and renders as multiple <p>. */
+  .story-card p { font-size: var(--body-size); line-height: var(--body-leading); color: var(--text); max-width: var(--prose-measure); margin: 0 0 var(--para-gap); }
+  .story-card p:last-child { margin-bottom: 0; }
+  .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(88,166,255,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); }
   .story-card .why-it-matters strong { color: var(--blue); font-weight: 600; }
   .dyk-card { background: linear-gradient(135deg, rgba(188,140,255,0.10), rgba(88,166,255,0.06)); border: 1px solid rgba(188,140,255,0.3); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
   .dyk-card .dyk-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; }
-  .dyk-card .dyk-fact { font-size: 17px; font-weight: 500; color: var(--text-bright); line-height: 1.5; margin-bottom: 12px; }
-  .dyk-card .dyk-connection { font-size: 14px; color: var(--text); line-height: 1.55; padding: 12px 14px; background: rgba(188,140,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
+  .dyk-card .dyk-fact { font-size: 17px; font-weight: 500; color: var(--text-bright); line-height: var(--body-leading); max-width: var(--prose-measure); margin-bottom: 12px; }
+  .dyk-card .dyk-connection { font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); padding: 12px 14px; background: rgba(188,140,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
   .dyk-card .dyk-connection strong { color: var(--purple); font-weight: 600; }
   .quiz-card { background: linear-gradient(135deg, rgba(188,140,255,0.08), rgba(88,166,255,0.08)); border: 1px solid rgba(188,140,255,0.25); border-radius: 16px; padding: 24px; text-align: center; animation: fadeIn 0.5s ease-out both; }
   .quiz-card .quiz-label { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 12px; }
@@ -687,7 +725,7 @@ export function buildHTML(content, opts = {}) {
     font-weight: 500;
     text-decoration: underline;
     text-decoration-style: dotted;
-    text-decoration-color: #FF7A1A;
+    text-decoration-color: var(--gloss-underline);
     text-underline-offset: 3px;
     -webkit-tap-highlight-color: transparent;
   }
@@ -789,7 +827,8 @@ export function buildHTML(content, opts = {}) {
   .big-picture .bp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .big-picture .bp-header .emoji { font-size: 24px; line-height: 1; }
   .big-picture .bp-header h3 { font-size: 18px; font-weight: 700; color: var(--text-bright); }
-  .big-picture p { font-size: 15px; line-height: 1.65; color: var(--text); }
+  .big-picture p { font-size: var(--body-size); line-height: var(--body-leading); color: var(--text); max-width: var(--prose-measure); margin: 0 0 var(--para-gap); }
+  .big-picture p:last-child { margin-bottom: 0; }
   .footer { text-align: center; margin-top: 40px; padding-top: 20px; border-top: 1px solid var(--card-border); font-size: 13px; color: var(--text-dim); animation: fadeIn 0.5s ease-out both; }
   .footer .rocket { font-size: 20px; }
   /* Edition label — renders under .date-line for Weekly Wrap and Week Ahead. */
@@ -1243,7 +1282,7 @@ export function buildHTML(content, opts = {}) {
       <span class="emoji">🌎</span>
       <h3>The Big Picture</h3>
     </div>
-    <p>${lk.bigPicture}</p>
+    ${lk.bigPicture}
     ${askParentBtn('big-picture', "Today's Big Picture")}
   </div>
 
