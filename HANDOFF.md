@@ -1031,3 +1031,53 @@ consuming-seen-set both hold); `node --check src/template.js` clean. Live-vs-
 code split: typography + word-preservation verified LIVE in-browser; the multi-
 `<p>` split path verified by unit assertion (synthetic `\n\n` → 2 `<p>`, 1 gloss
 span) since no live content exercises it yet.
+
+---
+
+## Session: Readability fix-up — paragraphs + wider measure
+
+**Why:** the prior readability pass shipped wrong — it applied a hard `42ch`
+measure but never broke the long body blocks. Result on wide cards: a tall
+skinny column stranded in the left ~55% with a big empty void on the right, and
+the text was STILL one unbroken block. This session fixes both.
+
+**Kept from prior pass (these landed right):** `--body-size 16.5px`,
+`--body-leading 1.72`, softened glossary underline. Untouched.
+
+**Fix 1 — measure fills the card.** `--prose-measure: 42ch → 64ch`. Verified
+live: `.big-picture p` renders at 602px inside a 604px card content box — fills
+it, no void. 64ch clamps to card width on narrow screens (mobile stays
+near-full-width). Prose-only; scoreboard/challenge/mover/badges untouched
+(measured 4×153px, `max-width: none`).
+
+**Fix 2 — real paragraphs (the main fix).** Long body fields now render as
+multiple `<p>` from two sources, BOTH word-preserving:
+- **New digests:** `PARAGRAPH_RULE` added to all three edition prompts in
+  `src/ai.js` — authoring directive to write bigPicture / story body /
+  whyItMatters as 2–3 short `\n\n`-separated paragraphs, SAME depth/length/voice
+  (structure only, explicitly "do not shorten"). Verified by a real
+  `generateContent` run (no DB write): bigPicture + every story body came back
+  with `\n\n`.
+- **Already-stored digests (no `\n\n`):** new `paragraphizeText()` /
+  `splitSentences()` in `src/template.js` — a safe display-time fallback that
+  groups whole sentences into ~2–3-sentence paragraphs. Conservative: never
+  splits inside `U.S.` / `a.m.` / `Inc.` / `Dr.` / `$4.2` / single initials
+  (`SENTENCE_ABBR`), leaves a too-long lone sentence whole. Inserts only `<p>`
+  boundaries — no word dropped/reordered/altered.
+- `linkProse(field, {prefix})` now drives bigPicture, story body, whyItMatters,
+  DYK fact + connection. `prefix` carries the inline label ("💡 Why it matters:",
+  "The lesson:") into the first `<p>`. Glossary first-occurrence `seen` set still
+  spans all paragraphs.
+
+**No content shortened — proven.** Rendered every prose field (glossary OFF) for
+both an old stored digest and the fresh-generated one and diffed visible text vs
+source: **word-for-word identical, 0 diffs.** The splitter is a pure render
+transform.
+
+**Verified:** `node --check` both files; `test-glossary.js` passes (incl.
+first-occurrence-across-paragraphs); splitter unit checks (abbreviations,
+decimals, times, word-integrity) all green; live `/sample`-style render
+before/after screenshots of Big Picture + a story + scoreboard. Live-vs-code
+split: measure-fills-card + paragraphing + word-integrity verified LIVE
+in-browser and via real generation; `ai.js` prompt verified by one live
+`generateContent` call (not persisted).

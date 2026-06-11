@@ -117,26 +117,101 @@ export function makeGlossaryLinker(view, { enabled = true } = {}) {
     return linkSegment(s, skipLower);
   }
 
-  // Render a body field as one-or-more <p> tags, splitting on blank-line
-  // (\n\n) paragraph breaks the MODEL already emitted. This is the readability
-  // fix: it re-wraps existing breaks for breathing room WITHOUT removing,
-  // shortening, or rewording a single character — single newlines are left as
-  // whitespace (collapsed), exactly as before. When a field has no internal
-  // breaks (today's common case) this returns exactly one <p>, byte-identical
-  // in text content to wrapping link() in a <p> by hand.
+  // Render a body field as one-or-more <p> tags for comfortable reading.
+  // Paragraph boundaries come from paragraphizeText():
+  //   1. If the model emitted blank-line (\n\n) breaks, those are honored
+  //      exactly (newly-generated, already-chunked content).
+  //   2. Otherwise (already-stored rows with no breaks) a SAFE display-time
+  //      splitter groups whole sentences into ~2–3-sentence paragraphs.
+  // Both paths are word-preserving: no word is removed, reordered, or
+  // reworded — only <p> boundaries are inserted between whole sentences/
+  // paragraphs. opts.prefix is trusted HTML (our own <strong> label) injected
+  // into the FIRST paragraph only.
   //
-  // Crucially, every paragraph is linked through the SAME `link()` closure, so
-  // the glossary `seen` set spans all paragraphs: a term defined in paragraph 1
+  // Every paragraph is linked through the SAME `link()` closure, so the
+  // glossary `seen` set spans all paragraphs: a term defined in paragraph 1
   // stays plain in paragraph 3 — first-occurrence-only holds across the whole
   // field, exactly as the single-string pass did.
   function linkProse(rawText, opts = {}) {
-    const s = String(rawText == null ? '' : rawText);
-    const paras = s.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
-    const list = paras.length ? paras : [s];
-    return list.map(p => `<p>${link(p, opts)}</p>`).join('');
+    const paras = paragraphizeText(rawText);
+    const linkOpts = opts.skipTerm ? { skipTerm: opts.skipTerm } : {};
+    if (!paras.length) return opts.prefix ? `<p>${opts.prefix}</p>` : '';
+    return paras
+      .map((p, i) => `<p>${i === 0 && opts.prefix ? opts.prefix : ''}${link(p, linkOpts)}</p>`)
+      .join('');
   }
 
   return { link, linkProse };
+}
+
+// Abbreviations / titles whose trailing "." is NOT a sentence end. Used by
+// splitSentences to avoid mis-splitting "U.S. stocks", "8:30 a.m. open",
+// "Acme Inc. said", "Dr. Smith", etc.
+const SENTENCE_ABBR = new Set([
+  'mr', 'mrs', 'ms', 'dr', 'prof', 'gen', 'sen', 'rep', 'gov', 'st', 'jr', 'sr',
+  'inc', 'co', 'corp', 'ltd', 'vs', 'etc', 'no', 'approx', 'dept', 'fig', 'vol',
+  'u.s', 'u.k', 'u.s.a', 'a.m', 'p.m', 'e.g', 'i.e', 'ave', 'blvd', 'mt',
+]);
+
+// Conservative sentence splitter — used ONLY as a display-time fallback to
+// paragraph already-stored digests that have no \n\n breaks. It is
+// word-preserving: it returns slices of the ORIGINAL text (trimmed), never
+// dropping, reordering, or altering a word. When in doubt it does NOT split
+// (a too-long single sentence is left whole rather than mis-broken).
+//
+// Boundary = sentence-ending [.!?] (+ optional closing quote/bracket) followed
+// by whitespace and the start of a new sentence (capital / opening quote /
+// paren). Decimals like "$4.2" are safe because there is no whitespace after
+// the dot; abbreviations are guarded via SENTENCE_ABBR + single-initial check.
+function splitSentences(text) {
+  const out = [];
+  let start = 0;
+  const re = /[.!?]+["'”’)\]]?\s+(?=[A-Z“"'(])/g;
+  let m;
+  while ((m = re.exec(text)) !== null) {
+    const ws = (m[0].match(/\s+$/) || [''])[0].length;
+    const sentEnd = m.index + m[0].length - ws; // keep any closing quote in the sentence
+    // Inspect the token ending at the first punctuation char to reject
+    // abbreviations and single initials (e.g. "J." in a name).
+    const pre = text.slice(0, m.index + 1);
+    const wm = pre.match(/([^\s]+?)[.!?]+$/);
+    const lastTok = (wm ? wm[1] : '').toLowerCase().replace(/[^a-z.]/g, '');
+    const isInitial = /^[a-z]$/.test(lastTok);
+    if (isInitial || SENTENCE_ABBR.has(lastTok) || SENTENCE_ABBR.has(lastTok.replace(/\.+$/, ''))) {
+      continue; // not a real boundary — fold into the next sentence
+    }
+    out.push(text.slice(start, sentEnd).trim());
+    start = m.index + m[0].length; // resume after the boundary whitespace
+  }
+  const tail = text.slice(start).trim();
+  if (tail) out.push(tail);
+  return out.filter(Boolean);
+}
+
+// Turn a body field into an array of paragraph strings. Honors model-authored
+// \n\n breaks exactly; otherwise falls back to grouping whole sentences into
+// ~2–3-sentence paragraphs (≤3 sentences → left as one paragraph). Pure +
+// word-preserving — see splitSentences.
+function paragraphizeText(rawText) {
+  const t = String(rawText == null ? '' : rawText);
+  const byBreaks = t.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+  if (byBreaks.length > 1) return byBreaks;
+  const body = t.trim();
+  if (!body) return [];
+  const sents = splitSentences(body);
+  if (sents.length <= 3) return [body];
+  const numParas = Math.ceil(sents.length / 3); // cap at 3 sentences/paragraph
+  const base = Math.floor(sents.length / numParas);
+  let rem = sents.length % numParas;
+  const out = [];
+  let idx = 0;
+  for (let i = 0; i < numParas; i++) {
+    const take = base + (rem > 0 ? 1 : 0);
+    if (rem > 0) rem--;
+    out.push(sents.slice(idx, idx + take).join(' '));
+    idx += take;
+  }
+  return out;
 }
 
 function escapeRegExp(s) {
@@ -264,11 +339,11 @@ export function buildHTML(content, opts = {}) {
   const _moverSpec = resolveMoverSpec();
 
   const lk = {
-    // bigPicture + story bodies render as one-or-more <p> (linkProse) so any
-    // \n\n breaks the model emitted become real paragraphs. The other fields
-    // stay single-block link() — they're short and/or rendered inline after a
-    // label (why-it-matters, the DYK lesson), where a <p> split would break the
-    // inline layout. No content differs either way; this is purely structural.
+    // ALL long body fields render as one-or-more <p> via linkProse, so they
+    // get real paragraph breaks (from \n\n the model emits, or the safe
+    // sentence-grouping fallback on already-stored rows). why-it-matters and
+    // the DYK lesson pass their inline label as `prefix` so it rides the FIRST
+    // paragraph. No content differs — purely structural paragraphing.
     bigPicture: _linker.linkProse(bigPicture),
     vibeSummary: _linker.link(vibeSummary),
     // Mover prose — runs whichever field the active edition actually shows
@@ -283,10 +358,10 @@ export function buildHTML(content, opts = {}) {
     stories: (stories || []).map(s => ({
       title: _linker.link(s.title),
       body: _linker.linkProse(s.body),
-      whyItMatters: _linker.link(s.whyItMatters),
+      whyItMatters: _linker.linkProse(s.whyItMatters, { prefix: '<strong>💡 Why it matters:</strong> ' }),
     })),
-    dykFact: _linker.link(didYouKnow?.fact || ''),
-    dykConnection: didYouKnow?.connection ? _linker.link(didYouKnow.connection) : '',
+    dykFact: _linker.linkProse(didYouKnow?.fact || ''),
+    dykConnection: didYouKnow?.connection ? _linker.linkProse(didYouKnow.connection, { prefix: '<strong>The lesson:</strong> ' }) : '',
     // Skip the word-of-day's own word inside its own definition card — that's
     // circular. (It can still be tooltipped earlier in the digest if it appears
     // there first.)
@@ -324,7 +399,7 @@ export function buildHTML(content, opts = {}) {
       <h3>${lk.stories[i]?.title ?? escapeHTML(story.title)}</h3>
       ${lk.stories[i]?.body ?? `<p>${escapeHTML(story.body)}</p>`}
       <div class="why-it-matters">
-        <strong>💡 Why it matters:</strong> ${lk.stories[i]?.whyItMatters ?? escapeHTML(story.whyItMatters)}
+        ${lk.stories[i]?.whyItMatters ?? `<p><strong>💡 Why it matters:</strong> ${escapeHTML(story.whyItMatters)}</p>`}
       </div>
       ${askParentBtn(`story-${i}`, story.title)}
     </div>
@@ -609,7 +684,7 @@ export function buildHTML(content, opts = {}) {
        no content is shortened or reworded anywhere. */
     --body-size: 16.5px;        /* digest body copy (was ~14–15px) */
     --body-leading: 1.72;       /* line-height — highest-impact change (was ~1.4–1.65) */
-    --prose-measure: 42ch;      /* max line length for flowing prose only */
+    --prose-measure: 64ch;      /* max line length for flowing prose only — fills the card without a right-side void; clamps to card content width on narrow screens */
     --para-gap: 0.95em;         /* space between split paragraphs */
     --gloss-underline: rgba(255,122,26,0.45); /* softened dotted underline (was solid #FF7A1A) */
   }
@@ -689,11 +764,17 @@ export function buildHTML(content, opts = {}) {
   .story-card p { font-size: var(--body-size); line-height: var(--body-leading); color: var(--text); max-width: var(--prose-measure); margin: 0 0 var(--para-gap); }
   .story-card p:last-child { margin-bottom: 0; }
   .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(88,166,255,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); }
+  .story-card .why-it-matters p { margin: 0 0 var(--para-gap); }
+  .story-card .why-it-matters p:last-child { margin-bottom: 0; }
   .story-card .why-it-matters strong { color: var(--blue); font-weight: 600; }
   .dyk-card { background: linear-gradient(135deg, rgba(188,140,255,0.10), rgba(88,166,255,0.06)); border: 1px solid rgba(188,140,255,0.3); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
   .dyk-card .dyk-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; }
   .dyk-card .dyk-fact { font-size: 17px; font-weight: 500; color: var(--text-bright); line-height: var(--body-leading); max-width: var(--prose-measure); margin-bottom: 12px; }
+  .dyk-card .dyk-fact p { margin: 0 0 var(--para-gap); }
+  .dyk-card .dyk-fact p:last-child { margin-bottom: 0; }
   .dyk-card .dyk-connection { font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); padding: 12px 14px; background: rgba(188,140,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
+  .dyk-card .dyk-connection p { margin: 0 0 var(--para-gap); }
+  .dyk-card .dyk-connection p:last-child { margin-bottom: 0; }
   .dyk-card .dyk-connection strong { color: var(--purple); font-weight: 600; }
   .quiz-card { background: linear-gradient(135deg, rgba(188,140,255,0.08), rgba(88,166,255,0.08)); border: 1px solid rgba(188,140,255,0.25); border-radius: 16px; padding: 24px; text-align: center; animation: fadeIn 0.5s ease-out both; }
   .quiz-card .quiz-label { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 12px; }
@@ -1309,7 +1390,7 @@ export function buildHTML(content, opts = {}) {
   <div class="dyk-card">
     <div class="dyk-label">🧠 ${escapeHTML(didYouKnow?.category || 'mind-blowing numbers')}</div>
     <div class="dyk-fact">${lk.dykFact}</div>
-    ${didYouKnow?.connection ? `<div class="dyk-connection"><strong>The lesson:</strong> ${lk.dykConnection}</div>` : ''}
+    ${didYouKnow?.connection ? `<div class="dyk-connection">${lk.dykConnection}</div>` : ''}
     ${askParentBtn('did-you-know', `Did You Know: ${didYouKnow?.category || 'today’s fact'}`)}
   </div>
 
