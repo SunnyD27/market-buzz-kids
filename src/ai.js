@@ -1212,7 +1212,14 @@ export async function generateContent(marketData, news, movers, topMover, opts =
 
   const response = await client().messages.create({
     model: 'claude-sonnet-4-6',
-    max_tokens: 8000,
+    // 16000, not 8000. On heavy-news days the digest JSON (full content +
+    // games + glossary nominations) plus the model's web-search synthesis
+    // ran PAST an 8000-token cap, returning stop_reason:max_tokens with the
+    // JSON truncated mid-field — which threw a JSON parse error and aborted
+    // the whole 7 AM generation (no digest, no email). 2026-06-10 and -11
+    // both died this way. Doubling the ceiling gives comfortable headroom;
+    // a complete digest is well under this.
+    max_tokens: 16000,
     tools: [
       {
         type: 'web_search_20250305',
@@ -1237,6 +1244,14 @@ export async function generateContent(marketData, news, movers, topMover, opts =
     console.log('[AI] web_search did NOT run (no server_tool_use blocks in response)');
   }
   console.log(`[AI] stop_reason: ${response.stop_reason}, content blocks: ${response.content.map(b => b.type).join(', ')}`);
+
+  // Fail LOUD and EARLY on a truncated response. If we ever hit the cap
+  // again, the JSON is incomplete and JSON.parse() would throw a cryptic
+  // "Unexpected non-whitespace character at position N" far downstream.
+  // This turns that into an unambiguous, actionable error in the cron log.
+  if (response.stop_reason === 'max_tokens') {
+    throw new Error('AI response hit max_tokens — digest JSON truncated. Raise max_tokens in ai.js.');
+  }
 
   const text = response.content
     .filter(block => block.type === 'text')

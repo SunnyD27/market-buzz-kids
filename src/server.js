@@ -997,17 +997,26 @@ app.post('/api/delete-data', async (req, res) => {
 // 'db_error' | 'ok'.
 async function sendDailyTeasers() {
   const started_at = new Date().toISOString();
-  const dataPath = path.join(__dirname, '..', 'public', 'digest-data.json');
-  if (!fs.existsSync(dataPath)) {
-    return { ok: false, status: 'no_content', started_at, finished_at: new Date().toISOString(),
-             error: 'digest-data.json missing — run /generate first.' };
-  }
+  // Read today's digest from Postgres — the SAME source /digest serves —
+  // so the teaser can never drift from the canonical row. We deliberately
+  // do NOT read public/digest-data.json off disk anymore: on a day where
+  // generation FAILS, that file is left at the last SUCCESSFUL day's
+  // content, so a teaser built from it ships subscribers a stale digest
+  // with a stale "Today's Juice: <prior date>" subject (exactly the
+  // 2026-06-11 bug — June 9's digest went out on June 11). Keying off the
+  // DB by today's NY date means: no row → no send (correct); fresh row →
+  // fresh content + subject, guaranteed.
   let content;
   try {
-    content = JSON.parse(fs.readFileSync(dataPath, 'utf-8'));
+    const todays = await getTodaysDigest();
+    if (!todays?.content) {
+      return { ok: false, status: 'no_content', started_at, finished_at: new Date().toISOString(),
+               error: `No daily_digests row for ${todayNY()} — generation must succeed before teasers send.` };
+    }
+    content = todays.content;
   } catch (err) {
-    return { ok: false, status: 'malformed_content', started_at, finished_at: new Date().toISOString(),
-             error: 'digest-data.json malformed: ' + err.message };
+    return { ok: false, status: 'db_error', started_at, finished_at: new Date().toISOString(),
+             error: 'Failed to load today\'s digest from DB: ' + err.message };
   }
 
   let recipients;
