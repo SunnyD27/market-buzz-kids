@@ -257,6 +257,16 @@ Today's quiz should test a concept from TODAY'S stories that was NOT quizzed in 
  * text itself is unchanged from the battle-tested version. Only the
  * surrounding plumbing (function wrapper + parameter list) is new.
  */
+// Paragraph-formatting rule shared by all three edition prompts. Applies to
+// the long body fields (bigPicture, every story `body`, every `whyItMatters`).
+// This is a READABILITY directive only — it changes paragraph STRUCTURE, never
+// length, depth, reading level, voice, or word count. The template renders the
+// \n\n breaks as separate <p> tags.
+const PARAGRAPH_RULE = `PARAGRAPH FORMATTING — applies to "bigPicture", every story "body", and every "whyItMatters":
+Write each of those fields as 2-3 short paragraphs separated by a blank line (a literal \\n\\n in the JSON string), with roughly 2-3 sentences per paragraph, breaking between distinct ideas (e.g. one paragraph sets up WHAT happened, the next explains WHY it matters or what's next).
+This is for readability only. Keep the EXACT same depth, detail, and total length — do NOT shorten, summarize, or drop anything; you are only inserting paragraph breaks between ideas. Same reading level and voice.
+Example of one field's value: "Oracle just had a monster day. Its cloud business is growing faster than almost anyone expected, and big customers keep signing up.\\n\\nBut here's the twist — the stock actually fell. Investors got nervous that all the money Oracle is spending to build AI data centers will eat into profits for a while."`;
+
 function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = []) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
@@ -362,6 +372,8 @@ ${JSON.stringify(news, null, 2)}
 
 BROADER TOP MOVERS (context only — do NOT substitute for the curated mover above):
 ${JSON.stringify(movers, null, 2)}
+
+${PARAGRAPH_RULE}
 
 Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
 
@@ -850,6 +862,8 @@ ${JSON.stringify(marketData, null, 2)}
 TODAY'S FMP MOVER (Friday's curated winner — MAY differ from the week's biggest mover; use web search to confirm):
 ${topMoverBlock}
 
+${PARAGRAPH_RULE}
+
 Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
 
 {
@@ -1055,6 +1069,8 @@ PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${prevDayName})${edition.re
 
 RAW MARKET DATA (${prevDayName}'s close — for the scoreboard):
 ${JSON.stringify(marketData, null, 2)}
+
+${PARAGRAPH_RULE}
 
 Return ONLY a JSON object with this exact structure (no markdown, no backticks, no explanation):
 
