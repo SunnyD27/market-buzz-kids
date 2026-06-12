@@ -36,7 +36,7 @@ the door for future sponsored content with a 30-day parent notice).
 | 5. Landing + signup + COPPA + privacy + deletion | ✅ | `4a8d8e6` |
 | **6.1** Neon Postgres | ✅ | |
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
-| **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. On `dev` awaiting next PR. |
+| **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
