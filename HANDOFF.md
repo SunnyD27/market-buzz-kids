@@ -1081,3 +1081,86 @@ before/after screenshots of Big Picture + a story + scoreboard. Live-vs-code
 split: measure-fills-card + paragraphing + word-integrity verified LIVE
 in-browser and via real generation; `ai.js` prompt verified by one live
 `generateContent` call (not persisted).
+
+---
+
+## Session: Generation fix — robust JSON extraction (trailing prose)
+
+**Symptom:** 2026-06-12 7 AM cron failed to generate again → no digest, no
+email. THIRD distinct cause in this saga (after max_tokens truncation and the
+stale-disk teaser).
+
+**Root cause (from Railway logs):** `[AI] stop_reason: end_turn` (NOT
+max_tokens — the response was COMPLETE), but parse died with
+`Unexpected non-whitespace character after JSON at position 16759`. The model
+returned a valid JSON object FOLLOWED by a trailing remark, and the parser's
+fallback used `lastIndexOf('}')`, which grabbed a stray `}` inside that trailing
+prose → the slice had junk after the real object.
+
+**Fix (`src/ai.js`):** new `extractFirstJSONObject()` — scans from the first `{`
+and brace-matches (string/escape-aware, so braces & quotes inside JSON string
+values don't affect depth) to return the FIRST complete balanced object,
+ignoring any preamble before OR commentary after it. `parseDigestJSON()` now
+tries: (1) straight `JSON.parse`, (2) `extractFirstJSONObject`, (3) the old
+widest-span heuristic as last resort. Exported the helper for unit testing.
+
+**Verified:** unit tests cover the exact failure shape (valid JSON + trailing
+prose w/ stray brace), leading preamble, braces/quotes inside strings, nested
+objects/arrays, truncated→null, no-object→null — all pass. Regenerated
+2026-06-12 live against prod DB (full FMP+Claude pipeline) → parsed cleanly,
+row inserted; teaser email sent (3/3, 5 kids). `node --check` clean;
+`test-glossary.js` still passes.
+
+**Recurring-failure ledger (all three now fixed):**
+1. `max_tokens: 8000` too low → truncated JSON (fixed → 16000 + loud guard).
+2. teaser read stale disk file → wrong-day email (fixed → reads DB).
+3. trailing prose after JSON → `lastIndexOf('}')` slice broke (fixed →
+   brace-matching `extractFirstJSONObject`).
+
+---
+
+## Session: 7 AM morning-run alert (Telegram) — fail loud + success ping
+
+**Why:** three mornings in a row generation broke and was found hours later via a
+MISSING email, not an alert. The cron correctly skips the fan-out on failure, but
+that correct behavior is SILENT — failures looked identical to a quiet success.
+Robust parsing (#37) lowers recurrence odds but can't hit zero; the durable fix is
+**detection**.
+
+**Built (`src/notify.js` + cron wiring in `src/server.js`):**
+- `sendTelegram(text)` — reuses the railway-health-check bot/chat
+  (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, chat defaults to `8618800483`).
+  NEVER throws: missing token → logged no-op; network/non-200 → swallowed. Inert
+  until the token is set in Railway.
+- `buildFailureAlert({date,edition,stage,error})` — ❌ header, date+edition, stage
+  (generation | teaser fan-out), error message, and for JSON parse errors the
+  **position + ±60-char snippet** (enriched in `ai.js` `jsonParseError`, which
+  parses V8's "position N" and slices the offending region onto the thrown error).
+  Defensive — never throws on missing fields.
+- `buildSuccessPing({date,edition,sent,failed,total,kids})` — one-line ✅ with
+  counts from the fan-out result; `failed>0` surfaced.
+- Cron observes the FINAL outcome and sends exactly ONE message per run:
+  generation-fail → ❌ + return; fan-out fail/threw → ❌; clean → ✅ (gated by
+  `ALERT_SUCCESS_PING`, default ON). Every send via a `safeAlert` wrapper so a
+  notification bug can't crash the cron.
+
+**Config / env:** `TELEGRAM_BOT_TOKEN` (REQUIRED in Railway to enable),
+`TELEGRAM_CHAT_ID` (default `8618800483`), `ALERT_SUCCESS_PING` (default ON).
+Documented in `.env.example` + CONTEXT.md ops section. ⚠️ ACTION: set
+`TELEGRAM_BOT_TOKEN` in the Railway service env or the alert stays inert.
+
+**Verified:** builder unit tests (parse-fail shows date+position+snippet, generic
+error, success counts, never-throw-on-missing-fields) all pass; `parseDigestJSON`
+enriches the thrown error (pos+snippet) — asserted end-to-end; `sendTelegram`
+fail-safe confirmed (bad token → ok:false no throw; no token → skipped no throw).
+**Live send EXERCISED:** one real ✅ and one real ❌ delivered to the ops chat
+(both `ok:true`). `node --check` clean on all three files; `test-glossary.js`
+passes.
+
+**Recurring-failure ledger — detection backstop now in place:**
+1. `max_tokens` truncation (fixed #34) — a future truncation now pings ❌.
+2. stale-disk teaser (fixed #34).
+3. trailing prose after JSON (fixed #37) — a future novel parse shape pings ❌
+   with position+snippet.
+→ Any future novel generation/parse failure is now DETECTED at ~7:01 AM, not
+   discovered hours later via a missing email.
