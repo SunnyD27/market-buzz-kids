@@ -786,6 +786,26 @@ export function buildHTML(content, opts = {}) {
   .quiz-btn.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
   .quiz-answer { display: none; font-size: 14px; color: var(--text); line-height: 1.5; padding: 14px; background: rgba(63,185,80,0.06); border-radius: 12px; border: 1px solid rgba(63,185,80,0.2); }
   .quiz-answer.visible { display: block; }
+  /* Phase 16 — Mystery Mover (client-hydrated by games/mystery-mover.js) */
+  .mm-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; }
+  .mm-tagline { color: var(--text-dim); font-size: 13.5px; margin-bottom: 14px; }
+  .mm-clue { background: rgba(240,136,62,0.08); border: 1px solid rgba(240,136,62,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: var(--body-size); line-height: 1.55; }
+  .mm-clue-num { color: var(--orange); font-weight: 600; font-size: 12px; letter-spacing: 0.5px; margin-right: 6px; }
+  .mm-controls { display: flex; gap: 8px; margin-top: 12px; }
+  .mm-input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; font-family: inherit; font-size: 15px; }
+  .mm-input:focus { outline: none; border-color: var(--orange); }
+  .mm-guess-btn { background: var(--orange); color: #1a1208; border: none; border-radius: 10px; padding: 10px 18px; font-family: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
+  .mm-guess-btn:hover { filter: brightness(1.1); }
+  .mm-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-dim); font-size: 13px; flex-wrap: wrap; }
+  .mm-reveal-btn { background: none; border: 1px dashed var(--card-border); color: var(--text-dim); border-radius: 8px; padding: 6px 10px; font-family: inherit; font-size: 13px; cursor: pointer; }
+  .mm-reveal-btn:hover { color: var(--text); border-color: var(--text-dim); }
+  .mm-feedback { margin-top: 10px; color: var(--text-dim); font-size: 14px; min-height: 1.2em; }
+  .mm-result { font-size: 19px; font-weight: 600; margin-top: 6px; }
+  .mm-grid-preview { font-size: 22px; letter-spacing: 2px; margin: 10px 0 14px; }
+  .mm-share-btn { background: var(--card); color: var(--text); border: 1px solid var(--orange); border-radius: 10px; padding: 10px 16px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .mm-share-btn:hover { background: rgba(240,136,62,0.12); }
+  .mm-signup-cta { display: block; margin-top: 14px; color: var(--yellow); font-weight: 600; text-decoration: none; }
+  .mm-signup-cta:hover { text-decoration: underline; }
   .word-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; text-align: center; }
   .word-card .word-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--yellow); margin-bottom: 8px; }
   .word-card .the-word { font-size: 28px; font-weight: 700; color: var(--yellow); margin-bottom: 4px; }
@@ -1398,6 +1418,21 @@ export function buildHTML(content, opts = {}) {
 
   ${dailyChallengeSectionHTML}
 
+  <!-- Phase 16: Mystery Mover — the daily guess-the-company puzzle. Renders
+       on /digest AND /sample (it's the guest-play growth surface). The host
+       is hydrated client-side by public/games/mystery-mover.js from the
+       PUBLIC /api/mystery endpoints — the answer never reaches the page; on
+       a 404 (no puzzle today / pre-Phase-16 row) the module hides the whole
+       section, header included. -->
+  <div id="mystery-mover-section" hidden>
+    <div class="section-header">
+      <span class="emoji">🕵️</span>
+      <h2>Mystery Mover</h2>
+      <div class="line"></div>
+    </div>
+    <div id="mystery-mover-host"></div>
+  </div>
+
   <div class="section-header">
     <span class="emoji">📖</span>
     <h2>Word of the Day</h2>
@@ -1436,6 +1471,8 @@ ${hasDailyChallenge ? `
 <script src="/games/price-is-right.js"></script>
 ` : ''}
 ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''}
+<!-- Phase 16: Mystery Mover hydrates from the public API on every page. -->
+<script src="/games/mystery-mover.js" defer></script>
 
 <script>
   // ---- Twinkling starfield ----

@@ -32,6 +32,11 @@
     sundayComplete:     50,
     sundayBonus:        25,
     wordLearned:        5,
+    // Phase 16 — Mystery Mover payout by clues used (index = cluesUsed - 1).
+    mysteryMover: {
+      byCluesUsed: [25, 20, 15, 10, 5],
+      unsolved: 0,
+    },
     streakBonus: function (streakDays) {
       return Math.min(Math.max(0, streakDays) * 2, 30);
     },

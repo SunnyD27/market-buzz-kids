@@ -26,6 +26,7 @@ import { refreshActiveGlossary } from './glossary-runtime.js';
 import { getEditionType } from './calendar.js';
 import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
 import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush } from './push.js';
+import { isCorrectGuess } from './mystery.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -138,6 +139,14 @@ const emailLimiter = rateLimit({
   windowMs: 60 * 60 * 1000, // 1 hour
   limit: 5,                 // 5 email-sending requests per IP per hour
   message: { error: 'Too many requests. Please try again later.' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+const mysteryLimiter = rateLimit({
+  windowMs: 60 * 1000,      // 1 minute
+  limit: 30,                // Phase 16 spec: 30 guesses/min per IP (a kid gets 5)
+  message: { error: 'Too many guesses. Please slow down.' },
   standardHeaders: true,
   legacyHeaders: false,
 });
@@ -462,6 +471,50 @@ app.post('/api/reset-password', authLimiter, async (req, res) => {
   }
 
   return res.json({ success: true });
+});
+
+// ============================================================
+// API — Mystery Mover (Phase 16) — PUBLIC, powers guest play on /sample
+// ============================================================
+// Both routes are deliberately unauthenticated: the puzzle is the COPPA-safe
+// growth surface (a kid who clicked a friend's share grid plays on /sample
+// with no account). The server's job is protecting the ANSWER — clue pacing
+// is client-side (server-paced unlocks would need per-guest state, which the
+// spec forbids: "stores nothing per-guest"). Logged-in MC flows separately
+// through the authenticated engagement API ('mystery-mover-played').
+
+// Today's clues — never the answer, name, ticker, or acceptableAnswers.
+app.get('/api/mystery/today', async (req, res) => {
+  try {
+    const row = await getTodaysDigest();
+    const mm = row?.content?.mysteryMover;
+    if (!mm || !Array.isArray(mm.clues) || mm.clues.length === 0) {
+      return res.status(404).json({ error: 'No Mystery Mover puzzle today.' });
+    }
+    return res.json({ date: todayNY(), clues: mm.clues });
+  } catch (err) {
+    console.error('[mystery/today] failed:', err.message);
+    return res.status(500).json({ error: 'Puzzle unavailable.' });
+  }
+});
+
+// Check one free-text guess. Stateless — nothing stored per guest.
+app.post('/api/mystery/guess', mysteryLimiter, async (req, res) => {
+  const guess = req.body?.guess;
+  if (typeof guess !== 'string' || !guess.trim() || guess.length > 100) {
+    return res.status(400).json({ error: 'Guess must be a short text answer.' });
+  }
+  try {
+    const row = await getTodaysDigest();
+    const mm = row?.content?.mysteryMover;
+    if (!mm) {
+      return res.status(404).json({ error: 'No Mystery Mover puzzle today.' });
+    }
+    return res.json({ correct: isCorrectGuess(guess, mm) });
+  } catch (err) {
+    console.error('[mystery/guess] failed:', err.message);
+    return res.status(500).json({ error: 'Puzzle unavailable.' });
+  }
 });
 
 // ============================================================
@@ -2017,6 +2070,32 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] push_log migration failed (push notifications will error until fixed):', err.message);
+  }
+
+  // Phase 16 — content_history (AI content rotation, was a state file).
+  // Standalone DDL also in src/schema.sql + src/migrations/
+  // add-content-history.sql. Detect via the table's presence (idempotent).
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'content_history'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating content_history table (Phase 16 rotation history)…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS content_history (
+          id          BIGSERIAL    PRIMARY KEY,
+          kind        TEXT         NOT NULL CHECK (kind IN ('word', 'fact', 'mystery')),
+          value       TEXT         NOT NULL,
+          used_on     DATE         NOT NULL,
+          created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE INDEX IF NOT EXISTS idx_content_history_kind_date
+          ON content_history (kind, used_on DESC);
+      `);
+      console.log('[migrations] ✅ content_history table created.');
+    }
+  } catch (err) {
+    console.error('[migrations] content_history migration failed (word/fact/mystery rotation will degrade until fixed):', err.message);
   }
 }
 

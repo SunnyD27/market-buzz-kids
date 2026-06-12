@@ -1,0 +1,134 @@
+[
+  {
+    "ticker": "NKE",
+    "name": "Nike",
+    "clues": [
+      "They design gear that helps people run, jump, and play sports.",
+      "Founded in the 1960s; headquartered in the Pacific Northwest of the United States.",
+      "They're famous for sneakers worn by some of the world's greatest athletes.",
+      "They started out selling shoes from the trunk of a car at track meets."
+    ],
+    "acceptableAnswers": ["Nike"]
+  },
+  {
+    "ticker": "SBUX",
+    "name": "Starbucks",
+    "clues": [
+      "They sell drinks many grown-ups say they can't start the morning without.",
+      "Founded in the 1970s; headquartered in Seattle.",
+      "They're famous for handing you a warm cup with your name written on it.",
+      "They began as a single store selling roasted beans near a famous fish market."
+    ],
+    "acceptableAnswers": ["Starbucks"]
+  },
+  {
+    "ticker": "DIS",
+    "name": "Disney",
+    "clues": [
+      "They tell stories that kids and families around the world grow up with.",
+      "Founded in the 1920s; headquartered in Southern California.",
+      "They run theme parks where you can meet your favorite characters in person.",
+      "The whole company was built on a cartoon mouse the founder first sketched on a train ride."
+    ],
+    "acceptableAnswers": ["Disney", "The Walt Disney Company", "Walt Disney"]
+  },
+  {
+    "ticker": "MCD",
+    "name": "McDonald's",
+    "clues": [
+      "They serve quick meals to millions of people every single day.",
+      "Became a franchise business in the 1950s; headquartered in Chicago.",
+      "They're famous for burgers, fries, and golden arches you can spot from the highway.",
+      "They make much of their money as a landlord — collecting rent from the people who run their restaurants."
+    ],
+    "acceptableAnswers": ["McDonald's", "McDonalds"]
+  },
+  {
+    "ticker": "TSLA",
+    "name": "Tesla",
+    "clues": [
+      "They build machines that get people from place to place without using gasoline.",
+      "Founded in the 2000s; headquartered in Texas.",
+      "They're famous for electric cars that update themselves overnight, like a phone.",
+      "They also make giant batteries that can power an entire house when the lights go out."
+    ],
+    "acceptableAnswers": ["Tesla", "Tesla Motors"]
+  },
+  {
+    "ticker": "V",
+    "name": "Visa",
+    "clues": [
+      "Their product fits in a wallet, but their real business is invisible.",
+      "Founded in the 1950s; headquartered in Northern California.",
+      "They're famous for the network that moves money when you tap or swipe at a checkout.",
+      "They don't lend anyone money — they take a tiny slice of trillions of dollars of payments every year."
+    ],
+    "acceptableAnswers": ["Visa"]
+  },
+  {
+    "ticker": "RBLX",
+    "name": "Roblox",
+    "clues": [
+      "They make a place where kids don't just play games — they build them.",
+      "Founded in the 2000s; headquartered in Northern California.",
+      "Their most famous product lets you build entire worlds out of virtual blocks with friends.",
+      "Most of the experiences on their platform were created by kids and teenagers, not company employees."
+    ],
+    "acceptableAnswers": ["Roblox"]
+  },
+  {
+    "ticker": "SPOT",
+    "name": "Spotify",
+    "clues": [
+      "They deliver something you can't see or touch, but probably hear every day.",
+      "Founded in the 2000s; headquartered in Sweden.",
+      "They're famous for playlists that learn exactly what you like.",
+      "They were started to fight music piracy — by making listening easier than stealing."
+    ],
+    "acceptableAnswers": ["Spotify"]
+  },
+  {
+    "ticker": "F",
+    "name": "Ford",
+    "clues": [
+      "They've been building the machines families ride in for over a century.",
+      "Founded in the 1900s; headquartered in Michigan.",
+      "They're famous for pickup trucks that have been America's best-selling vehicles for decades.",
+      "Their founder perfected the moving assembly line, cutting the time to build a car from half a day to about 90 minutes."
+    ],
+    "acceptableAnswers": ["Ford", "Ford Motor Company"]
+  },
+  {
+    "ticker": "VZ",
+    "name": "Verizon",
+    "clues": [
+      "They run an invisible network you probably used in the last five minutes.",
+      "Formed in the 2000s from older phone companies; headquartered in New York.",
+      "They're famous for the wireless service that keeps phones connected coast to coast.",
+      "Their name was invented by gluing a Latin word for truth onto a word for the edge of the sky."
+    ],
+    "acceptableAnswers": ["Verizon"]
+  },
+  {
+    "ticker": "COST",
+    "name": "Costco",
+    "clues": [
+      "You can't shop there unless your family pays to be a member.",
+      "Founded in the 1980s; headquartered near Seattle.",
+      "They're famous for selling everything in giant sizes — and a famously cheap hot-dog combo.",
+      "They make almost all their profit from membership fees, not from the stuff on the shelves."
+    ],
+    "acceptableAnswers": ["Costco", "Costco Wholesale"]
+  },
+  {
+    "ticker": "NFLX",
+    "name": "Netflix",
+    "clues": [
+      "They changed how families spend their evenings at home.",
+      "Founded in the 1990s; headquartered in Northern California.",
+      "They're famous for shows you can watch the moment they come out — a whole season at once.",
+      "They started by mailing discs in red envelopes, and once offered to sell themselves to a video-rental chain that said no."
+    ],
+    "acceptableAnswers": ["Netflix"]
+  }
+]

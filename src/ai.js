@@ -129,6 +129,41 @@ const GLOSSARY_NOMINATION_SCHEMA = `  "glossaryNominations": [
     { "term": "lowercase-friendly term", "definition": "kid-level definition, <=30 words, no undefined jargon", "principle": 1 }
   ]`;
 
+// ---------------------------------------------------------------------------
+// Phase 16 — Mystery Mover (daily guess-the-company puzzle).
+// The SERVER picks the day's company (src/generate.js → src/mystery.js,
+// 30-day no-repeat rotation) and tells the model which company to write
+// clues for — the model never chooses. Clue 5 ("first letter + ticker
+// length") is composed server-side and is NOT requested here. Every clue is
+// validated by the name-leak hard gate in src/mystery.js before persisting;
+// a leaky puzzle falls back to the canned reserve pool, so the rules below
+// are the first line of defense, not the only one.
+
+/** Rules block injected into all three edition prompts (puzzle runs 7 days/week). */
+function mysteryMoverBlock(company) {
+  if (!company) return '';
+  return `MYSTERY MOVER RULES (daily guess-the-company puzzle):
+- Today's mystery company is ${company.name} (ticker ${company.ticker}). Write EXACTLY 4 progressive clues in "mysteryMover.clues" — kids try to guess the company from as few clues as possible. (A 5th clue revealing the first letter + ticker length is added by our system — do NOT write it yourself.)
+- The clues must narrow the field step by step:
+  1. Industry / what they sell — vague on purpose; could fit many companies.
+  2. Founding decade + headquarters region.
+  3. A famous product or service — described WITHOUT any brand or product name that gives the answer away.
+  4. A surprising fact most kids wouldn't know (the "wait, really?" kind).
+- HARD RULE — never include in ANY clue: the company's name or any word of it, the ticker symbol, or a brand/product name a kid could read as the answer. Our system rejects leaky clues automatically and replaces your puzzle.
+  - GOOD clue 3 (for Roblox): "Their most famous product lets you build entire worlds out of virtual blocks with friends." (descriptive, no names)
+  - BAD clue 3: "They make the Roblox app." (name leak)
+  - BAD clue 1: "A company." (uselessly vague — each clue must narrow the field)
+- "mysteryMover.acceptableAnswers": 2-5 strings — the common ways a kid might type this company's name (full name, everyday short name, a well-known former name). Do NOT include the ticker.
+- Same voice, reading level, and language rules as the rest of the digest.`;
+}
+
+// Schema fragment appended next to GLOSSARY_NOMINATION_SCHEMA in all three
+// edition prompts. 4 clues only — clue 5 is server-composed.
+const MYSTERY_MOVER_SCHEMA = `  "mysteryMover": {
+    "clues": ["clue 1 (vaguest — industry/what they sell)", "clue 2 (founding decade + HQ region)", "clue 3 (famous product, no names)", "clue 4 (surprising fact)"],
+    "acceptableAnswers": ["common ways a kid might write the company's name"]
+  }`;
+
 /**
  * Server-side belt-and-suspenders filter for the model's glossaryNominations.
  * Drops anything malformed, already-known (via the seed glossary incl.
@@ -267,7 +302,7 @@ Write each of those fields as 2-3 short paragraphs separated by a blank line (a 
 This is for readability only. Keep the EXACT same depth, detail, and total length — do NOT shorten, summarize, or drop anything; you are only inserting paragraph breaks between ideas. Same reading level and voice.
 Example of one field's value: "Oracle just had a monster day. Its cloud business is growing faster than almost anyone expected, and big customers keep signing up.\\n\\nBut here's the twist — the stock actually fell. Investors got nervous that all the money Oracle is spending to build AI data centers will eat into profits for a while."`;
 
-function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = []) {
+function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = [], mysteryCompany = null) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
@@ -358,6 +393,8 @@ PARENT EXPLAINER RULES (Phase 12):
 
 ${glossaryNominationBlock()}
 
+${mysteryMoverBlock(mysteryCompany)}
+
 TODAY'S DATE: ${dateStr}
 TRADING DAY: Data is from ${tradingDayLabel}'s market close.
 
@@ -447,7 +484,8 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + today's news context."
     }
   },
-${GLOSSARY_NOMINATION_SCHEMA}
+${GLOSSARY_NOMINATION_SCHEMA},
+${MYSTERY_MOVER_SCHEMA}
 }
 
 RULES ON OUTPUT:
@@ -467,7 +505,7 @@ RULES ON OUTPUT:
  * public/games/sunday-challenge.js — it reads `sundayChallenge.type` and
  * dispatches to the right sub-renderer.
  */
-function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
+function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — use web_search to identify the week\'s biggest mover from a kid-recognizable name.';
@@ -635,6 +673,8 @@ PARENT EXPLAINER RULES (Phase 12):
 - The summary should give the parent enough context to actually have the conversation even if they don't know finance well themselves.
 
 ${glossaryNominationBlock()}
+
+${mysteryMoverBlock(mysteryCompany)}
 
 SUNDAY CHALLENGE — THE WEEKLY GAME
 
@@ -952,7 +992,8 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
     }
   },
   ${sundayChallengeSchemaSnippet},
-${GLOSSARY_NOMINATION_SCHEMA}
+${GLOSSARY_NOMINATION_SCHEMA},
+${MYSTERY_MOVER_SCHEMA}
 }
 
 RULES ON OUTPUT:
@@ -972,7 +1013,7 @@ RULES ON OUTPUT:
  * Forward-looking preview instead of a recap; stories highlight upcoming
  * earnings/events; word-of-day picks a forward-looking term.
  */
-function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = []) {
+function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null) {
   // NOTE: `topMover` (Friday's biggest curated mover) is intentionally NOT
   // surfaced in this prompt — a forward-looking preview has no "today's
   // mover," and Friday's % move wearing a "today" label is the bug we're
@@ -1061,6 +1102,8 @@ PARENT EXPLAINER RULES (Phase 12):
 - The summary should give the parent enough context to have the conversation even if they don't know finance well themselves.
 
 ${glossaryNominationBlock()}
+
+${mysteryMoverBlock(mysteryCompany)}
 
 (NO sundayChallenge field — that's Sunday-only.)
 
@@ -1161,7 +1204,8 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "conversationStarter": "Ask [kid] ... 1 question referencing today's specific word + week-ahead context."
     }
   },
-${GLOSSARY_NOMINATION_SCHEMA}
+${GLOSSARY_NOMINATION_SCHEMA},
+${MYSTERY_MOVER_SCHEMA}
 }
 
 RULES ON OUTPUT:
@@ -1189,6 +1233,10 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   // digest-store.getRecentStories) drives the story + quiz dedup blocks.
   const recentDigests = Array.isArray(opts.recentDigests) ? opts.recentDigests : [];
   const edition = opts.edition || { editionType: 'standard', reason: 'weekday' };
+  // Phase 16 — the server-picked Mystery Mover company ({ticker, name}).
+  // Null = no mystery block in the prompt (the generate.js fallback still
+  // ships a reserve puzzle, so the digest is never missing one).
+  const mysteryCompany = opts.mysteryCompany || null;
 
   // The dateStr is generated from real-now for production, or from the
   // edition's dateStr (which honors DATE_OVERRIDE) so tests show the
@@ -1215,13 +1263,13 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   let prompt;
   switch (edition.editionType) {
     case 'weekly-wrap':
-      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests);
+      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany);
       break;
     case 'week-ahead':
-      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests);
+      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany);
       break;
     default:
-      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests);
+      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests, mysteryCompany);
   }
 
   console.log(`[AI] Building ${edition.editionType} prompt (reason=${edition.reason})`);
