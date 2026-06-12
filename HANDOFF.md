@@ -38,7 +38,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
 | **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
 | **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | **Merged + deployed to production** via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; post-deploy verification complete (logged-in MC award, mobile guest play, native share sheet — see the post-deploy addendum). See the Phase 16 session entries. |
-| **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | On `dev` awaiting next PR. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. See the Phase 17 session entry. |
+| **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | **Merged + deployed to production** via PR #40. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. Post-deploy spot-check pending: in-browser tap→locked-chip + explainer with a real kid account. See the Phase 17 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
