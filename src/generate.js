@@ -12,6 +12,7 @@ import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
+import { pickMysteryCompany, finalizeMysteryMover } from './mystery.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
 import { storage } from './storage.js';
@@ -115,8 +116,17 @@ export async function generateDigest(opts = {}) {
   // Pull recently-used picks so the prompt can tell Claude what to avoid.
   // 30-day window — long enough that kids never feel déjà-vu, short
   // enough that we don't burn through the teachable inventory.
-  const recentWords = getRecent('word', 30);
-  const recentFacts = getRecent('fact', 30);
+  // (Phase 16: content-history moved to Postgres — getRecent/record are async now.)
+  const recentWords = await getRecent('word', 30);
+  const recentFacts = await getRecent('fact', 30);
+
+  // Phase 16 — Mystery Mover: the SERVER picks the day's company (30-day
+  // no-repeat against rotation history, deterministic on the date so
+  // DATE_OVERRIDE testing reproduces) and tells Claude which company to
+  // write clues for. Claude never chooses.
+  const recentMystery = await getRecent('mystery', 30);
+  const mysteryCompany = pickMysteryCompany(today, recentMystery);
+  console.log(`[Generate]   Mystery Mover: ${mysteryCompany.name} (${mysteryCompany.ticker}) — excluding ${recentMystery.length} recent answer(s)`);
   if (recentWords.length) {
     console.log(`[Generate]   Avoiding ${recentWords.length} recent word(s): ${recentWords.slice(0, 8).join(', ')}${recentWords.length > 8 ? '…' : ''}`);
   }
@@ -141,7 +151,25 @@ export async function generateDigest(opts = {}) {
     recentFacts,
     recentDigests,
     edition,
+    mysteryCompany,
   });
+
+  // Phase 16 — Mystery Mover hard gate. Validate Claude's clues (name-leak
+  // token check vs name/ticker/every acceptable answer, shape, lengths);
+  // on ANY failure swap in a deterministic reserve puzzle. Clue 5 (first
+  // letter + ticker length) is composed server-side either way. A leaky
+  // puzzle can never reach the immutable daily row.
+  {
+    const { puzzle, usedFallback, errors } = finalizeMysteryMover(
+      content.mysteryMover, mysteryCompany, today, recentMystery,
+    );
+    if (usedFallback) {
+      console.warn(`[Generate]   ⚠ Mystery Mover validation failed (${errors.join(' | ')}) — using reserve puzzle ${puzzle.name} (${puzzle.ticker})`);
+    } else {
+      console.log(`[Generate]   Mystery Mover clues validated clean (${puzzle.ticker})`);
+    }
+    content.mysteryMover = puzzle;
+  }
 
   const dailyChallenge = await hydrateDailyGames({
     fmpKey,
@@ -165,12 +193,19 @@ export async function generateDigest(opts = {}) {
     // means our content is being thrown away — don't pollute rotation
     // history with a word that's not actually being shown.
     if (content?.wordOfDay?.word) {
-      record('word', content.wordOfDay.word);
+      await record('word', content.wordOfDay.word, today);
       console.log(`[Generate]   Word of the Day: "${content.wordOfDay.word}" recorded to rotation history`);
     }
     if (content?.didYouKnow?.fact) {
-      record('fact', content.didYouKnow.fact);
+      await record('fact', content.didYouKnow.fact, today);
       console.log(`[Generate]   Did You Know fact recorded to rotation history`);
+    }
+    // Phase 16 — record the ACTUALLY SHIPPED mystery ticker (which is the
+    // reserve puzzle's ticker when the fallback fired, not the picked
+    // company) so the 30-day no-repeat window tracks what kids really saw.
+    if (content?.mysteryMover?.ticker) {
+      await record('mystery', content.mysteryMover.ticker, today);
+      console.log(`[Generate]   Mystery Mover answer "${content.mysteryMover.ticker}" recorded to rotation history`);
     }
 
     // Glossary nominations — ONLY on a real insert (never on the cached-replay

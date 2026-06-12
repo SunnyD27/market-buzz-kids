@@ -45,6 +45,9 @@
 import { readFileSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+// Phase 16: the normalization + leak logic moved to src/name-leak.js so the
+// Mystery Mover's server-side clue guardrail shares it. Same behavior.
+import { leakingWords as sharedLeakingWords } from '../src/name-leak.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA = path.join(__dirname, '..', 'public', 'data', 'company-models.json');
@@ -62,41 +65,8 @@ function ok(label, cond, detail) {
 //   { name: 'Snap', word: 'snap' }  // "snap a photo" — the verb, not the brand
 const ALLOWLIST = [];
 
-// Stopwords + corporate suffixes dropped from name-word extraction.
-const STOPWORDS = new Set(['the', 'a', 'an', 'of', 'and', 'for', 'to', 'in', 'on', 'at', 'by', 'with', 'or']);
-const SUFFIXES = new Set([
-  'inc', 'incorporated', 'corp', 'corporation', 'co', 'company', 'companies',
-  'holdings', 'holding', 'group', 'ltd', 'limited', 'llc', 'plc', 'sa', 'ag', 'nv',
-]);
-
-// Shared normalization: drop possessive `'s` (so "Costco's"/"McDonald's" reduce
-// to the bare stem), then remove remaining apostrophes/dots ("e.l.f." → elf).
-function stripPunct(s) {
-  return s.toLowerCase().replace(/['’]s\b/g, '').replace(/['’.]/g, '');
-}
-
-function nameWords(name) {
-  // Keep parenthetical brand words ("Meta (Instagram & Facebook)" →
-  // meta/instagram/facebook) — just turn the brackets into word boundaries.
-  const flattened = String(name).replace(/[()]/g, ' ');
-  return stripPunct(flattened)
-    .split(/[\s/-]+/)                          // whitespace, slash, hyphen
-    .map(t => t.replace(/[^a-z0-9]/g, ''))     // drop any leftover non-alphanumerics (& etc.)
-    .filter(t => t.length >= 2)
-    .filter(t => !STOPWORDS.has(t) && !SUFFIXES.has(t));
-}
-
-// Normalize a clue into a SET of whole-word tokens, the SAME way as name words
-// (possessive `'s` dropped, apostrophes/dots removed), then split on every
-// other non-alphanumeric. Set membership = exact whole-word match, so there are
-// no substring leaks.
-function clueTokens(model) {
-  return new Set(stripPunct(String(model)).split(/[^a-z0-9]+/).filter(Boolean));
-}
-
 function leakingWords(entry) {
-  const tokens = clueTokens(entry.shortModel || '');
-  return nameWords(entry.name).filter(w => tokens.has(w));
+  return sharedLeakingWords(entry.name, entry.shortModel || '');
 }
 
 function isAllowed(name, word) {

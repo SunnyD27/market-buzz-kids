@@ -260,6 +260,28 @@ CREATE INDEX IF NOT EXISTS idx_email_events_kind
   ON email_events (email_kind);
 
 -- ============================================================
+-- content_history (Phase 16 — AI content rotation, was a state file)
+-- ============================================================
+-- Tracks recently-used AI picks so the next generation avoids repeats:
+-- 'word' (Word of the Day), 'fact' (Did You Know), 'mystery' (Mystery
+-- Mover answer tickers — the 30-day no-repeat rotation). Replaces the
+-- ephemeral state/content-history.json (wiped on every Railway restart —
+-- the known wart). Pruned to the newest ~100 rows per kind on insert.
+--
+-- COPPA: AI-content rotation metadata, NOT user PII — intentionally out
+-- of scope for the deletion scrub (same reasoning as pending_glossary).
+CREATE TABLE IF NOT EXISTS content_history (
+  id          BIGSERIAL    PRIMARY KEY,
+  kind        TEXT         NOT NULL CHECK (kind IN ('word', 'fact', 'mystery')),
+  value       TEXT         NOT NULL,
+  used_on     DATE         NOT NULL,
+  created_at  TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_content_history_kind_date
+  ON content_history (kind, used_on DESC);
+
+-- ============================================================
 -- push_log (Phase 15 — push notification ledger)
 -- ============================================================
 -- One row per push notification sent (or reserved) to a kid. Written

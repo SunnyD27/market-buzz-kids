@@ -40,7 +40,7 @@
 | Phase | What | Effort | Impact | Depends on |
 |---|---|---|---|---|
 | **15** ✅ | Push notifications (kid-facing trigger) — shipped 2026-06-12 | S–M | **Highest** | — |
-| **16** | Mystery Mover + guest play on /sample + share grid | M | **Highest** | — |
+| **16** ✅ | Mystery Mover + guest play on /sample + share grid — shipped 2026-06-12 | M | **Highest** | — |
 | **17** | Tomorrow's Call (daily prediction) | S–M | High | — |
 | **18** | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) | M | High (reliability) | — |
 | **19** | "Morning Juice" visual redesign | M | High | — |
@@ -96,7 +96,17 @@ holds; unsubscribing kid receives nothing; deletion scrub covers `push_log`.
 
 ---
 
-## Phase 16 — Mystery Mover (the daily Wordle) + guest play + share grid
+## Phase 16 — Mystery Mover (the daily Wordle) + guest play + share grid ✅ SHIPPED
+
+> **Status: built 2026-06-12.** `src/mystery.js` + `src/name-leak.js` +
+> 12-puzzle reserve pool, `content_history` Postgres table (the state-file
+> wart is closed), public `/api/mystery/*` routes, `public/games/
+> mystery-mover.js`, `mystery-mover-played` engagement event. Deviations
+> recorded in the HANDOFF.md session entry — notably: the server picks the
+> company (not Claude), clue 5 is server-composed, the reserve pool lives
+> under `src/` (it contains answers; `public/` is statically served), and
+> clue pacing is client-side because server-paced unlocks would require
+> per-guest state this spec forbids.
 
 **Why.** Proven daily-ritual mechanic, exploits the immutable digest (same puzzle for
 everyone), and the shareable emoji grid is the only COPPA-safe viral channel available

@@ -36,7 +36,8 @@ the door for future sponsored content with a 30-day parent notice).
 | 5. Landing + signup + COPPA + privacy + deletion | ✅ | `4a8d8e6` |
 | **6.1** Neon Postgres | ✅ | |
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
-| **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. On `dev` awaiting next PR. |
+| **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
+| **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | On `dev` awaiting next PR. 75-assertion smoke test + full-suite regression green; live AI generation + browser-driven guest play verified. See the Phase 16 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1307,3 +1308,193 @@ set, push is inert and everything else works unchanged.
 - Swap interim morning-push copy when Phases 17 / 20 ship (TODOs in ROADMAP).
 - Real-device verification (iOS PWA + Android Chrome) post-deploy.
 - The Europe-edge above; revisit if non-US families sign up.
+
+---
+
+## Session: Phase 16 — Mystery Mover (daily puzzle) + guest play on /sample + share grid
+
+The daily Wordle-style mechanic from ROADMAP.md Phase 16 — one mystery company
+per day from the curated 75, 5 progressive clues, free-text guessing, playable
+by logged-out guests on /sample (the COPPA-safe viral surface), with a
+zero-identifier emoji share grid.
+
+**Files**
+- `src/mystery.js` (new) — the engine. `pickMysteryCompany` (deterministic
+  day-seeded pick, 30-day no-repeat), `buildClue5` (server-COMPOSED "first
+  letter + ticker length" clue — never trusted to the model),
+  `validateMysteryMover` (the name-leak HARD GATE: clues 1–4 may not contain
+  a whole-word token of the company name, the 2+-letter ticker, or ANY word
+  of any acceptable answer — anything we'd accept as a guess is by definition
+  a giveaway), `finalizeMysteryMover` (validate-or-fallback),
+  `isCorrectGuess` (normalized matching: case/punctuation/possessives/
+  corporate suffixes; ticker accepted).
+- `src/mystery-reserve.json` (new) — **12 hand-written reserve puzzles**
+  spanning 5 sectors (consumer/tech/finance/auto/telecom), each
+  guardrail-validated in the smoke test. Deliberately under `src/`, NOT
+  `public/data/` — it contains answers and `public/` is statically served.
+  Reserve-shipped tickers enter rotation history like AI ones, so a
+  multi-day generation outage can't repeat within the 30-day window.
+- `src/name-leak.js` (new) — token normalization + leak detection extracted
+  from `scripts/test-company-models.js`; both the Mystery clue gate and the
+  Match dataset test now import identical logic (the 57-entry test stayed
+  green through the extraction).
+- `src/content-history.js` — REWRITTEN Postgres-backed (`content_history`
+  table: kinds word/fact/mystery; ~100-row cap per kind; fails soft). The
+  ephemeral state-file wart is closed. **Both exports are async now** — the
+  4 call sites in generate.js gained awaits. Old state file deliberately not
+  migrated (it was ephemeral anyway; worst case a short-term word/fact
+  repeat). schema.sql + `src/migrations/add-content-history.sql` +
+  idempotent boot block in `runBootMigrations()`.
+- `src/ai.js` — `mysteryMoverBlock(company)` + `MYSTERY_MOVER_SCHEMA`
+  injected into ALL THREE edition builders (puzzle runs 7 days/week), the
+  glossaryNominationBlock pattern. The SERVER picks the company and the
+  prompt names it — Claude never chooses (rotation would be unenforceable).
+  Asks for exactly 4 clues with GOOD/BAD examples (oneToWatch style).
+  PROFANITY_RULE + recursive scrubProfanity already cover the new field.
+- `src/generate.js` — awaits the async history API; picks the company
+  (excluding 30 days of answers; deterministic on the date so DATE_OVERRIDE
+  reproduces); finalizes/validates after generateContent and BEFORE
+  saveDigest (a leaky puzzle can never reach the immutable row); records the
+  ACTUALLY-SHIPPED ticker (reserve ticker when the fallback fired).
+- `src/engagement.js` — the risky refactor: extracted
+  `applyDailyPlayProgress` (streak + weeks_active + streak bonus on the
+  day's first qualifying play) and `checkPerfectDay` (distinct game keys
+  across BOTH game-completed and mystery-mover-played; mystery contributes
+  pseudo-key 'mystery-mover'; double-fire guard spans both types) out of
+  `applyGameCompleted`; new `applyMysteryMover` (MC 25/20/15/10/5 by
+  clamped cluesUsed, 0 unsolved; bumps games_played; correct_answers stays
+  picker-game-only); new isDuplicate branch (per digestDate);
+  `mystery-mover-played` counts as "engaged" in getDailyEngagementSummary
+  (so the evening nudge email AND the Phase 15 streak-at-risk push skip
+  kids who played the puzzle).
+- `src/progression.js` + `public/progression-config.js` —
+  `MC_AWARDS.mysteryMover` ({byCluesUsed: [25,20,15,10,5], unsolved: 0}),
+  EVENT_TYPES + badge-family eventTypes (streak/games/perfectDays/
+  consistency gain the mystery event; quizzes stays game-only).
+- `src/server.js` — boot migration; PUBLIC `GET /api/mystery/today` (clues
+  only — never answer/name/ticker/acceptableAnswers; 404 on pre-Phase-16
+  rows) + `POST /api/mystery/guess` (stateless, new mysteryLimiter
+  30/min/IP per spec).
+- `src/template.js` — Mystery Mover section host (after the Daily
+  Challenge, hidden until the client hydrates) + script tag + `.mm-*` CSS
+  in the inline style block (all CSS stays in template.js, per the rules).
+- `public/games/mystery-mover.js` (new) — self-mounting client (NOT in the
+  picker; rotation math untouched). Clue pacing client-side: wrong guess
+  auto-unlocks the next clue, manual "Reveal next clue" button, 5 guesses
+  max, per-day localStorage state. Logged-in finish →
+  recordEvent('mystery-mover-played'); /sample finish → the spec's signup
+  CTA. Share grid: `Market Juice Mystery Mover — June 12 / 🟧🟧🟩 (got it
+  in 3 clues!) / themarketjuice.com/sample` — zero identifiers.
+- `public/sw.js` — v5 (mystery-mover.js joins SHELL_ASSETS).
+- `scripts/test-mystery.js` (new) — 75 assertions, all green.
+
+**Deviations from ROADMAP.md (codebase-is-truth rule):**
+1. Spec's "guess returns next clue unlock" vs "stores nothing per-guest"
+   are contradictory — server-paced unlocks need per-guest state.
+   Resolution: /today returns all 5 clues, the CLIENT paces reveals, the
+   server protects only the ANSWER (same trust model as the quiz, which
+   embeds correctIndex client-side).
+2. Spec said 5 clues from Claude — clue 5 is server-composed instead
+   (deterministic, removes the only clue allowed to contain the first
+   letter from the leak-validation surface). Approved.
+3. Reserve pool under `src/` instead of the `public/data/` dataset
+   convention (it contains answers). Approved.
+4. The spec's "flagship brand words" ban has no data source in
+   companies.js — implemented by validating clues against ALL
+   acceptableAnswers words (Claude's alias list doubles as the brand list).
+5. "Reuse the token-normalization from scripts/test-company-models.js" —
+   it was a script, not a module; extracted to `src/name-leak.js`, script
+   re-imports.
+6. Perfect Day + streak logic lived inline in applyGameCompleted and only
+   saw game-completed events — refactored into shared helpers (the
+   spec's "counts toward Perfect Day" was otherwise unimplementable).
+   Classic path covered by explicit regression assertions (below).
+7. cluesUsed is client-reported, server-clamped (1–5), dedup-capped —
+   trust model accepted by Sunny (consistent with quiz correctness).
+
+**Verified**
+- `node scripts/test-mystery.js` → **75/75 green** vs live Neon: guardrail
+  rejects name/possessive/ticker/alias leaks + vague clues (non-vacuous);
+  all 12 reserve puzzles guardrail-clean; deterministic rotation + 30-day
+  window via Postgres; MC by clue count incl. 99→5 clamping + replay dedup;
+  mystery extends the streak; unsolved = 0 MC + streak credit; **classic
+  regressions: 3 distinct games (no mystery) fire Perfect Day exactly once
+  (a 4th doesn't re-fire), a game (not mystery) still extends the streak**;
+  Perfect Day fires in BOTH orderings (mystery-third 2 games→mystery, and
+  game-third mystery→2 games).
+- Full existing suite green after the refactor: test-engagement (the direct
+  applyGameCompleted exerciser), test-glossary, test-company-models (57
+  entries, now via name-leak.js), test-push (39), test-evening-email,
+  test-multi-kid, test-multi-kid-emails, test-games (dry).
+- **Live AI generation** (DATE_OVERRIDE=2026-06-13, ~$0.30): server picked
+  META, Claude returned 4 clean progressive clues (clue 3 describes
+  Facebook without naming it; "Facebook" correctly in acceptableAnswers and
+  validated against), guardrail passed, ticker recorded to rotation. Test
+  row + its 3 content_history rows deleted afterward (the run's 3 glossary
+  nominations were left in pending_glossary — real terms, admin-gated).
+- **Live guest play on /sample** (local :3199, browser-driven): section
+  renders in the design system; wrong guess shows feedback + unlocks clue
+  2; manual reveal → clue 3; "starbucks corp."/"sbux"/messy-case guesses
+  all solve; solve panel shows 🟧🟧🟩 grid + "Sign up to save your streak"
+  CTA → /#signup; unsolved path shows 🟥🟥🟥🟥🟥; share button reaches its
+  Copied state; localStorage state survives reload. Share text contains no
+  PII by construction (date + grid + URL only). Same-puzzle-all-day:
+  /api/mystery/today byte-identical across sessions (hash-compared).
+  Screenshot taken. API: answer absent from /today payload (grep 0); bad
+  body → 400; 31 rapid guesses → 429s after the 30/min window filled.
+- **Bug found + fixed during the live pass:** the wrong-guess feedback line
+  was written to the pre-render DOM node (render() replaces the card), so
+  it never displayed — now rides the re-render (`pendingFeedback`).
+  Re-verified live: "Not "Dunkin" — here's another clue." renders.
+- `node --check` clean on all 13 changed JS files.
+- **Code-review-only (not exercised live):** the logged-in /digest flow's
+  MarketJuice.recordEvent call from the game module (needs a consented
+  kid login; the recordEvent server path itself is fully covered by the
+  smoke test). Spot-check after deploy with a real kid account.
+
+**⚠️ Deliberate immutability exception (flagged):** today's (2026-06-12)
+daily_digests row was patched ADDITIVELY via jsonb_set to carry a reserve
+puzzle (Starbucks/SBUX, recorded to rotation) — kid-visible content
+untouched, and the deployed prod template ignores the unknown field. Done
+so guest play could be verified against a real daily row, and so tonight's
+kids get a puzzle the moment Phase 16 deploys. From tomorrow, generation
+bakes the puzzle in normally.
+
+**Open / future:**
+- Glossary nominations from the deleted DATE_OVERRIDE test row remain in
+  pending_glossary (3 real terms, admin-gated — harmless).
+- Spot-check the logged-in MC award path on prod after deploy.
+- Phase 22's Headline-or-Hoax anonymous stat will want the same
+  aggregate-events query pattern this phase avoided (nothing blocking).
+
+---
+
+## Session: Phase 16 follow-up — share-grid channel tag + Web Share API
+
+Two small follow-ups to the Mystery Mover share flow (`public/games/
+mystery-mover.js`):
+
+1. **`?src=mm-share` appended to the share URL** — a channel tag, identical
+   for every user (NOT an identifier), so share-grid arrivals are
+   distinguishable in logs/analytics. Share text is otherwise unchanged.
+2. **Web Share API first, clipboard fallback** — `navigator.share` when
+   available gives mobile the native share sheet with the grid pre-filled
+   ("Shared! 🍊" on success); a cancelled sheet (AbortError) leaves the
+   button usable; any other share error falls back to the clipboard copy,
+   which remains the desktop path.
+
+`public/sw.js` → **v6** (mystery-mover.js is a precached shell asset).
+`scripts/test-mystery.js` gained Section 6.5 (3 assertions, now **78
+total**): the builder lives in the client IIFE, so the test asserts against
+the module source — tagged URL present, Web Share + clipboard fallback both
+present, and the share builder's inputs are identifier-free
+(label/solved/cluesUsed only).
+
+**Verified live** (preview browser on /sample): clipboard fallback payload
+captured via a writeText stub — carries `?src=mm-share`; Web Share branch
+exercised via a `navigator.share` stub — cancel (AbortError) leaves the
+button usable, success shows "Shared! 🍊" with the tagged text. The v5→v6
+SW handoff was also observed working (old cache reaped, new module served
+on the next load) — good real-world confirmation of the version-bump
+mechanism for installed PWAs. Real mobile share sheet: check on a phone
+after deploy (headless has no native sheet).

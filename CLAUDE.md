@@ -19,6 +19,12 @@
 
 ## Code & workflow rules
 
+- **Never modify production data during development without asking first.**
+  `daily_digests` and any user-facing rows are off-limits to dev-time writes —
+  propose the change and wait for Sunny's approval, even when it's additive
+  and disclosed. (Throwaway test rows keyed to test users that are fully
+  cleaned up — the existing `scripts/test-*.js` pattern — are fine;
+  DATE_OVERRIDE test digest rows must be deleted before the session ends.)
 - **All work happens on the `dev` branch, PR to `main`.** `main` is protected
   (PR required, no direct pushes). Railway auto-deploys `main`.
 - **Migrations must be boot-idempotent.** Every schema change gets: (1) the DDL

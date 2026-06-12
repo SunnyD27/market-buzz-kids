@@ -64,6 +64,14 @@ export const MC_AWARDS = {
   // Word of the Day reveal (kept per Q3 — small interaction, educational hook)
   wordLearned:        5,
 
+  // Mystery Mover (Phase 16) — payout shrinks with clues used. Index by
+  // (cluesUsed - 1). Unsolved logs participation at 0 MC — the kid still
+  // gets streak credit + Perfect Day eligibility for playing.
+  mysteryMover: {
+    byCluesUsed: [25, 20, 15, 10, 5],
+    unsolved: 0,
+  },
+
   // Streak bonus: +2 MC per streak day, capped at +30. Applied once per
   // calendar day on the first game completion that extends the streak.
   streakBonus: (streakDays) => Math.min(Math.max(0, streakDays) * 2, 30),
@@ -84,7 +92,7 @@ export const BADGE_FAMILIES = {
     icon: '🔥',
     tiers: [3, 7, 14, 21, 30, 50, 75, 100, 200, 365],
     source: 'longest_streak',
-    eventTypes: ['daily-visit', 'game-completed', 'sunday-challenge-completed'],
+    eventTypes: ['daily-visit', 'game-completed', 'sunday-challenge-completed', 'mystery-mover-played'],
     unit: 'day',
   },
   games: {
@@ -93,7 +101,7 @@ export const BADGE_FAMILIES = {
     icon: '🎮',
     tiers: [5, 15, 30, 50, 100, 200, 300, 500, 750, 1000],
     source: 'games_played',
-    eventTypes: ['game-completed'],
+    eventTypes: ['game-completed', 'mystery-mover-played'],
     unit: 'game',
   },
   perfectDays: {
@@ -102,7 +110,7 @@ export const BADGE_FAMILIES = {
     icon: '🎯',
     tiers: [1, 3, 7, 15, 30, 50, 75, 100, 150, 200],
     source: 'perfect_days',
-    eventTypes: ['game-completed'],
+    eventTypes: ['game-completed', 'mystery-mover-played'],
     unit: 'Perfect Day',
   },
   quizzes: {
@@ -120,7 +128,7 @@ export const BADGE_FAMILIES = {
     icon: '📅',
     tiers: [1, 2, 4, 8, 12, 16, 20, 30, 40, 52],
     source: 'weeks_active',
-    eventTypes: ['daily-visit', 'game-completed', 'sunday-challenge-completed'],
+    eventTypes: ['daily-visit', 'game-completed', 'sunday-challenge-completed', 'mystery-mover-played'],
     unit: 'week',
   },
   sunday: {
@@ -165,6 +173,9 @@ export const EVENT_TYPES = new Set([
   // Phase 12 — kid flags a section to discuss with parent. Awards no MC,
   // no progression. Logged for the evening recap email to pick up.
   'parent-question',
+  // Phase 16 — Mystery Mover played (solved or not). Dedup per digestDate;
+  // MC by clues used; extends the streak and counts toward Perfect Day.
+  'mystery-mover-played',
 ]);
 
 // Helpers — useful on both server and client (re-implemented in the client

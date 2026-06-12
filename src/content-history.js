@@ -1,36 +1,29 @@
 /**
  * src/content-history.js — tracks recently-used AI-generated picks so the
- * next generation can be told what to avoid.
+ * next generation can be told what to avoid (or, for the Mystery Mover,
+ * which answers are excluded from rotation).
  *
- * Currently used for:
- *   - "word"  — Word of the Day picks (short terms like "IPO", "P/E ratio")
- *   - "fact"  — Did You Know facts (full-sentence trivia)
+ * Kinds:
+ *   - "word"    — Word of the Day picks (short terms like "IPO", "P/E ratio")
+ *   - "fact"    — Did You Know facts (full-sentence trivia)
+ *   - "mystery" — Mystery Mover answer tickers (Phase 16, 30-day no-repeat)
  *
- * Persistence: a single JSON file at state/content-history.json (gitignored).
- * Shape:
- *   {
- *     word: [{ value: "IPO", date: "2026-05-22" }, ...],
- *     fact: [{ value: "If you invested...", date: "2026-05-22" }, ...]
- *   }
+ * Phase 16 moved persistence from state/content-history.json (ephemeral on
+ * Railway — wiped on every container restart, the known wart) to Postgres
+ * (`content_history` table, see schema.sql + migrations/add-content-history.sql).
+ * Same exports as the file-backed version, but BOTH ARE NOW ASYNC — call
+ * sites must await. The old state file is intentionally not migrated: it
+ * was ephemeral anyway, so the worst case is a short-term word/fact repeat
+ * right after this ships.
  *
- * Each list is capped at 100 entries (newest first) — long enough that any
- * sane "recent N days" window finds what it needs, short enough that the
- * file stays small.
- *
- * If we ever go per-user (see Sunny's question — needs identity wired
- * post-Phase 6.3), swap this module for a DB-backed version with the same
- * exports. Call sites don't change.
+ * These rows are AI-content rotation metadata, NOT user PII — out of scope
+ * for the COPPA deletion scrub (same reasoning as pending_glossary).
  */
 
-import fs from 'fs';
-import path from 'path';
-import { fileURLToPath } from 'url';
+import { query } from './db.js';
 
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const HISTORY_PATH = path.join(__dirname, '..', 'state', 'content-history.json');
-const LEGACY_WORD_PATH = path.join(__dirname, '..', 'state', 'word-history.json');
-
-const VALID_KINDS = new Set(['word', 'fact']);
+const VALID_KINDS = new Set(['word', 'fact', 'mystery']);
+const MAX_PER_KIND = 100;
 
 function ensureKind(kind) {
   if (!VALID_KINDS.has(kind)) {
@@ -38,71 +31,57 @@ function ensureKind(kind) {
   }
 }
 
-function safeReadAll() {
-  // One-shot migration: if the old word-history.json file exists and the
-  // new file doesn't, fold the legacy `{recent:[...]}` into the new schema.
-  if (!fs.existsSync(HISTORY_PATH) && fs.existsSync(LEGACY_WORD_PATH)) {
-    try {
-      const raw = fs.readFileSync(LEGACY_WORD_PATH, 'utf8');
-      const legacy = JSON.parse(raw);
-      if (Array.isArray(legacy?.recent)) {
-        const migrated = {
-          word: legacy.recent.map(e => ({ value: e.word, date: e.date })).filter(e => e.value),
-          fact: [],
-        };
-        fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-        fs.writeFileSync(HISTORY_PATH, JSON.stringify(migrated, null, 2), 'utf8');
-      }
-    } catch {
-      // Ignore — fresh start.
-    }
-  }
-
-  try {
-    const raw = fs.readFileSync(HISTORY_PATH, 'utf8');
-    const data = JSON.parse(raw);
-    return {
-      word: Array.isArray(data?.word) ? data.word : [],
-      fact: Array.isArray(data?.fact) ? data.fact : [],
-    };
-  } catch {
-    return { word: [], fact: [] };
-  }
-}
-
-function safeWriteAll(data) {
-  fs.mkdirSync(path.dirname(HISTORY_PATH), { recursive: true });
-  fs.writeFileSync(HISTORY_PATH, JSON.stringify(data, null, 2), 'utf8');
-}
-
 /**
- * Return values used within the last `days` days for the given kind,
- * most recent first.
+ * Values used within the last `days` days for the given kind, most recent
+ * first, deduped. Fails SOFT (returns []) — a history hiccup must never
+ * fail digest generation; the model just gets a shorter avoid-list.
  */
-export function getRecent(kind, days = 30) {
+export async function getRecent(kind, days = 30) {
   ensureKind(kind);
-  const cutoffMs = Date.now() - days * 86400_000;
-  return safeReadAll()[kind]
-    .filter(entry => {
-      if (!entry?.date) return false;
-      const t = new Date(entry.date + 'T00:00:00Z').getTime();
-      return Number.isFinite(t) && t >= cutoffMs;
-    })
-    .map(entry => entry.value);
+  try {
+    const { rows } = await query(
+      `SELECT DISTINCT ON (LOWER(value)) value, used_on
+         FROM content_history
+        WHERE kind = $1
+          AND used_on >= CURRENT_DATE - $2::int
+        ORDER BY LOWER(value), used_on DESC`,
+      [kind, days],
+    );
+    return rows
+      .sort((a, b) => (a.used_on < b.used_on ? 1 : -1))
+      .map(r => r.value);
+  } catch (err) {
+    console.error(`[content-history] getRecent(${kind}) failed (soft — empty avoid-list):`, err.message);
+    return [];
+  }
 }
 
 /**
- * Persist `value` as today's pick under the given kind. Dedupes
- * case-insensitively against existing entries (newest wins) and caps the
- * list at 100 entries.
+ * Persist `value` as today's pick under the given kind, then prune the kind
+ * to the newest MAX_PER_KIND rows. Fails SOFT (logged) — recording history
+ * must never fail a generation that already succeeded.
  */
-export function record(kind, value, dateStr) {
+export async function record(kind, value, dateStr) {
   ensureKind(kind);
   if (!value || typeof value !== 'string') return;
-  const today = dateStr || new Date().toISOString().slice(0, 10);
-  const all = safeReadAll();
-  const lower = value.toLowerCase();
-  const filtered = all[kind].filter(e => e?.value?.toLowerCase?.() !== lower);
-  all[kind] = [{ value, date: today }, ...filtered].slice(0, 100);
-  safeWriteAll(all);
+  const usedOn = dateStr || new Date().toISOString().slice(0, 10);
+  try {
+    await query(
+      `INSERT INTO content_history (kind, value, used_on) VALUES ($1, $2, $3::date)`,
+      [kind, value, usedOn],
+    );
+    await query(
+      `DELETE FROM content_history
+        WHERE kind = $1
+          AND id NOT IN (
+            SELECT id FROM content_history
+             WHERE kind = $1
+             ORDER BY used_on DESC, id DESC
+             LIMIT $2
+          )`,
+      [kind, MAX_PER_KIND],
+    );
+  } catch (err) {
+    console.error(`[content-history] record(${kind}) failed (soft):`, err.message);
+  }
 }

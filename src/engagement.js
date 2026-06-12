@@ -337,6 +337,20 @@ async function isDuplicate(client, userId, eventType, eventData, todayServer) {
     );
     return rows.length > 0;
   }
+  if (eventType === 'mystery-mover-played') {
+    // Phase 16: one play per digest date — same shape as word-learned. A
+    // replay (or a retry for a better clue count) returns duplicate:true.
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'mystery-mover-played'
+          AND event_data->>'digestDate' = $2
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, digestDate],
+    );
+    return rows.length > 0;
+  }
   if (eventType === 'sunday-challenge-completed') {
     const { rows } = await client.query(
       `SELECT 1 FROM engagement_events
@@ -465,6 +479,8 @@ export async function recordEvent(userId, eventType, eventData = {}) {
       applyDailyVisit(after, today);
     } else if (eventType === 'game-completed') {
       mcAwarded += await applyGameCompleted(client, userId, after, today, eventData, ctx);
+    } else if (eventType === 'mystery-mover-played') {
+      mcAwarded += await applyMysteryMover(client, userId, after, today, eventData, ctx);
     } else if (eventType === 'sunday-challenge-completed') {
       mcAwarded += applySundayChallenge(after, eventData);
     } else if (eventType === 'word-learned') {
@@ -637,64 +653,116 @@ async function applyGameCompleted(client, userId, after, today, eventData, ctx) 
     after.correct_answers = (after.correct_answers || 0) + 1;
   }
 
-  // First game-completion of TODAY? Compare against last_streak_date — that
-  // field only changes inside advanceStreak, so it's the right "have I
-  // already had a streak-bonus today?" signal. (last_active_date is bumped
-  // by daily-visit on every /digest page load, so it can't drive this.)
-  const isFirstGameOfDay = after.last_streak_date !== today;
-  if (isFirstGameOfDay) {
-    const isoWeek = isoWeekOf(today);
-    if (after.last_iso_week !== isoWeek) {
-      after.weeks_active = (after.weeks_active || 0) + 1;
-      after.last_iso_week = isoWeek;
-    }
-    after.last_active_date = today;
-    const streakOutcome = advanceStreak(after, today);
-    mc += MC_AWARDS.streakBonus(after.current_streak);
-    if (streakOutcome.shieldUsed) ctx.shieldUsed = true;
-    if (streakOutcome.crossed7DayBoundary) ctx.crossed7DayBoundary = true;
-  }
+  mc += applyDailyPlayProgress(after, today, ctx);
+  mc += await checkPerfectDay(client, userId, after, today, eventData?.game || 'unknown', ctx);
 
-  // How many unique games has this kid played today, INCLUDING this one?
-  // We count distinct event_data->>'game' values for today's game-completed
-  // events, then +1 for the in-flight event (audit row is written after
-  // this function returns).
-  const currentGame = eventData?.game || 'unknown';
+  return mc;
+}
+
+/**
+ * Mystery Mover (Phase 16). MC by clues used when solved (25/20/15/10/5,
+ * server-side table, client value clamped); unsolved logs participation at
+ * 0 MC. Plays like a game for everything else: bumps games_played, extends
+ * the streak on the day's first play, and counts toward Perfect Day under
+ * the pseudo-game key 'mystery-mover'. correct_answers stays game-only
+ * (decision recorded in the Phase 16 session entry).
+ */
+async function applyMysteryMover(client, userId, after, today, eventData, ctx) {
+  let mc = 0;
+
+  const solved = eventData?.solved === true;
+  let cluesUsed = Number(eventData?.cluesUsed);
+  if (!Number.isInteger(cluesUsed)) cluesUsed = 5;
+  cluesUsed = Math.min(5, Math.max(1, cluesUsed));
+  mc += solved
+    ? MC_AWARDS.mysteryMover.byCluesUsed[cluesUsed - 1]
+    : MC_AWARDS.mysteryMover.unsolved;
+
+  after.games_played = (after.games_played || 0) + 1;
+
+  mc += applyDailyPlayProgress(after, today, ctx);
+  mc += await checkPerfectDay(client, userId, after, today, MYSTERY_GAME_KEY, ctx);
+
+  return mc;
+}
+
+// The pseudo-game key Mystery Mover contributes to the distinct-games count.
+const MYSTERY_GAME_KEY = 'mystery-mover';
+
+/**
+ * First qualifying play of TODAY? Advance the streak + activity counters and
+ * pay the streak bonus. Shared by game-completed and mystery-mover-played
+ * (Phase 16) so both count as "showed up today".
+ *
+ * Compares against last_streak_date — that field only changes inside
+ * advanceStreak, so it's the right "have I already had a streak-bonus
+ * today?" signal. (last_active_date is bumped by daily-visit on every
+ * /digest page load, so it can't drive this.)
+ */
+function applyDailyPlayProgress(after, today, ctx) {
+  if (after.last_streak_date === today) return 0;
+
+  const isoWeek = isoWeekOf(today);
+  if (after.last_iso_week !== isoWeek) {
+    after.weeks_active = (after.weeks_active || 0) + 1;
+    after.last_iso_week = isoWeek;
+  }
+  after.last_active_date = today;
+  const streakOutcome = advanceStreak(after, today);
+  if (streakOutcome.shieldUsed) ctx.shieldUsed = true;
+  if (streakOutcome.crossed7DayBoundary) ctx.crossed7DayBoundary = true;
+  return MC_AWARDS.streakBonus(after.current_streak);
+}
+
+/**
+ * Perfect Day check, shared by game-completed and mystery-mover-played
+ * (Phase 16). Counts DISTINCT game keys today across BOTH event types —
+ * picker games contribute event_data->>'game'; the mystery puzzle
+ * contributes the fixed pseudo-key 'mystery-mover' — then +1 for the
+ * in-flight event (its audit row is written after this returns). Fires on
+ * the 3rd unique key, whichever event type lands it.
+ *
+ * Double-fire guard: once any event today carries perfectDay=true (either
+ * type), the bonus is spent for the day.
+ */
+async function checkPerfectDay(client, userId, after, today, currentGameKey, ctx) {
   const { rows } = await client.query(
-    `SELECT COUNT(DISTINCT event_data->>'game')::int AS n
-       FROM engagement_events
-      WHERE user_id = $1
-        AND event_type = 'game-completed'
-        AND (created_at AT TIME ZONE 'America/New_York')::date = $2::date
-        AND event_data->>'game' IS NOT NULL
-        AND event_data->>'game' <> $3`,
-    [userId, today, currentGame],
+    `SELECT COUNT(DISTINCT key)::int AS n FROM (
+       SELECT event_data->>'game' AS key
+         FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'game-completed'
+          AND (created_at AT TIME ZONE 'America/New_York')::date = $2::date
+          AND event_data->>'game' IS NOT NULL
+       UNION ALL
+       SELECT '${MYSTERY_GAME_KEY}' AS key
+         FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'mystery-mover-played'
+          AND (created_at AT TIME ZONE 'America/New_York')::date = $2::date
+     ) keys
+     WHERE key <> $3`,
+    [userId, today, currentGameKey],
   );
   const distinctGamesToday = rows[0].n + 1; // +1 for this in-flight event
   ctx.gamesPlayedToday = distinctGamesToday;
 
-  // Perfect Day fires when the 3rd unique game lands. Guard against
-  // double-firing: if perfect_days was already bumped today, the
-  // condition (>= 3) still holds on subsequent events, so check whether
-  // any prior event today already set perfectDay=true.
-  if (distinctGamesToday >= 3) {
-    const { rows: alreadyRows } = await client.query(
-      `SELECT 1 FROM engagement_events
-        WHERE user_id = $1
-          AND event_type = 'game-completed'
-          AND (event_data->>'perfectDay')::boolean = true
-          AND (created_at AT TIME ZONE 'America/New_York')::date = $2::date
-        LIMIT 1`,
-      [userId, today],
-    );
-    if (alreadyRows.length === 0) {
-      after.perfect_days = (after.perfect_days || 0) + 1;
-      mc += MC_AWARDS.perfectDay;
-      ctx.perfectDay = true;
-    }
-  }
+  if (distinctGamesToday < 3) return 0;
 
-  return mc;
+  const { rows: alreadyRows } = await client.query(
+    `SELECT 1 FROM engagement_events
+      WHERE user_id = $1
+        AND event_type IN ('game-completed', 'mystery-mover-played')
+        AND (event_data->>'perfectDay')::boolean = true
+        AND (created_at AT TIME ZONE 'America/New_York')::date = $2::date
+      LIMIT 1`,
+    [userId, today],
+  );
+  if (alreadyRows.length > 0) return 0;
+
+  after.perfect_days = (after.perfect_days || 0) + 1;
+  ctx.perfectDay = true;
+  return MC_AWARDS.perfectDay;
 }
 
 /** Sunday Challenge — 50 MC base, +25 if bonus flag set. */
@@ -991,11 +1059,14 @@ export async function getDailyEngagementSummary(userId, digestDate) {
 
   // "engaged" excludes daily-visit (auto-fires on every /digest load) and
   // parent-question (passive flag — doesn't mean the kid actually played).
-  // The evening cron uses this to fork recap vs. nudge.
+  // The evening cron uses this to fork recap vs. nudge — and (Phase 15)
+  // to gate the streak-at-risk push. mystery-mover-played counts (Phase 16):
+  // a kid who played the puzzle showed up today and shouldn't be nudged.
   const meaningfulEvents = events.filter(e =>
     e.type === 'game-completed' ||
     e.type === 'word-learned' ||
-    e.type === 'sunday-challenge-completed'
+    e.type === 'sunday-challenge-completed' ||
+    e.type === 'mystery-mover-played'
   );
   const engaged = meaningfulEvents.length > 0;
 
