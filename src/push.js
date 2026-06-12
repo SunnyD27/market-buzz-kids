@@ -2,11 +2,14 @@
 //
 // Two pushes, both timezone-aware, both ledger-gated through push_log:
 //
-//   morning      — fires at each user's 7 AM LOCAL via an hourly sweep
-//                  (same pattern as the Phase 12 evening recap), gated on
-//                  today's digest row existing. NOT sent at generation
-//                  time: a 7 AM ET blast would buzz west-coast kids at
-//                  4 AM, which violates the habit-not-compulsion rule.
+//   morning      — fires in each user's 7–9 AM LOCAL window via an hourly
+//                  sweep (same pattern as the Phase 12 evening recap),
+//                  gated on today's digest row existing + no morning push
+//                  logged yet. NOT sent at generation time: a 7 AM ET
+//                  blast would buzz west-coast kids at 4 AM, which
+//                  violates the habit-not-compulsion rule. The 8/9 AM
+//                  ticks are catch-up for late generations (Phase 18's
+//                  retry ladder makes those routine).
 //   streak-risk  — rides the evening recap sweep's nudge fork (7 PM local,
 //                  streak ≥ 3, no engagement today). See server.js.
 //
@@ -168,14 +171,29 @@ export async function sendPushToUser(user, payload, opts = {}) {
 // ---- Morning sweep ---------------------------------------------------------
 
 /**
- * Hourly sweep: push to every subscribed kid whose LOCAL hour is 7 AM,
- * gated on today's (NY) digest row existing. Runs at minute 5 so the
- * 7 AM ET tick never races the 7:00 generation cron. push_log makes
- * re-runs (and the POST /api/cron/send-push test trigger) idempotent.
+ * Hourly sweep: push to every subscribed kid whose LOCAL hour is in the
+ * 7–9 AM window AND who hasn't had a morning push today, gated on today's
+ * (NY) digest row existing. Runs at minute 5 so the 7 AM ET tick never
+ * races the 7:00 generation cron.
  *
- * Known edge (documented, accepted at prelaunch scale): kids whose 7 AM
- * local lands before the 7 AM ET generation (e.g. Europe) find no digest
- * row for the new NY day and are skipped that day.
+ * The window is 7–9 (not == 7) as a catch-up: if generation finishes
+ * after a kid's 7:05 local tick — which the Phase 18 retry ladder
+ * (7:10/7:25) will make routine — the 8:05 or 9:05 tick still delivers.
+ * The NOT EXISTS ledger check (+ tryLogPush's unique index) guarantees
+ * exactly one morning push per kid per day, so later ticks never
+ * double-send. After 9 AM local the digest day is just missed (no
+ * mid-morning buzz hours later).
+ *
+ * push_log makes re-runs (and the POST /api/cron/send-push test trigger)
+ * idempotent.
+ *
+ * Known edge (documented, accepted at prelaunch scale): kids whose whole
+ * 7–9 AM local window lands before the 7 AM ET generation (e.g. Europe)
+ * find no digest row for the new NY day and are skipped that day.
+ *
+ * opts.onlyUserId — smoke-test scoping: restricts the sweep to one user
+ * so the test can exercise the real gate SQL against the live DB without
+ * touching (or consuming the daily slot of) any real subscriber.
  */
 export async function sendMorningPushes(opts = {}) {
   const started_at = new Date().toISOString();
@@ -198,14 +216,31 @@ export async function sendMorningPushes(opts = {}) {
 
   let users;
   try {
+    // Gate: local hour 7–9 AND no morning push logged today AND (checked
+    // above) today's digest exists. The NOT EXISTS keeps already-pushed
+    // kids out of the candidate set entirely, so the 8:05/9:05 catch-up
+    // ticks only ever pick up kids the earlier ticks missed.
+    const params = [digestDate];
+    let scope = '';
+    if (opts.onlyUserId) {
+      params.push(opts.onlyUserId);
+      scope = 'AND u.id = $2';
+    }
     const result = await query(`
-      SELECT id, push_subscription
-        FROM users
-       WHERE is_active = TRUE
-         AND deleted_at IS NULL
-         AND push_subscription IS NOT NULL
-         AND EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(timezone, 'America/New_York')) = 7
-    `);
+      SELECT u.id, u.push_subscription
+        FROM users u
+       WHERE u.is_active = TRUE
+         AND u.deleted_at IS NULL
+         AND u.push_subscription IS NOT NULL
+         AND EXTRACT(HOUR FROM NOW() AT TIME ZONE COALESCE(u.timezone, 'America/New_York')) BETWEEN 7 AND 9
+         AND NOT EXISTS (
+               SELECT 1 FROM push_log pl
+                WHERE pl.user_id = u.id
+                  AND pl.kind = 'morning'
+                  AND pl.digest_date = $1::date
+             )
+         ${scope}
+    `, params);
     users = result.rows;
   } catch (err) {
     console.error('[push] morning user query failed:', err.message);

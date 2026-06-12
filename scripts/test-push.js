@@ -27,7 +27,9 @@ import {
   deletePushLog,
   sendPushToUser,
   sendStreakRiskPush,
+  sendMorningPushes,
 } from '../src/push.js';
+import { todayNY, getDigestForDate } from '../src/digest-store.js';
 import { recordEvent, getProgress } from '../src/engagement.js';
 import { storage } from '../src/storage.js';
 
@@ -192,8 +194,58 @@ async function main() {
   const noSub = await sendStreakRiskPush({ id: testUserId, push_subscription: null }, 7, D2, { send: recordSend });
   eq('no subscription → skipped', noSub.skipped, true);
 
-  // -------- Section 6: activeDays (push-permission ask gate) ---------------
-  console.log('\nSection 6 — activeDays in engagement state');
+  // -------- Section 6: morning sweep 7–9 AM local window -------------------
+  // Drives the REAL sweep (live gate SQL) scoped to the test user via
+  // opts.onlyUserId, with an injected fake sender — no real push service,
+  // no other user's daily slot touched. Local hour is simulated by setting
+  // the test user's IANA timezone to an Etc/GMT offset whose current local
+  // hour is the one under test.
+  console.log('\nSection 6 — morning sweep window (late digest catch-up, no double-send)');
+  const todaysDigest = await getDigestForDate(todayNY());
+  if (!todaysDigest?.content) {
+    failures += 1;
+    console.error("  ❌ no daily_digests row for today — run `node src/generate.js` first (the sweep test needs today's digest).");
+  } else {
+    // Etc/GMT signs are inverted: Etc/GMT-5 == UTC+5. Tiny flake window if
+    // the UTC hour rolls over mid-section; acceptable for a smoke test.
+    const tzForLocalHour = (h) => {
+      let east = (h - new Date().getUTCHours() + 24) % 24;
+      if (east > 14) east -= 24; // out of Etc/GMT- range → use a western offset
+      return east === 0 ? 'Etc/GMT' : east > 0 ? `Etc/GMT-${east}` : `Etc/GMT+${-east}`;
+    };
+    const setTz = (h) => query(`UPDATE users SET timezone = $1 WHERE id = $2`, [tzForLocalHour(h), testUserId]);
+    const morningRowsToday = async () => (await pushLogRows(testUserId))
+      .filter(r => r.kind === 'morning' && r.digest_date.toISOString().slice(0, 10) === todayNY()).length;
+    let morningDelivered = 0;
+    const countSend = async () => { morningDelivered++; };
+    const sweep = () => sendMorningPushes({ onlyUserId: testUserId, send: countSend });
+
+    await setTz(6); // 6:05 local — before the window
+    const r6 = await sweep();
+    eq('6 AM local: outside window, nothing sent', r6.sent + r6.total, 0);
+
+    await setTz(8); // the requested case: digest landed late, 8:05 tick catches up
+    const r8 = await sweep();
+    eq('8 AM local: late-digest catch-up delivers', r8.sent, 1);
+    eq('payload actually handed to the sender', morningDelivered, 1);
+    eq('morning ledger row written', await morningRowsToday(), 1);
+
+    await setTz(9); // 9:05 tick — already pushed, must not double-send
+    const r9 = await sweep();
+    eq('9 AM local after a send: not even a candidate (NOT EXISTS gate)', r9.total, 0);
+    eq('no double-send', morningDelivered, 1);
+    eq('still exactly one morning ledger row', await morningRowsToday(), 1);
+
+    await query(`DELETE FROM push_log WHERE user_id = $1 AND kind = 'morning' AND digest_date = $2::date`, [testUserId, todayNY()]);
+    await setTz(10); // ledger cleared, but 10 AM local is past the window
+    const r10 = await sweep();
+    eq('10 AM local: window closed, digest day missed (no mid-morning buzz)', r10.sent + r10.total, 0);
+
+    await query(`UPDATE users SET timezone = NULL WHERE id = $1`, [testUserId]);
+  }
+
+  // -------- Section 7: activeDays (push-permission ask gate) ---------------
+  console.log('\nSection 7 — activeDays in engagement state');
   await recordEvent(testUserId, 'daily-visit', { digestDate: '2030-02-01' });
   await recordEvent(testUserId, 'daily-visit', { digestDate: '2030-02-02' });
   await recordEvent(testUserId, 'daily-visit', { digestDate: '2030-02-03' });
@@ -201,8 +253,8 @@ async function main() {
   const state = await getProgress(testUserId);
   eq('activeDays counts distinct days only', state.progress.activeDays, 3);
 
-  // -------- Section 7: COPPA deletion scrub --------------------------------
-  console.log('\nSection 7 — COPPA deletion scrub covers push_log + push_subscription');
+  // -------- Section 8: COPPA deletion scrub --------------------------------
+  console.log('\nSection 8 — COPPA deletion scrub covers push_log + push_subscription');
   ok('push_log has rows before scrub', (await pushLogRows(testUserId)).length > 0);
   await storage.recordDeletionRequest({
     parent_email: testEmail,
@@ -228,7 +280,7 @@ main()
   })
   .finally(async () => {
     // Hard cleanup — remove every row the test created, including the
-    // deletion_requests audit row from Section 7, so prod tables stay clean.
+    // deletion_requests audit row from Section 8, so prod tables stay clean.
     if (testUserId) {
       try {
         await query(`DELETE FROM push_log           WHERE user_id = $1`, [testUserId]);

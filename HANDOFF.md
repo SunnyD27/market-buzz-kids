@@ -1219,14 +1219,21 @@ Completes the long-deferred Phase 6.3, expanded per the roadmap spec.
 - `package.json` — `web-push@^3.6.7` (only new dependency).
 - `.env` / `.env.example` — `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
   `VAPID_SUBJECT`. Keys generated and set locally.
-- `scripts/test-push.js` (new) — 31 assertions, all green (output below).
+- `scripts/test-push.js` (new) — 39 assertions, all green.
 
 **Key decisions (incl. review-round changes from Sunny):**
-1. **Morning push is timezone-aware** — hourly sweep at each kid's 7 AM
-   LOCAL (same SQL-gate pattern as the Phase 12 evening recap), NOT sent at
-   generation time: a 7 AM ET blast would buzz west-coast kids at 4 AM
-   (habit-not-compulsion). Cron runs at minute 5 so the 7 AM ET tick never
-   races the 7:00 generation cron. Gated on today's digest row existing.
+1. **Morning push is timezone-aware, with a 7–9 AM local catch-up window** —
+   hourly sweep (same SQL-gate pattern as the Phase 12 evening recap), NOT
+   sent at generation time: a 7 AM ET blast would buzz west-coast kids at
+   4 AM (habit-not-compulsion). Gate: local hour BETWEEN 7 AND 9 AND no
+   'morning' push_log row today (NOT EXISTS in the candidate query) AND
+   today's digest row exists. The window is 7–9 rather than == 7 (second
+   review round) because the == 7 gate dropped Eastern kids whenever
+   generation finished after their 7:05 tick — and Phase 18's planned
+   7:10/7:25 retries will make late digests routine. The ledger guarantees
+   exactly one morning push per kid per day; past 9 AM local the day is
+   simply missed (no mid-morning buzz). Cron runs at minute 5 so the 7 AM
+   ET tick never races the 7:00 generation cron.
 2. **Transient-failure slot release** — a non-404/410 send error deletes the
    just-reserved push_log row; a 404/410 keeps it (nothing left to retry)
    and clears the dead subscription.
@@ -1255,19 +1262,25 @@ Completes the long-deferred Phase 6.3, expanded per the roadmap spec.
   `~/market-juice`; the actual working copy is `~/market-buzz-kids`.
 
 **Known edges (accepted, documented in code):**
-- Kids whose 7 AM local lands before the 7 AM ET generation (e.g. Europe)
-  find no digest row for the new NY day and skip that day's morning push.
-  Fine at prelaunch scale (all current users are US).
+- Kids whose whole 7–9 AM local window lands before the 7 AM ET generation
+  (e.g. Europe) find no digest row for the new NY day and skip that day's
+  morning push. Fine at prelaunch scale (all current users are US).
 - A no-digest day also skips the streak push (the evening sweep bails before
   the per-user loop — nothing to engage with anyway).
 
 **Verified**
-- `node scripts/test-push.js` → **31/31 green** against live Neon (pure copy
+- `node scripts/test-push.js` → **39/39 green** against live Neon (pure copy
   builders; ledger dedup/cap/slot-release; 404/410 cleanup + transient-failure
   handling via injected fake senders — no real push service contacted;
-  `sendStreakRiskPush` gates end-to-end; activeDays; COPPA scrub covers
-  push_log + push_subscription). Throwaway user fully cleaned up, including
-  the deletion_requests audit row.
+  `sendStreakRiskPush` gates end-to-end; **the morning-sweep window via the
+  REAL gate SQL** — test user's timezone set to Etc/GMT offsets simulating
+  local hours, sweep scoped to the test user via `opts.onlyUserId`: 6 AM
+  excluded, 8 AM delivers after a "late" digest, 9 AM doesn't double-send
+  (NOT EXISTS removes the kid from the candidate set), 10 AM with a cleared
+  ledger is outside the window; activeDays; COPPA scrub covers push_log +
+  push_subscription). Throwaway user fully cleaned up, including the
+  deletion_requests audit row. The sweep section requires today's
+  daily_digests row and fails loudly with instructions if it's missing.
 - `node scripts/run-schema.js` → push_log created on Neon (NOTE: like prior
   sessions, booting/schema-applying locally ran the forward-only migration
   against the live DB — additive only).

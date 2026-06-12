@@ -1580,11 +1580,14 @@ cron.schedule('0 * * * *', async () => {
 // Phase 15 — Morning push sweep (timezone-aware)
 // ============================================================
 // Same hourly-sweep pattern as the evening recap: each tick pushes to
-// subscribed kids whose LOCAL hour is 7 AM, gated on today's digest row
-// existing. Deliberately NOT fired from the 7 AM ET generation cron — a
-// generation-time blast would buzz west-coast kids at 4 AM local
-// (habit-not-compulsion rule). Runs at minute 5 so the 7 AM ET tick never
-// races the 7:00 generation; push_log makes every tick idempotent.
+// subscribed kids whose LOCAL hour is in the 7–9 AM window and who have
+// no morning push logged today, gated on today's digest row existing.
+// The 8:05/9:05 ticks are catch-up for late generations (Phase 18's
+// 7:10/7:25 retry ladder makes those routine) — push_log guarantees
+// exactly one morning push per kid per day regardless. Deliberately NOT
+// fired from the 7 AM ET generation cron — a generation-time blast would
+// buzz west-coast kids at 4 AM local (habit-not-compulsion rule). Runs at
+// minute 5 so the 7 AM ET tick never races the 7:00 generation.
 cron.schedule('5 * * * *', async () => {
   try {
     await sendMorningPushes();

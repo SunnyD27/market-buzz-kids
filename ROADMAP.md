@@ -58,9 +58,10 @@ every other engagement feature underperforms without a kid-facing trigger.
 ## Phase 15 — Push notifications (complete Phase 6.3, expanded) ✅ SHIPPED
 
 > **Status: built 2026-06-12.** `src/push.js`, `push_log` table, hourly
-> timezone-aware morning sweep (7 AM local — NOT generation-time, which would
-> buzz west-coast kids at 4 AM), streak-at-risk push riding the evening recap
-> sweep's nudge fork, 3rd-active-day permission banner in `pwa.js`.
+> timezone-aware morning sweep (7–9 AM local window — NOT generation-time,
+> which would buzz west-coast kids at 4 AM; the 8/9 AM ticks catch up after
+> late generations, ledger-deduped), streak-at-risk push riding the evening
+> recap sweep's nudge fork, 3rd-active-day permission banner in `pwa.js`.
 > Deviations are recorded in the HANDOFF.md session entry — notably: the VAPID
 > public key is served via `GET /api/push/public-key` instead of baked into
 > pwa.js, and interim morning-push copy is used for week-ahead / weekly-wrap
