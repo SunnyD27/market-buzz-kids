@@ -10,8 +10,10 @@
 //                  violates the habit-not-compulsion rule. The 8/9 AM
 //                  ticks are catch-up for late generations (Phase 18's
 //                  retry ladder makes those routine).
-//   streak-risk  — rides the evening recap sweep's nudge fork (7 PM local,
-//                  streak ≥ 3, no engagement today). See server.js.
+//   streak-risk  — rides the evening recap sweep's loop (7 PM local).
+//                  Phase 17 decoupled its gate from the email's "engaged"
+//                  fork: streak ≥ 3 AND no streak-EXTENDING play today
+//                  (shouldSendStreakRiskPush below). See server.js.
 //
 // The ledger (push_log) is written BEFORE the send: the unique index on
 // (user_id, kind, digest_date) makes every sweep idempotent — a restart
@@ -68,11 +70,11 @@ export function getVapidPublicKey() {
 /**
  * Morning push copy, edition- and vibe-aware. Factual, no guilt, ever.
  *
- * Interim copy notes (approved deviations from the roadmap spec):
- *  - week-ahead says "see what's coming" until Phase 17 ships Tomorrow's
- *    Call ("make your picks" would reference a feature that doesn't exist).
+ * Copy notes:
+ *  - week-ahead says "make your picks" (the roadmap-spec copy — unlocked by
+ *    Phase 17's Tomorrow's Call; was interim "see what's coming" before).
  *  - weekly-wrap says "see how your week went" until Phase 20 ships the
- *    "Your Week in Juice" card. TODOs live in ROADMAP.md Phases 17 + 20.
+ *    "Your Week in Juice" card. TODO lives in ROADMAP.md Phase 20.
  */
 export function buildMorningPush(content) {
   const edition = content?.editionType || 'standard';
@@ -80,7 +82,7 @@ export function buildMorningPush(content) {
   if (edition === 'weekly-wrap') {
     title = '📋 Weekly Wrap is ready — see how your week went';
   } else if (edition === 'week-ahead') {
-    title = "🔮 New week — see what's coming";
+    title = "🔮 New week — make your picks";
   } else {
     const vibe = content?.marketVibe;
     if (vibe === 'green')      title = "🟢 Green day — today's Juice is ready";
@@ -283,10 +285,29 @@ export async function sendMorningPushes(opts = {}) {
 // ---- Streak-at-risk (called from the evening recap sweep) ------------------
 
 /**
- * One streak-at-risk push, gated. The caller (sendEveningRecaps) has
- * already established the spec's first two gates — streak ≥ 3 AND no
- * engagement today (that's exactly its nudge fork) — so this adds the
- * third (no push of this kind today) plus the 2/day cap via tryLogPush.
+ * Phase 17 changed the streak-at-risk gate: it is DECOUPLED from the
+ * evening email's "engaged" flag. A kid who only tapped a Tomorrow's Call
+ * pick counts as engaged (no nudge email) but their streak still dies at
+ * midnight — the push must still fire. The gate is therefore:
+ *
+ *   streak >= 3  AND  no streak-EXTENDING event today (game or Mystery
+ *   Mover — i.e. lastStreakDate !== today)
+ *
+ * …independent of engagement, plus sendStreakRiskPush's own ledger gates
+ * (no push of this kind today + the 2/day cap). Pure — exported for the
+ * smoke test; the evening sweep in server.js is the caller.
+ */
+export function shouldSendStreakRiskPush({ currentStreak, lastStreakDate, today }) {
+  if (!Number.isFinite(currentStreak) || currentStreak < 3) return false;
+  return lastStreakDate !== today; // streak already safe today → no push
+}
+
+/**
+ * One streak-at-risk push. The caller (sendEveningRecaps) gates on
+ * shouldSendStreakRiskPush above (streak ≥ 3 AND streak not yet extended
+ * today — independent of the email's "engaged" fork as of Phase 17); this
+ * adds the no-push-of-this-kind-today gate plus the 2/day cap via
+ * tryLogPush.
  */
 export async function sendStreakRiskPush(user, streak, digestDate, opts = {}) {
   if (!ensureVapid() || !user.push_subscription) return { skipped: true };

@@ -111,7 +111,8 @@ async function main() {
   eq('starts at Rookie',        state1.progress.rank.key,    'rookie');
   eq('starts at 0 streak',      state1.progress.currentStreak, 0);
   eq('6 badge families seeded', Object.keys(state1.badges).length, 6);
-  eq('4 personal records seeded', Object.keys(state1.records).length, 4);
+  // Phase 17 added best-prediction-streak as the 5th record.
+  eq('5 personal records seeded', Object.keys(state1.records).length, 5);
 
   // -------- Section 2: a single game completion ------------------------
   // Regression: a daily-visit BEFORE the first game must not suppress the

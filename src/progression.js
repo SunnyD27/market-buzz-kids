@@ -72,6 +72,11 @@ export const MC_AWARDS = {
     unsolved: 0,
   },
 
+  // Tomorrow's Call (Phase 17) — +5 on a correct prediction, 0 incorrect
+  // (participation is its own reward: the kid comes back to find out).
+  // Making the pick itself awards nothing.
+  predictionCorrect: 5,
+
   // Streak bonus: +2 MC per streak day, capped at +30. Applied once per
   // calendar day on the first game completion that extends the streak.
   streakBonus: (streakDays) => Math.min(Math.max(0, streakDays) * 2, 30),
@@ -149,6 +154,9 @@ export const PERSONAL_RECORDS = [
   { key: 'best-week-mc',      name: 'Best Week',        unit: 'MC' },
   { key: 'longest-streak',    name: 'Longest Streak',   unit: 'days' },
   { key: 'best-perfect-week', name: 'Best Perfect Week', unit: 'Perfect Days' },
+  // Phase 17 — longest run of consecutive correct Tomorrow's Call picks.
+  // Updated by the resolution sweep (src/picks.js), not recordEvent.
+  { key: 'best-prediction-streak', name: 'Best Prediction Streak', unit: 'in a row' },
 ];
 
 // Emergency Fund (renamed from "Shields") — financial-literacy reframe
@@ -176,6 +184,12 @@ export const EVENT_TYPES = new Set([
   // Phase 16 — Mystery Mover played (solved or not). Dedup per digestDate;
   // MC by clues used; extends the streak and counts toward Perfect Day.
   'mystery-mover-played',
+  // Phase 17 — Tomorrow's Call. prediction-made fires when the kid taps a
+  // pick (0 MC, no streak/Perfect Day, but COUNTS as engaged for the
+  // evening recap fork). prediction-resolved is SERVER-initiated at 7 AM
+  // (+5 MC correct / 0 incorrect) — never engagement, never streak.
+  'prediction-made',
+  'prediction-resolved',
 ]);
 
 // Helpers — useful on both server and client (re-implemented in the client

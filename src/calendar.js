@@ -163,6 +163,73 @@ export function getLastTradingDay(date = now()) {
   return null;
 }
 
+/**
+ * Phase 17 — getLastTradingDay inverted: the NEXT trading day, INCLUSIVE
+ * of the given date. Inclusive because the 7 AM digest ships before the
+ * open — Friday's digest asks about Friday's own close. Saturday's and
+ * Sunday's digests target Monday; a holiday Monday pushes to Tuesday.
+ *
+ * Drives Tomorrow's Call targeting (src/picks.js): a pick made on
+ * digest_date D resolves against getNextTradingDay(D)'s actual close.
+ * Accepts a Date OR a 'YYYY-MM-DD' string (picks.js passes date strings).
+ * Same 14-day walk guard as getLastTradingDay.
+ */
+export function getNextTradingDay(date = now()) {
+  const startStr = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date
+    : toNYDateString(date);
+  let cursor = new Date(startStr + 'T12:00:00Z');
+  for (let i = 0; i < 14; i++) {
+    const cursorStr = cursor.toISOString().slice(0, 10);
+    const day = cursor.getUTCDay();
+    const isWeekend = day === 0 || day === 6;
+    if (!isWeekend && !isMarketHoliday(cursorStr)) {
+      return cursorStr;
+    }
+    cursor = new Date(cursor.getTime() + 86400_000);
+  }
+  return null;
+}
+
+// NYSE regular-session open, in minutes after midnight ET (9:30 AM).
+const MARKET_OPEN_MINUTES_ET = 9 * 60 + 30;
+
+/** Minutes after midnight in America/New_York for the given instant. */
+function nyMinutesOfDay(date) {
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: 'America/New_York', hour12: false, hour: '2-digit', minute: '2-digit',
+  }).formatToParts(date);
+  const get = (t) => Number(parts.find(p => p.type === t)?.value || 0);
+  return (get('hour') % 24) * 60 + get('minute');
+}
+
+/**
+ * Phase 17 — the BLIND-PICK target: the next trading day whose 9:30 AM ET
+ * market open is still in the FUTURE at `nowDate` (a real instant, NOT a
+ * digest date — this is a wall-clock rule). A pick made after Tuesday's
+ * open targets Wednesday, not Tuesday: otherwise an evening player bets on
+ * a close they can look up, and a midday player on a half-formed result.
+ *
+ *   Tue 7:00 AM ET → Tuesday      Tue 9:29 AM ET → Tuesday
+ *   Tue 9:31 AM ET → Wednesday    Tue 8:00 PM ET → Wednesday
+ *   Sat / Sun any time → Monday   (holiday Monday → Tuesday)
+ *
+ * Tomorrow's Call's target_date (src/picks.js) — and the UNIQUE
+ * (user_id, kind, target_date) constraint means one bet per market close,
+ * which also closes the Sat+Sun double-bet on Monday.
+ */
+export function getNextTradingOpen(nowDate = new Date()) {
+  const nyToday = toNYDateString(nowDate);
+  let candidate = getNextTradingDay(nyToday);
+  if (candidate === nyToday && nyMinutesOfDay(nowDate) >= MARKET_OPEN_MINUTES_ET) {
+    // Today's open already happened — walk to the next trading day.
+    const tomorrow = new Date(new Date(nyToday + 'T12:00:00Z').getTime() + 86400_000)
+      .toISOString().slice(0, 10);
+    candidate = getNextTradingDay(tomorrow);
+  }
+  return candidate;
+}
+
 // ── The main export ───────────────────────────────────────────────────
 
 /**

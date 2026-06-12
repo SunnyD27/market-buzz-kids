@@ -37,6 +37,8 @@
       byCluesUsed: [25, 20, 15, 10, 5],
       unsolved: 0,
     },
+    // Phase 17 — Tomorrow's Call: +5 on a correct prediction, 0 incorrect.
+    predictionCorrect: 5,
     streakBonus: function (streakDays) {
       return Math.min(Math.max(0, streakDays) * 2, 30);
     },
@@ -92,6 +94,8 @@
     { key: 'best-week-mc',      name: 'Best Week',        unit: 'MC' },
     { key: 'longest-streak',    name: 'Longest Streak',   unit: 'days' },
     { key: 'best-perfect-week', name: 'Best Perfect Week', unit: 'Perfect Days' },
+    // Phase 17 — longest run of consecutive correct Tomorrow's Call picks.
+    { key: 'best-prediction-streak', name: 'Best Prediction Streak', unit: 'in a row' },
   ];
 
   const SHIELD_CONFIG = {

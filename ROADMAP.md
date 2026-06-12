@@ -41,7 +41,7 @@
 |---|---|---|---|---|
 | **15** ✅ | Push notifications (kid-facing trigger) — shipped 2026-06-12 | S–M | **Highest** | — |
 | **16** ✅ | Mystery Mover + guest play on /sample + share grid — shipped 2026-06-12 | M | **Highest** | — |
-| **17** | Tomorrow's Call (daily prediction) | S–M | High | — |
+| **17** ✅ | Tomorrow's Call (daily prediction) — shipped 2026-06-12 | S–M | High | — |
 | **18** | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) | M | High (reliability) | — |
 | **19** | "Morning Juice" visual redesign | M | High | — |
 | **20** | Weekly rhythm: Weekly Hold + "Your Week in Juice" | M | High | 17 (shares `user_picks`) |
@@ -175,13 +175,22 @@ smoke test; deletion scrub unaffected (no new per-user tables in this phase).
 
 ---
 
-## Phase 17 — Tomorrow's Call (daily prediction)
+## Phase 17 — Tomorrow's Call (daily prediction) ✅ SHIPPED
 
-> **TODO (from Phase 15):** when this ships, swap the week-ahead morning-push
-> copy in `src/push.js#buildMorningPush` from the interim
-> "🔮 New week — see what's coming" to the spec's
-> "🔮 New week — make your picks" (it references this feature).
-> Update the matching assertion in `scripts/test-push.js`.
+> **Status: built 2026-06-12** with the approved integrity addendum:
+> **blind-pick rule** (target = next trading day whose 9:30 AM ET open is
+> still future at pick time — an evening pick targets tomorrow) and the
+> dedup constraint changed to UNIQUE `(user_id, kind, target_date)` — one
+> bet per market close, which also closes the Sat+Sun double-bet on Monday
+> (verified compatible with Phase 20's weekly-hold: its target is the
+> week's last trading day → one per week). Engagement semantics: pick =
+> engaged (no nudge email) but NOT streak; the streak-at-risk push gate is
+> DECOUPLED from "engaged" (fires on streak ≥ 3 + no streak-extending play,
+> so a pick-only kid still gets warned); resolution = +5/0 MC only. Flat
+> day (0.00%) resolves green. Other deviations in the HANDOFF entry.
+
+> **TODO (from Phase 15): DONE** — week-ahead push copy swapped to
+> "🔮 New week — make your picks" when this phase shipped.
 
 **Why.** The purest open loop available: today's tap is resolved by tomorrow's open.
 It is also a stealth lesson — a kid's hit rate converging on a coin flip teaches
