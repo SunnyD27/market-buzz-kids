@@ -1466,3 +1466,35 @@ bakes the puzzle in normally.
 - Spot-check the logged-in MC award path on prod after deploy.
 - Phase 22's Headline-or-Hoax anonymous stat will want the same
   aggregate-events query pattern this phase avoided (nothing blocking).
+
+---
+
+## Session: Phase 16 follow-up — share-grid channel tag + Web Share API
+
+Two small follow-ups to the Mystery Mover share flow (`public/games/
+mystery-mover.js`):
+
+1. **`?src=mm-share` appended to the share URL** — a channel tag, identical
+   for every user (NOT an identifier), so share-grid arrivals are
+   distinguishable in logs/analytics. Share text is otherwise unchanged.
+2. **Web Share API first, clipboard fallback** — `navigator.share` when
+   available gives mobile the native share sheet with the grid pre-filled
+   ("Shared! 🍊" on success); a cancelled sheet (AbortError) leaves the
+   button usable; any other share error falls back to the clipboard copy,
+   which remains the desktop path.
+
+`public/sw.js` → **v6** (mystery-mover.js is a precached shell asset).
+`scripts/test-mystery.js` gained Section 6.5 (3 assertions, now **78
+total**): the builder lives in the client IIFE, so the test asserts against
+the module source — tagged URL present, Web Share + clipboard fallback both
+present, and the share builder's inputs are identifier-free
+(label/solved/cluesUsed only).
+
+**Verified live** (preview browser on /sample): clipboard fallback payload
+captured via a writeText stub — carries `?src=mm-share`; Web Share branch
+exercised via a `navigator.share` stub — cancel (AbortError) leaves the
+button usable, success shows "Shared! 🍊" with the tagged text. The v5→v6
+SW handoff was also observed working (old cache reaped, new module served
+on the next load) — good real-world confirmation of the version-bump
+mechanism for installed PWAs. Real mobile share sheet: check on a phone
+after deploy (headless has no native sheet).

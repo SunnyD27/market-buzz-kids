@@ -19,7 +19,12 @@
 import dotenv from 'dotenv';
 dotenv.config({ override: true });
 
+import { readFileSync } from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
 import { query } from '../src/db.js';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
 import {
   pickMysteryCompany,
   buildClue5,
@@ -176,6 +181,22 @@ async function main() {
   ok('whitespace tolerated', isCorrectGuess('  McDonalds  ', mcdPuzzle));
   ok('wrong guess rejected', !isCorrectGuess('Burger King', mcdPuzzle));
   ok('empty guess rejected', !isCorrectGuess('   ', mcdPuzzle));
+
+  // -------- Section 6.5: share text (client module source) -------------------
+  // buildShareText lives inside the client IIFE (not importable in node), so
+  // assert against the module source: the share URL carries the ?src=mm-share
+  // channel tag (identical for all users — a channel, not an identifier), and
+  // the share payload is built ONLY from date/solved/cluesUsed — no name,
+  // username, streak, or MC can reach it.
+  console.log('\nSection 6.5 — share text (module source)');
+  const mmSource = readFileSync(path.join(__dirname, '..', 'public', 'games', 'mystery-mover.js'), 'utf8');
+  ok('share URL carries the ?src=mm-share channel tag',
+    mmSource.includes("SHARE_URL = 'themarketjuice.com/sample?src=mm-share'"));
+  ok('Web Share API used when available (clipboard fallback kept)',
+    mmSource.includes('navigator.share') && mmSource.includes('clipboardShare'));
+  const builderMatch = mmSource.match(/function buildShareText\(([^)]*)\)/);
+  eq('share builder inputs are identifier-free (label, solved, cluesUsed only)',
+    builderMatch && builderMatch[1].trim(), 'label, solved, cluesUsed');
 
   // -------- Section 7: content_history (Postgres) ----------------------------
   console.log('\nSection 7 — content_history round-trip + 30-day window (live Neon)');

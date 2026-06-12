@@ -25,7 +25,9 @@
   'use strict';
 
   var MAX_GUESSES = 5;
-  var SHARE_URL = 'themarketjuice.com/sample';
+  // ?src=mm-share is a channel tag (identical for every user — NOT an
+  // identifier) so share-grid arrivals are distinguishable in logs/analytics.
+  var SHARE_URL = 'themarketjuice.com/sample?src=mm-share';
 
   var section = null;
   var host = null;
@@ -77,18 +79,38 @@
     return 'Market Juice Mystery Mover — ' + label + '\n' + grid + ' ' + note + '\n' + SHARE_URL;
   }
 
-  function copyShare(btn, clues) {
+  function copyShare(btn) {
     var text = buildShareText(dateLabel(state.date), state.solved, state.cluesUsed);
-    var done = function () {
-      btn.textContent = 'Copied! Send it to a friend 🍊';
+    var done = function (label) {
+      btn.textContent = label;
       btn.disabled = true;
       setTimeout(function () { btn.textContent = 'Share your result'; btn.disabled = false; }, 2500);
     };
+
+    // Web Share API first — mobile gets the native share sheet with the
+    // grid pre-filled. Clipboard stays the fallback (and the usual desktop
+    // path). A user cancelling the sheet (AbortError) is not a failure —
+    // do nothing so they can reopen it.
+    if (navigator.share) {
+      navigator.share({ text: text })
+        .then(function () { done('Shared! 🍊'); })
+        .catch(function (err) {
+          if (err && err.name === 'AbortError') return; // user closed the sheet
+          clipboardShare(text, done);
+        });
+      return;
+    }
+    clipboardShare(text, done);
+  }
+
+  function clipboardShare(text, done) {
     if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(text).then(done).catch(function () { legacyCopy(text); done(); });
+      navigator.clipboard.writeText(text)
+        .then(function () { done('Copied! Send it to a friend 🍊'); })
+        .catch(function () { legacyCopy(text); done('Copied! Send it to a friend 🍊'); });
     } else {
       legacyCopy(text);
-      done();
+      done('Copied! Send it to a friend 🍊');
     }
   }
 
@@ -206,7 +228,7 @@
 
     if (state.finished) {
       var shareBtn = document.getElementById('mm-share');
-      if (shareBtn) shareBtn.addEventListener('click', function () { copyShare(shareBtn, clues); });
+      if (shareBtn) shareBtn.addEventListener('click', function () { copyShare(shareBtn); });
     } else {
       var input = document.getElementById('mm-guess');
       var feedbackEl = document.getElementById('mm-feedback');

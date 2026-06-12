@@ -32,7 +32,10 @@
 // Bumped to v5 for Phase 16 — `games/mystery-mover.js` added to the shell
 // (the daily Mystery Mover puzzle) and `progression-config.js` gained the
 // mysteryMover MC table.
-const VERSION = 'v5';
+//
+// Bumped to v6 for the Phase 16 follow-up — `games/mystery-mover.js` share
+// flow (Web Share API + ?src=mm-share channel tag).
+const VERSION = 'v6';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
