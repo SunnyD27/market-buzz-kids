@@ -277,6 +277,10 @@ export async function getProgress(userId) {
       weeksActive: progress.weeks_active,
       wordsLearned: progress.words_learned,
       lastActiveDate: progress.last_active_date,
+      // Phase 17 — the authoritative "did a streak-EXTENDING play happen
+      // today?" signal (only games + Mystery Mover move it). The Phase 15
+      // streak-at-risk push gates on this, independent of "engaged".
+      lastStreakDate: progress.last_streak_date,
       activeDays,
     },
     badges,
@@ -348,6 +352,43 @@ async function isDuplicate(client, userId, eventType, eventData, todayServer) {
           AND COALESCE((event_data->>'duplicate')::boolean, false) = false
         LIMIT 1`,
       [userId, digestDate],
+    );
+    return rows.length > 0;
+  }
+  if (eventType === 'prediction-made') {
+    // Phase 17: one pick per MARKET CLOSE — keyed on targetDate to mirror
+    // the user_picks UNIQUE (user_id, kind, target_date) constraint, which
+    // is the real gate (POST /api/picks only fires this event on a real
+    // INSERT); this is belt-and-suspenders for the event log.
+    const targetDate = eventData?.targetDate;
+    if (!targetDate) return false;
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'prediction-made'
+          AND event_data->>'targetDate' = $2
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, targetDate],
+    );
+    return rows.length > 0;
+  }
+  if (eventType === 'prediction-resolved') {
+    // Phase 17: keyed on targetDate, NOT digestDate — a straggler
+    // resolution can legitimately land the same day as the regular one,
+    // and each pick must pay out exactly once. The atomic claim in
+    // src/picks.js (resolved_at IS NULL) is the real gate; this backstops
+    // the event log.
+    const targetDate = eventData?.targetDate;
+    if (!targetDate) return false;
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = 'prediction-resolved'
+          AND event_data->>'targetDate' = $2
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, targetDate],
     );
     return rows.length > 0;
   }
@@ -485,10 +526,19 @@ export async function recordEvent(userId, eventType, eventData = {}) {
       mcAwarded += applySundayChallenge(after, eventData);
     } else if (eventType === 'word-learned') {
       mcAwarded += applyWordLearned(after);
+    } else if (eventType === 'prediction-resolved') {
+      // Phase 17 — SERVER-initiated at 7 AM while the kid sleeps: +5 MC on
+      // a correct call, 0 incorrect. Deliberately NO streak advance, NO
+      // Perfect Day, NO games_played — and it never counts as engagement
+      // (see getDailyEngagementSummary). MC only.
+      mcAwarded += eventData?.correct === true ? MC_AWARDS.predictionCorrect : 0;
     }
-    // parent-question (Phase 12): no MC, no progression mutations. Just
-    // gets logged to engagement_events below for the evening recap email.
-    // Falls through to the same persist + audit path as everything else.
+    // parent-question (Phase 12) and prediction-made (Phase 17): no MC, no
+    // progression mutations. Just logged to engagement_events below —
+    // parent-question feeds the evening recap email; prediction-made marks
+    // the kid as engaged for the recap-vs-nudge fork (it deliberately does
+    // NOT extend the streak — only games + Mystery Mover do).
+    // Both fall through to the same persist + audit path as everything else.
 
     if (mcAwarded > 0) {
       after.market_coins = before.market_coins + mcAwarded;
@@ -1057,16 +1107,21 @@ export async function getDailyEngagementSummary(userId, digestDate) {
   const perfectDay = games.some(g => g.perfectDay === true);
   const gamesCorrect = games.filter(g => g.correct === true).length;
 
-  // "engaged" excludes daily-visit (auto-fires on every /digest load) and
-  // parent-question (passive flag — doesn't mean the kid actually played).
-  // The evening cron uses this to fork recap vs. nudge — and (Phase 15)
-  // to gate the streak-at-risk push. mystery-mover-played counts (Phase 16):
-  // a kid who played the puzzle showed up today and shouldn't be nudged.
+  // "engaged" excludes daily-visit (auto-fires on every /digest load),
+  // parent-question (passive flag — doesn't mean the kid actually played),
+  // and prediction-RESOLVED (server-initiated at 7 AM while the kid sleeps —
+  // counting it would suppress that evening's nudge for kids who never
+  // visited). The evening cron uses this to fork recap vs. nudge.
+  // mystery-mover-played counts (Phase 16) and prediction-MADE counts
+  // (Phase 17 — a deliberate tap, comparable to word-learned). NOTE: as of
+  // Phase 17 the streak-at-risk push does NOT gate on this flag — it gates
+  // on lastStreakDate (streak-EXTENDING play), see server.js's evening sweep.
   const meaningfulEvents = events.filter(e =>
     e.type === 'game-completed' ||
     e.type === 'word-learned' ||
     e.type === 'sunday-challenge-completed' ||
-    e.type === 'mystery-mover-played'
+    e.type === 'mystery-mover-played' ||
+    e.type === 'prediction-made'
   );
   const engaged = meaningfulEvents.length > 0;
 

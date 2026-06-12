@@ -28,7 +28,9 @@ import {
   sendPushToUser,
   sendStreakRiskPush,
   sendMorningPushes,
+  shouldSendStreakRiskPush,
 } from '../src/push.js';
+import { recordEvent as engagementRecordEvent, getProgress as engagementGetProgress } from '../src/engagement.js';
 import { todayNY, getDigestForDate } from '../src/digest-store.js';
 import { recordEvent, getProgress } from '../src/engagement.js';
 import { storage } from '../src/storage.js';
@@ -104,7 +106,7 @@ async function main() {
   eq('weekly-wrap title (interim copy until Phase 20)', wrap.title, '📋 Weekly Wrap is ready — see how your week went');
 
   const ahead = buildMorningPush({ editionType: 'week-ahead' });
-  eq('week-ahead title (interim copy until Phase 17)', ahead.title, "🔮 New week — see what's coming");
+  eq('week-ahead title (spec copy — Phase 17 shipped Tomorrow\'s Call)', ahead.title, '🔮 New week — make your picks');
 
   const longSummary = 'x'.repeat(300);
   ok('body truncated to ~120 chars', buildMorningPush({ editionType: 'standard', marketVibe: 'green', vibeSummary: longSummary }).body.length <= 121);
@@ -193,6 +195,53 @@ async function main() {
 
   const noSub = await sendStreakRiskPush({ id: testUserId, push_subscription: null }, 7, D2, { send: recordSend });
   eq('no subscription → skipped', noSub.skipped, true);
+
+  // -------- Section 5b: streak-at-risk gate decoupled from "engaged" -------
+  // Phase 17 changed the gate: streak >= 3 AND no streak-EXTENDING event
+  // today (game or Mystery Mover), INDEPENDENT of the engaged flag — a kid
+  // who only tapped a Tomorrow's Call pick is engaged (no nudge email) but
+  // their streak still dies at midnight, so the push must still fire.
+  console.log('\nSection 5b — streak push gate (Phase 17 decoupling)');
+  const TODAY = new Date().toISOString().slice(0, 10); // close enough for the pure matrix
+  eq('streak 5, nothing played today → push fires',
+    shouldSendStreakRiskPush({ currentStreak: 5, lastStreakDate: null, today: TODAY }), true);
+  eq('streak 5, game/mystery already today → suppressed',
+    shouldSendStreakRiskPush({ currentStreak: 5, lastStreakDate: TODAY, today: TODAY }), false);
+  eq('streak 2 → below threshold, no push',
+    shouldSendStreakRiskPush({ currentStreak: 2, lastStreakDate: null, today: TODAY }), false);
+  eq('streak 3 exactly, not played → push fires',
+    shouldSendStreakRiskPush({ currentStreak: 3, lastStreakDate: '2020-01-01', today: TODAY }), true);
+
+  // The requested scenario, live: pick made, NO game played, streak >= 3 →
+  // push still fires; then a game is played → push suppressed.
+  const { rows: todayNYRow } = await query(`SELECT TO_CHAR(NOW() AT TIME ZONE 'America/New_York', 'YYYY-MM-DD') AS d`);
+  const nyToday = todayNYRow[0].d;
+  await query(`UPDATE user_progress SET current_streak = 5 WHERE user_id = $1`, [testUserId])
+    .catch(() => {}); // row created below if missing
+  await engagementRecordEvent(testUserId, 'prediction-made', { digestDate: nyToday, choice: 'green', targetDate: '2031-03-03' });
+  await query(
+    `UPDATE user_progress SET current_streak = 5, last_streak_date = NULL WHERE user_id = $1`,
+    [testUserId],
+  );
+  let prog = await engagementGetProgress(testUserId);
+  eq('pick counts as engagement-event, not streak (lastStreakDate untouched)',
+    prog.progress.lastStreakDate, null);
+  eq('LIVE: pick made + no game + streak 5 → push fires', shouldSendStreakRiskPush({
+    currentStreak: prog.progress.currentStreak,
+    lastStreakDate: prog.progress.lastStreakDate,
+    today: nyToday,
+  }), true);
+  await engagementRecordEvent(testUserId, 'game-completed', { game: 'quiz', correct: true, digestDate: nyToday });
+  prog = await engagementGetProgress(testUserId);
+  eq('LIVE: game played → streak extended today → push suppressed', shouldSendStreakRiskPush({
+    currentStreak: prog.progress.currentStreak,
+    lastStreakDate: prog.progress.lastStreakDate,
+    today: nyToday,
+  }), false);
+  // Clean the rows this section created so later sections see a fresh user.
+  await query(`DELETE FROM engagement_events WHERE user_id = $1`, [testUserId]);
+  await query(`DELETE FROM user_picks WHERE user_id = $1`, [testUserId]);
+  await query(`UPDATE user_progress SET current_streak = 0, last_streak_date = NULL, market_coins = 0, games_played = 0, correct_answers = 0 WHERE user_id = $1`, [testUserId]);
 
   // -------- Section 6: morning sweep 7–9 AM local window -------------------
   // Drives the REAL sweep (live gate SQL) scoped to the test user via

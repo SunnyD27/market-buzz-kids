@@ -25,8 +25,9 @@ import { gatherAdminData, buildAdminHTML } from './admin.js';
 import { refreshActiveGlossary } from './glossary-runtime.js';
 import { getEditionType } from './calendar.js';
 import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
-import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush } from './push.js';
+import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush, shouldSendStreakRiskPush } from './push.js';
 import { isCorrectGuess } from './mystery.js';
+import { createPick, getPickState, targetLabelFor } from './picks.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -189,10 +190,21 @@ app.get('/digest', requireAuth, async (req, res) => {
   const kidName = req.user?.kid_first_name;
   const digestDate = todayNY();
 
+  // Phase 17 — per-request prediction-card state (today's pick, running
+  // record, last verdict). Fail-soft: a picks hiccup renders the digest
+  // without the card, never a broken page. Personalization stays
+  // render-time only — nothing per-user enters the immutable daily row.
+  let prediction = null;
+  try {
+    prediction = await getPickState(req.user.id, digestDate);
+  } catch (err) {
+    console.error('[digest] pick state failed (card skipped):', err.message);
+  }
+
   try {
     const dbDigest = await getTodaysDigest();
     if (dbDigest?.content) {
-      const html = buildHTML(dbDigest.content, { kidName, digestDate });
+      const html = buildHTML(dbDigest.content, { kidName, digestDate, prediction });
       return res.status(200).type('html').send(html);
     }
   } catch (err) {
@@ -471,6 +483,46 @@ app.post('/api/reset-password', authLimiter, async (req, res) => {
   }
 
   return res.json({ success: true });
+});
+
+// ============================================================
+// API — Tomorrow's Call (Phase 17)
+// ============================================================
+// One bet per market close. Everything except the choice is computed
+// server-side: digest_date = today NY (provenance), target_date = the
+// BLIND-PICK target — the next trading day whose 9:30 AM ET open is still
+// in the future at POST time (server clock; recomputed here even if the
+// page rendered pre-open — the server's target wins and the response
+// carries it so the client's locked chip shows the real day). The UNIQUE
+// (user_id, kind, target_date) constraint is the dedup — a second tap on
+// the same close (including Sunday-after-Saturday, both targeting Monday)
+// returns 409 {duplicate:true}. On a real insert the server fires
+// prediction-made itself (0 MC, marks the kid engaged for the evening
+// recap fork — clients never self-report this event).
+app.post('/api/picks', requireAuth, async (req, res) => {
+  const choice = req.body?.choice;
+  if (choice !== 'green' && choice !== 'red') {
+    return res.status(400).json({ error: 'choice must be "green" or "red".' });
+  }
+  const digestDate = todayNY();
+  try {
+    const { inserted, targetDate } = await createPick(req.user.id, digestDate, choice);
+    const targetLabel = targetLabelFor(targetDate, digestDate);
+    if (!inserted) {
+      return res.status(409).json({ duplicate: true, targetDate, targetLabel });
+    }
+    // Engagement log — fire-and-forget; a logging hiccup must not undo a
+    // pick that's already committed.
+    try {
+      await recordEvent(req.user.id, 'prediction-made', { digestDate, choice, targetDate });
+    } catch (err) {
+      console.error('[picks] prediction-made event failed (pick kept):', err.message);
+    }
+    return res.json({ success: true, choice, targetDate, targetLabel });
+  } catch (err) {
+    console.error('[picks] create failed:', err.message);
+    return res.status(500).json({ error: 'Could not save your pick.' });
+  }
 });
 
 // ============================================================
@@ -1536,6 +1588,27 @@ async function sendEveningRecaps() {
       const progress = await getProgress(u.id);
       const currentStreak = progress?.progress?.currentStreak ?? 0;
 
+      // Phase 15 — streak-at-risk push to the KID (the emails below go to
+      // the parent). DECOUPLED from the email's "engaged" fork as of
+      // Phase 17: a kid who only tapped a Tomorrow's Call pick is engaged
+      // (no nudge email) but their streak still dies at midnight — so the
+      // push gates on lastStreakDate (streak-EXTENDING play: game or
+      // Mystery Mover) instead, via shouldSendStreakRiskPush. push_log
+      // adds the no-push-today gate + the 2/day cap. Own try/catch: a
+      // push failure must never block the parent email; runs BEFORE the
+      // variant fork so a skipped email never skips the push.
+      if (u.push_subscription && shouldSendStreakRiskPush({
+        currentStreak,
+        lastStreakDate: progress?.progress?.lastStreakDate ?? null,
+        today: digestDate,
+      })) {
+        try {
+          await sendStreakRiskPush(u, currentStreak, digestDate);
+        } catch (err) {
+          console.error(`[evening-recap] streak push threw userId=${u.id}:`, err.message);
+        }
+      }
+
       // Variant fork — Q4 in the spec. Brand-new users (streak 0, no
       // engagement) get nothing. Don't nag fresh signups.
       let variant = null;
@@ -1545,19 +1618,6 @@ async function sendEveningRecaps() {
       if (!variant) {
         skipped++;
         continue;
-      }
-
-      // Phase 15 — streak-at-risk push to the KID (the email below goes to
-      // the parent). The nudge fork above IS the spec's first two gates
-      // (streak ≥ 3 AND no engagement today); sendStreakRiskPush adds the
-      // third (no push of this kind today) + the 2/day cap via push_log.
-      // Own try/catch: a push failure must never block the parent email.
-      if (variant === 'nudge' && u.push_subscription) {
-        try {
-          await sendStreakRiskPush(u, currentStreak, digestDate);
-        } catch (err) {
-          console.error(`[evening-recap] streak push threw userId=${u.id}:`, err.message);
-        }
       }
 
       const parentQuestions = variant === 'recap'
@@ -2096,6 +2156,37 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] content_history migration failed (word/fact/mystery rotation will degrade until fixed):', err.message);
+  }
+
+  // Phase 17 — user_picks (Tomorrow's Call; Phase 20 reuses for Weekly
+  // Hold). Standalone DDL also in src/schema.sql + src/migrations/
+  // add-user-picks.sql. Detect via the table's presence (idempotent).
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'user_picks'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating user_picks table (Phase 17 Tomorrow\'s Call)…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS user_picks (
+          id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+          user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind        TEXT         NOT NULL CHECK (kind IN ('tomorrow-call', 'weekly-hold')),
+          digest_date DATE         NOT NULL,
+          target_date DATE         NOT NULL,
+          pick        JSONB        NOT NULL,
+          resolved_at TIMESTAMPTZ,
+          outcome     JSONB,
+          UNIQUE (user_id, kind, target_date)
+        );
+        CREATE INDEX IF NOT EXISTS idx_user_picks_unresolved
+          ON user_picks (kind, target_date)
+          WHERE resolved_at IS NULL;
+      `);
+      console.log('[migrations] ✅ user_picks table created.');
+    }
+  } catch (err) {
+    console.error('[migrations] user_picks migration failed (Tomorrow\'s Call will error until fixed):', err.message);
   }
 }
 

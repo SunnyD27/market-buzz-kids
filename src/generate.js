@@ -13,6 +13,7 @@ import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
 import { pickMysteryCompany, finalizeMysteryMover } from './mystery.js';
+import { resolveTomorrowCalls } from './picks.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
 import { storage } from './storage.js';
@@ -56,6 +57,13 @@ export async function generateDigest(opts = {}) {
   // In production with no override, this is identical to digest-store's
   // todayNY().
   const today = getEditionDate();
+
+  // Phase 17 — resolve yesterday's Tomorrow's Call picks BEFORE anything
+  // else, on BOTH the fresh and cached-replay paths (a redeploy/bootstrap
+  // after the 7 AM run still resolves; resolved_at IS NULL keeps re-runs
+  // idempotent). resolveTomorrowCalls never throws and fetches its own
+  // single ^GSPC quote — a resolution failure can NEVER block the digest.
+  await resolveTomorrowCalls(today);
 
   // ── Cache check: today's row already in Postgres? ────────────────
   // The idempotency check MUST come before edition detection — if today's

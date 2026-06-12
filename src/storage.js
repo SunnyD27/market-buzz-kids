@@ -494,6 +494,9 @@ async function recordDeletionRequest(input) {
       // Phase 15: push-notification ledger rides the same scrub.
       await client.query(`DELETE FROM push_log          WHERE user_id = $1`, [matched.id]);
 
+      // Phase 17: prediction picks (Tomorrow's Call / Weekly Hold).
+      await client.query(`DELETE FROM user_picks        WHERE user_id = $1`, [matched.id]);
+
       // Remove any outstanding verification/consent/reset tokens for this
       // user — they're useless once the row is scrubbed and would otherwise
       // linger forever (ON DELETE CASCADE never fires under soft-delete).

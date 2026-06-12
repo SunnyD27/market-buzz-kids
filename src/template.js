@@ -55,6 +55,41 @@ const GLOSS_PRINCIPLES = {
  *  - The term source is the merged seed + approved-DB view (glossary-runtime),
  *    cached per process — so approved nominations grow the glossary live.
  */
+// One tap-to-reveal gloss span (the prose `.tip` bubble shape). Module-level
+// so both the first-occurrence prose linker and the always-on standalone
+// helper below share one copy of the markup.
+function renderGlossSpan(visibleText, entry) {
+  const principleLine = entry.principle
+    ? `Ties to: ${GLOSS_PRINCIPLES[entry.principle] || ''}`
+    : '';
+  const newClass = entry.isNew ? ' is-new' : '';
+  return (
+    `<span class="gloss${newClass}" tabindex="0" role="button" aria-expanded="false">` +
+    escapeHTML(visibleText) +
+    `<span class="tip" role="tooltip">` +
+    `<span class="tip-term">${escapeHTML(entry.term)}</span>` +
+    escapeHTML(entry.def || '') +
+    (principleLine ? `<span class="tip-principle">${escapeHTML(principleLine)}</span>` : '') +
+    `</span>` +
+    `</span>`
+  );
+}
+
+/**
+ * Phase 17 — a standalone always-tappable gloss term, INDEPENDENT of the
+ * prose linker's first-occurrence seen-set (the scoreboard-tile precedent:
+ * a fixed UI surface should always explain itself, even when the term
+ * already appeared in prose). Used for "S&P 500" on the Tomorrow's Call
+ * card. Falls back to plain escaped text on lookup-miss or glossary-off.
+ * Exported for the smoke test.
+ */
+export function glossTermSpan(view, visibleText, term, enabled = true) {
+  if (!enabled || !view || typeof view.lookup !== 'function') return escapeHTML(visibleText);
+  const entry = view.lookup(term);
+  if (!entry) return escapeHTML(visibleText);
+  return renderGlossSpan(visibleText, entry);
+}
+
 export function makeGlossaryLinker(view, { enabled = true } = {}) {
   const seen = new Set(); // canonical (lowercased) terms already linked this digest
   const terms = (view && view.MATCHABLE_TERMS) || [];
@@ -66,22 +101,7 @@ export function makeGlossaryLinker(view, { enabled = true } = {}) {
       )
     : null;
 
-  function renderGloss(visibleText, entry) {
-    const principleLine = entry.principle
-      ? `Ties to: ${GLOSS_PRINCIPLES[entry.principle] || ''}`
-      : '';
-    const newClass = entry.isNew ? ' is-new' : '';
-    return (
-      `<span class="gloss${newClass}" tabindex="0" role="button" aria-expanded="false">` +
-      escapeHTML(visibleText) +
-      `<span class="tip" role="tooltip">` +
-      `<span class="tip-term">${escapeHTML(entry.term)}</span>` +
-      escapeHTML(entry.def || '') +
-      (principleLine ? `<span class="tip-principle">${escapeHTML(principleLine)}</span>` : '') +
-      `</span>` +
-      `</span>`
-    );
-  }
+  const renderGloss = renderGlossSpan;
 
   function linkSegment(text, skipLower) {
     if (!re) return escapeHTML(text);
@@ -432,6 +452,92 @@ export function buildHTML(content, opts = {}) {
   // name was passed in (i.e. an authenticated /digest request). /sample
   // never has a kidName and falls through to the un-greeted header.
   const kidName = opts.kidName;
+
+  // Phase 17 — Tomorrow's Call prediction card (END of the digest — the
+  // last thing the kid sees is tomorrow, not "done"). Per-user state
+  // threaded by the /digest handler ({ todayPick, targetDate, record,
+  // verdict }); absent on /sample, the static disk render, and logged-out
+  // paths → the card (and its section header) is skipped entirely.
+  // Personalization stays render-time only — nothing per-user is in the
+  // immutable daily row.
+  const prediction = opts.prediction || null;
+  const predictionCardHTML = (() => {
+    if (!prediction || !prediction.targetDate) return '';
+
+    // Server-computed live target label ('today' / 'on Monday'). The POST
+    // recomputes authoritatively at tap time — a 9:29-render/9:31-tap race
+    // resolves to the server's answer, and the response label feeds the
+    // locked chip (see the inline handler below).
+    const targetLabel = prediction.targetLabel || 'today';
+    // S&P 500 is always tappable on this card (scoreboard-tile precedent),
+    // independent of the prose first-occurrence pass.
+    const spGloss = glossTermSpan(_glossView, 'S&P 500', 'S&P 500', glossaryOn);
+
+    // The permanent sub-caption — what makes the 9:30 blind-pick rule feel
+    // like a rule instead of a bug. Three states from the server:
+    //   pre-open  → today's open is still ahead
+    //   post-open → today's session is running, kid calls a future close
+    //   closed    → weekend/holiday, kid calls the next session
+    const captionHTML = (() => {
+      if (prediction.caption === 'pre-open') {
+        return `<div class="tc-caption">Locks at 9:30 AM ET when the market opens.</div>`;
+      }
+      if (prediction.caption === 'post-open') {
+        return `<div class="tc-caption">Today's market is already running — you're calling ${escapeHTML(targetLabel.replace(/^on /, ''))}'s close.</div>`;
+      }
+      return `<div class="tc-caption">Markets are closed today — you're calling ${escapeHTML(targetLabel.replace(/^on /, ''))}'s close.</div>`;
+    })();
+
+    const verdict = prediction.verdict;
+    const verdictHTML = verdict
+      ? (verdict.correct
+          ? `<div class="tc-verdict tc-verdict-win">You called it! 🎯 +5 MC</div>`
+          : `<div class="tc-verdict tc-verdict-miss">Not this time — the S&amp;P finished ${escapeHTML(verdict.actual || '')}.</div>`)
+      : '';
+
+    const record = prediction.record;
+    const recordHTML = record
+      ? `<div class="tc-record">Your record: <strong>${record.correct} of ${record.total}</strong></div>`
+      : '';
+
+    // One-time explainer (5th-grade reading level). Server always renders
+    // it; the inline handler hides it instantly when localStorage says the
+    // kid already tapped "Got it" (same persistence idea as the
+    // Ask-my-parent intro — but with a properly styled button).
+    const explainerHTML = `
+    <div class="tc-intro" id="tc-intro" hidden>
+      <div class="tc-intro-title">New! Make your daily call 🔮</div>
+      <div class="tc-intro-body">Once a day, you predict: will the ${spGloss} finish <strong>green</strong> (up) or <strong>red</strong> (down)? Your pick locks when the market opens at 9:30 AM. Call it right and you earn <strong>+5 Market Coins</strong>. The answer lands in tomorrow morning's Juice.</div>
+      <button type="button" class="tc-intro-btn" id="tc-intro-btn">Got it</button>
+    </div>`;
+
+    const pickedChip = (choice, label) => `
+      <div class="tc-locked">You called ${choice === 'green' ? '▲ Green' : '▼ Red'} ${escapeHTML(label)} — come back after the market closes to see how it went.</div>`;
+
+    const bodyHTML = prediction.currentPick
+      ? pickedChip(prediction.currentPick, targetLabel)
+      : `
+      <div class="tc-question">Will the ${spGloss} finish green or red ${escapeHTML(targetLabel)}?</div>
+      <div class="tc-buttons" id="tc-buttons">
+        <button type="button" class="tc-btn tc-btn-green" data-choice="green">▲ Green</button>
+        <button type="button" class="tc-btn tc-btn-red" data-choice="red">▼ Red</button>
+      </div>
+      <div class="tc-feedback" id="tc-feedback" aria-live="polite"></div>`;
+
+    return `
+  <div class="section-header">
+    <span class="emoji">🔮</span>
+    <h2>Tomorrow's Call</h2>
+    <div class="line"></div>
+  </div>
+  <div class="tc-card" id="tc-card" data-target-label="${escapeHTML(targetLabel)}">
+    ${explainerHTML}
+    ${verdictHTML}
+    ${recordHTML}
+    ${bodyHTML}
+    ${captionHTML}
+  </div>`;
+  })();
   const greetingHTML = kidName
     ? `<div class="kid-greeting">
          <span class="kid-greeting-name">Hey, ${escapeHTML(kidName)}! 👋</span>
@@ -786,6 +892,30 @@ export function buildHTML(content, opts = {}) {
   .quiz-btn.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
   .quiz-answer { display: none; font-size: 14px; color: var(--text); line-height: 1.5; padding: 14px; background: rgba(63,185,80,0.06); border-radius: 12px; border: 1px solid rgba(63,185,80,0.2); }
   .quiz-answer.visible { display: block; }
+  /* Phase 17 — Tomorrow's Call prediction card (per-user, end of digest) */
+  .tc-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; text-align: center; }
+  .tc-verdict { font-size: 17px; font-weight: 600; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
+  .tc-verdict-win { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.35); }
+  .tc-verdict-miss { background: var(--red-glow); color: var(--text); border: 1px solid rgba(248,81,73,0.3); }
+  .tc-record { color: var(--text-dim); font-size: 13.5px; margin-bottom: 12px; }
+  .tc-record strong { color: var(--yellow); font-family: 'Space Mono', monospace; }
+  .tc-question { font-size: 17px; font-weight: 500; margin-bottom: 14px; }
+  .tc-buttons { display: flex; gap: 10px; justify-content: center; }
+  .tc-btn { flex: 1; max-width: 180px; border: none; border-radius: 12px; padding: 14px 10px; font-family: inherit; font-weight: 600; font-size: 16px; cursor: pointer; transition: filter 0.15s, transform 0.1s; }
+  .tc-btn:hover { filter: brightness(1.15); }
+  .tc-btn:active { transform: scale(0.97); }
+  .tc-btn:disabled { opacity: 0.5; cursor: default; }
+  .tc-btn-green { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.45); }
+  .tc-btn-red { background: var(--red-glow); color: var(--red); border: 1px solid rgba(248,81,73,0.45); }
+  .tc-locked { background: rgba(188,140,255,0.1); border: 1px solid rgba(188,140,255,0.3); color: var(--text); border-radius: 10px; padding: 12px; font-size: 14.5px; }
+  .tc-feedback { margin-top: 10px; color: var(--text-dim); font-size: 13.5px; min-height: 1.2em; }
+  .tc-caption { margin-top: 12px; color: var(--text-dim); font-size: 12.5px; }
+  .tc-intro { background: var(--blue-glow); border: 1px solid rgba(88,166,255,0.3); border-radius: 12px; padding: 14px; margin-bottom: 14px; text-align: left; }
+  .tc-intro-title { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
+  .tc-intro-body { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 10px; }
+  .tc-intro-btn { background: var(--blue); color: #0d1117; border: none; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .tc-intro-btn:hover { filter: brightness(1.1); }
+
   /* Phase 16 — Mystery Mover (client-hydrated by games/mystery-mover.js) */
   .mm-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; }
   .mm-tagline { color: var(--text-dim); font-size: 13.5px; margin-bottom: 14px; }
@@ -1448,6 +1578,8 @@ export function buildHTML(content, opts = {}) {
     ${askParentBtn('word-of-day', `Word of the Day: ${wordOfDay.word}`)}
   </div>
 
+  ${predictionCardHTML}
+
   <div class="footer">
     <div class="rocket">🚀</div>
     <p style="margin-top: 6px;">Market Juice — Built for future investors</p>
@@ -1473,6 +1605,68 @@ ${hasDailyChallenge ? `
 ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''}
 <!-- Phase 16: Mystery Mover hydrates from the public API on every page. -->
 <script src="/games/mystery-mover.js" defer></script>
+<script>
+  // Phase 17 — Tomorrow's Call: one-time explainer + tap handler.
+  (function () {
+    var card = document.getElementById('tc-card');
+    if (!card) return; // no card on this render (sample / logged out)
+
+    // One-time explainer: server renders it hidden; show it until the kid
+    // taps "Got it" (persisted in localStorage, Ask-my-parent-intro style).
+    var INTRO_KEY = 'mj_tc_intro_seen';
+    var intro = document.getElementById('tc-intro');
+    if (intro) {
+      var seen = false;
+      try { seen = localStorage.getItem(INTRO_KEY) === '1'; } catch (e) {}
+      if (!seen) {
+        intro.hidden = false;
+        var introBtn = document.getElementById('tc-intro-btn');
+        if (introBtn) introBtn.addEventListener('click', function () {
+          try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+          intro.hidden = true;
+        });
+      }
+    }
+
+    // Tap handler (askParent-style optimistic swap). The SERVER recomputes
+    // the blind-pick target at POST time — if the kid loaded the page at
+    // 9:29 and tapped at 9:31, the response's targetLabel names the real
+    // day and the locked chip uses it (never the stale render-time label).
+    var host = document.getElementById('tc-buttons');
+    if (!host) return; // already picked for the current target
+    var renderLabel = card.getAttribute('data-target-label') || 'today';
+    function lock(choice, label) {
+      host.outerHTML = '<div class="tc-locked">You called ' +
+        (choice === 'green' ? '▲ Green' : '▼ Red') + ' ' + label +
+        ' — come back after the market closes to see how it went.</div>';
+      var fb = document.getElementById('tc-feedback');
+      if (fb) fb.remove();
+    }
+    host.addEventListener('click', function (e) {
+      var btn = e.target.closest('.tc-btn');
+      if (!btn) return;
+      var choice = btn.getAttribute('data-choice');
+      host.querySelectorAll('.tc-btn').forEach(function (b) { b.disabled = true; });
+      fetch('/api/picks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ choice: choice }),
+      }).then(function (res) {
+        if (res.ok || res.status === 409) {
+          return res.json().catch(function () { return {}; }).then(function (data) {
+            lock(choice, data.targetLabel || renderLabel);
+          });
+        }
+        throw new Error('picks ' + res.status);
+      }).catch(function () {
+        host.querySelectorAll('.tc-btn').forEach(function (b) { b.disabled = false; });
+        var fb = document.getElementById('tc-feedback');
+        if (fb) fb.textContent = "Hmm, that didn't save — try again.";
+      });
+    });
+  })();
+</script>
 
 <script>
   // ---- Twinkling starfield ----

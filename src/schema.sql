@@ -260,6 +260,38 @@ CREATE INDEX IF NOT EXISTS idx_email_events_kind
   ON email_events (email_kind);
 
 -- ============================================================
+-- user_picks (Phase 17 — Tomorrow's Call; Phase 20 reuses for Weekly Hold)
+-- ============================================================
+-- One row per (user, kind, digest date) — the UNIQUE constraint IS the
+-- one-pick-per-digest dedup (POST /api/picks relies on ON CONFLICT).
+-- digest_date = the digest the pick was made on; target_date = the trading
+-- day it resolves against (getNextTradingDay(digest_date) — INCLUSIVE of
+-- the digest date, so Friday's pick targets Friday's own close; weekend
+-- picks target Monday). pick = {"choice":"green"} (tomorrow-call) or
+-- {"ticker":"NKE"} (weekly-hold, Phase 20). outcome (set at resolution) =
+-- {"correct":true,"actual":"green","changePct":1.75}. Resolution claims
+-- rows atomically via `resolved_at IS NULL` (src/picks.js).
+--
+-- COPPA: per-user data — deleted in storage.recordDeletionRequest()'s
+-- scrub transaction (soft-delete means the CASCADE never fires).
+CREATE TABLE IF NOT EXISTS user_picks (
+  id          UUID         PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT         NOT NULL CHECK (kind IN ('tomorrow-call', 'weekly-hold')),
+  digest_date DATE         NOT NULL,
+  target_date DATE         NOT NULL,
+  pick        JSONB        NOT NULL,
+  resolved_at TIMESTAMPTZ,
+  outcome     JSONB,
+  UNIQUE (user_id, kind, target_date)
+);
+
+-- The resolution sweep's query: unresolved picks for a target day.
+CREATE INDEX IF NOT EXISTS idx_user_picks_unresolved
+  ON user_picks (kind, target_date)
+  WHERE resolved_at IS NULL;
+
+-- ============================================================
 -- content_history (Phase 16 — AI content rotation, was a state file)
 -- ============================================================
 -- Tracks recently-used AI picks so the next generation avoids repeats:

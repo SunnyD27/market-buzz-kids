@@ -38,6 +38,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
 | **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
 | **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | **Merged + deployed to production** via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; post-deploy verification complete (logged-in MC award, mobile guest play, native share sheet — see the post-deploy addendum). See the Phase 16 session entries. |
+| **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | On `dev` awaiting next PR. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. See the Phase 17 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1521,3 +1522,148 @@ Sunny verified the three things local headless testing couldn't exercise:
 Phase 16 is fully verified in production. No open verification items remain
 for Phases 15–16 except the Phase 15 real-device push check, which is still
 gated on setting the VAPID env vars in Railway.
+
+---
+
+## Session: Phase 17 — Tomorrow's Call (daily prediction)
+
+The purest open loop in the roadmap: today's tap is resolved by tomorrow's
+digest. Built per the approved plan PLUS the mid-build integrity addendum
+(blind-pick rule + one-bet-per-close), which arrived after the first cut of
+the migration/card was written — both were reworked before anything ran
+against the DB.
+
+**The blind-pick rule (the addendum's core).** target_date = the next
+trading day whose 9:30 AM ET open is still in the FUTURE at pick time
+(`calendar.getNextTradingOpen`, server clock — `now` injectable for tests).
+A 7 AM Tuesday pick targets Tuesday; a 9:31 AM or evening pick targets
+Wednesday; weekend picks target Monday; holiday Mondays push to Tuesday.
+Without this, an evening player bets on a close they can look up. The card
+computes the live target at render time and the POST recomputes it
+authoritatively — a 9:29-render/9:31-tap race resolves to the server's
+answer, returned in the response so the locked chip names the real day.
+
+**One bet per market close.** UNIQUE constraint changed from the spec's
+(user_id, kind, digest_date) to **(user_id, kind, target_date)** — also
+closes the Sat+Sun double-bet on Monday (Sunday's card shows Saturday's
+Monday-bet as already locked rather than 409ing). Verified compatible with
+Phase 20's weekly-hold (target = the week's last trading day → one per
+week). digest_date stays as provenance.
+
+**Files**
+- `src/calendar.js` — `getNextTradingDay` (next trading day INCLUSIVE of
+  the date) + `getNextTradingOpen` (the blind-pick wall-clock variant).
+- `src/picks.js` (new) — createPick / getPickState (card payload: current
+  pick keyed by target, live label, caption kind, running record,
+  last-trading-day verdict) / resolveTomorrowCalls (the 7 AM sweep) /
+  resolvePicksForDate (injectable close for tests) / best-prediction-streak
+  updates. **Resolution is isolated**: never throws, runs on BOTH the fresh
+  and cached-replay generation paths (a redeploy still resolves), fetches
+  its own single ^GSPC quote, atomic per-row claims (resolved_at IS NULL),
+  per-row try/catch, straggler fallback via FMP historical EOD (fail-soft).
+  Resolution uses FACTUAL FMP close data, never Claude's marketVibe; a
+  flat day (exactly 0.00%) resolves green — approved.
+- `user_picks` table — schema.sql + `src/migrations/add-user-picks.sql` +
+  idempotent boot block; partial index on unresolved (kind, target_date);
+  **added to the COPPA deletion scrub** (storage.js).
+- `src/generate.js` — `await resolveTomorrowCalls(today)` first thing, both
+  paths; cannot block generation by construction.
+- `src/server.js` — `POST /api/picks` (session auth, choice-only body,
+  server-computed target, 409 + real targetLabel on duplicate; fires
+  prediction-made server-side on real inserts only); `/digest` threads
+  per-request `opts.prediction` (fail-soft — a picks hiccup renders the
+  digest without the card); **evening sweep: streak-at-risk push gate
+  decoupled from "engaged"** (below).
+- `src/engagement.js` — prediction-made / prediction-resolved dedup
+  branches (both keyed on targetDate — one bet/payout per close);
+  prediction-resolved dispatch (+5 MC correct / 0 incorrect, NO streak/
+  Perfect Day/games_played); prediction-made falls through like
+  parent-question but counts in meaningfulEvents; getProgress gained
+  `lastStreakDate` (the push gate's signal).
+- `src/progression.js` + client mirror — predictionCorrect: 5; both event
+  types; `best-prediction-streak` as the 5th personal record (/progress
+  renders it automatically — the template iterates PERSONAL_RECORDS).
+- `src/push.js` — `shouldSendStreakRiskPush` (pure, exported): streak ≥ 3
+  AND lastStreakDate !== today, independent of engagement.
+- `src/template.js` — prediction card at the END of the digest (after Word
+  of the Day, before the footer; only on the authenticated per-request
+  path — /sample and the static disk render skip it): verdict strip
+  ("You called it! 🎯 +5 MC" / "Not this time — the S&P finished red."),
+  running record ("7 of 12"), ▲ Green / ▼ Red buttons → locked chip, the
+  3-state lock caption (pre-open "Locks at 9:30 AM ET when the market
+  opens." / post-open "Today's market is already running — you're calling
+  Wednesday's close." / closed "Markets are closed today — …" — the third
+  state is ours; the addendum specified two and weekends need one), a
+  one-time dismissible explainer (5th-grade copy covering the daily call,
+  the 9:30 lock, +5 MC, and tomorrow's answer; properly styled "Got it"
+  button; localStorage `mj_tc_intro_seen`), and an always-tappable
+  **S&P 500 glossary underline** via the new exported `glossTermSpan`
+  (renderGlossSpan extracted from the linker — tile-style independence
+  from the prose first-occurrence pass). All CSS in template tokens;
+  inline tap handler (askParent pattern) uses the POST response's
+  targetLabel for the chip.
+- `scripts/test-picks.js` (new, 46 assertions) + `scripts/test-push.js`
+  (Section 5b added) + `scripts/test-engagement.js` (record count 4 → 5).
+
+**Engagement semantics (as approved):**
+- prediction-made → **engaged** (no nudge email that evening), does NOT
+  extend the streak.
+- **Streak-at-risk push decoupled from "engaged"** (Sunny's review change):
+  gate = streak ≥ 3 AND no streak-EXTENDING event today (lastStreakDate),
+  evaluated in the evening sweep BEFORE the email variant fork — a kid who
+  only tapped a pick gets no nudge email but DOES get the push (their
+  streak genuinely dies at midnight). Side effect (correct, per the rule):
+  a word-learned-only kid now also gets the push — their streak is at risk
+  too; the old engaged-based gate wrongly suppressed it.
+- prediction-resolved → MC only, never engagement/streak/Perfect Day; the
+  +5 still shows in that evening's recap MC total.
+
+**Bug found by the live round-trip:** pg returns DATE columns as JS Date
+objects; `String(target_date).slice(0,10)` produced "Tue Jun 16" → the
+pick was misrouted to the straggler path with an invalid date. Fixed with
+the same dateColToString normalization engagement.js has used since Phase
+11 (their checkpoint bug #1 — same trap). The failed first attempt
+incidentally proved the isolation property: the digest shipped cleanly
+while resolution errored, and the pick stayed safely pending.
+
+**Verified**
+- `scripts/test-picks.js` → **46/46 green** vs live Neon: the full blind-
+  pick matrix (7 AM/9:29/9:31/8 PM/Sat/Sun/holiday-Monday), Sat+Sun → same-
+  Monday duplicate, the 9:29/9:31 race yielding two distinct targets,
+  resolution +5/0 + idempotent re-runs + flat-day green, best-prediction-
+  streak, all engagement semantics, getPickState card payload (incl.
+  Sunday-shows-Saturday's-bet and the Tuesday verdict render), scrub.
+- `scripts/test-push.js` → 50 assertions incl. new Section 5b: the pure
+  gate matrix + the LIVE requested scenario (pick made, no game, streak 5
+  → push fires; game played → suppressed).
+- Full suite green: test-engagement (updated to 5 records), test-mystery,
+  test-glossary, test-company-models, test-evening-email, test-multi-kid,
+  test-multi-kid-emails.
+- **Live two-day DATE_OVERRIDE round-trip** (approved, ~$0.60): Tuesday
+  2026-06-16 generated → throwaway user picked green at simulated 7 AM →
+  Wednesday 2026-06-17 generated → sweep resolved against the real ^GSPC
+  quote (+0.49% → correct, +5 MC event logged) → Wednesday card state
+  showed the verdict + 1-of-1 record. The resolution ran on the CACHED-
+  REPLAY path (second invocation), proving redeploy-day resolution. Both
+  test digest rows, their 6 content_history rows, and the throwaway user
+  fully deleted; today's disk digest restored from the real row.
+- buildHTML render assertions: card after Word of the Day before the
+  footer; verdict/record/buttons/caption/explainer/gloss all present; no
+  prediction opts → no card markup; picked state → locked chip naming the
+  target, no buttons.
+- Live boot: POST /api/picks 401 unauthenticated; migration applied.
+- `node --check` clean across all changed files.
+- **Code-review-only:** the in-browser tap → locked-chip swap and the
+  explainer's Got-it persistence (needs a kid login; the API + render
+  halves are covered above). Spot-check post-deploy like Phase 16.
+
+**Also done:** the Phase 15→17 copy TODO — week-ahead morning push now
+says "🔮 New week — make your picks" (spec copy, unlocked by this phase);
+ROADMAP TODO marked done; push test assertion updated. Phase 20's
+weekly-wrap copy TODO remains.
+
+**Open / future:**
+- Phase 20 reuses `user_picks` (kind='weekly-hold') — constraint verified.
+- Spot-check the live card with a real kid account post-deploy.
+- The recap email doesn't yet mention the kid's pick/verdict — possible
+  small Phase 20 add-on alongside "Your Week in Juice".
