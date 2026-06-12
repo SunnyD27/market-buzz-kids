@@ -25,6 +25,7 @@ import { gatherAdminData, buildAdminHTML } from './admin.js';
 import { refreshActiveGlossary } from './glossary-runtime.js';
 import { getEditionType } from './calendar.js';
 import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
+import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush } from './push.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -461,6 +462,62 @@ app.post('/api/reset-password', authLimiter, async (req, res) => {
   }
 
   return res.json({ success: true });
+});
+
+// ============================================================
+// API — push notifications (Phase 15)
+// ============================================================
+// The VAPID PUBLIC key is public by design (it's embedded in every
+// subscription) — serving it from an endpoint instead of hardcoding it in
+// pwa.js means key rotation is an env-var change, not a deploy + SW cache
+// bump. Returns 404 when push is unconfigured so the client skips cleanly.
+app.get('/api/push/public-key', (req, res) => {
+  const key = getVapidPublicKey();
+  if (!key) return res.status(404).json({ error: 'Push not configured.' });
+  return res.json({ key });
+});
+
+// Store the kid's push subscription. Session-cookie auth — the
+// subscription lands on the logged-in kid's own row. The body is the
+// PushSubscription.toJSON() shape; validate the three fields the server
+// actually needs before persisting (don't trust arbitrary JSON blobs).
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  const sub = req.body;
+  const valid = sub
+    && typeof sub.endpoint === 'string'
+    && /^https:\/\//.test(sub.endpoint)
+    && sub.keys
+    && typeof sub.keys.p256dh === 'string'
+    && typeof sub.keys.auth === 'string';
+  if (!valid) {
+    return res.status(400).json({ error: 'Invalid push subscription.' });
+  }
+  try {
+    await dbQuery(
+      `UPDATE users SET push_subscription = $1, updated_at = NOW() WHERE id = $2`,
+      [JSON.stringify({ endpoint: sub.endpoint, keys: { p256dh: sub.keys.p256dh, auth: sub.keys.auth } }), req.user.id],
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[push/subscribe] failed:', err.message);
+    return res.status(500).json({ error: 'Could not save subscription.' });
+  }
+});
+
+// Explicit opt-out. The 404/410 cleanup in src/push.js covers kids who
+// uninstall or revoke permission; this endpoint is for a clean in-app
+// "turn off" path.
+app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+  try {
+    await dbQuery(
+      `UPDATE users SET push_subscription = NULL, updated_at = NOW() WHERE id = $1`,
+      [req.user.id],
+    );
+    return res.json({ success: true });
+  } catch (err) {
+    console.error('[push/unsubscribe] failed:', err.message);
+    return res.status(500).json({ error: 'Could not remove subscription.' });
+  }
 });
 
 // ============================================================
@@ -1380,7 +1437,7 @@ async function sendEveningRecaps() {
   let users;
   try {
     const result = await dbQuery(`
-      SELECT u.id, u.kid_first_name, u.parent_email, u.timezone
+      SELECT u.id, u.kid_first_name, u.parent_email, u.timezone, u.push_subscription
         FROM users u
        WHERE u.is_active = TRUE
          AND u.deleted_at IS NULL
@@ -1435,6 +1492,19 @@ async function sendEveningRecaps() {
       if (!variant) {
         skipped++;
         continue;
+      }
+
+      // Phase 15 — streak-at-risk push to the KID (the email below goes to
+      // the parent). The nudge fork above IS the spec's first two gates
+      // (streak ≥ 3 AND no engagement today); sendStreakRiskPush adds the
+      // third (no push of this kind today) + the 2/day cap via push_log.
+      // Own try/catch: a push failure must never block the parent email.
+      if (variant === 'nudge' && u.push_subscription) {
+        try {
+          await sendStreakRiskPush(u, currentStreak, digestDate);
+        } catch (err) {
+          console.error(`[evening-recap] streak push threw userId=${u.id}:`, err.message);
+        }
       }
 
       const parentQuestions = variant === 'recap'
@@ -1504,6 +1574,43 @@ cron.schedule('0 * * * *', async () => {
   }
 }, {
   timezone: 'UTC',
+});
+
+// ============================================================
+// Phase 15 — Morning push sweep (timezone-aware)
+// ============================================================
+// Same hourly-sweep pattern as the evening recap: each tick pushes to
+// subscribed kids whose LOCAL hour is in the 7–9 AM window and who have
+// no morning push logged today, gated on today's digest row existing.
+// The 8:05/9:05 ticks are catch-up for late generations (Phase 18's
+// 7:10/7:25 retry ladder makes those routine) — push_log guarantees
+// exactly one morning push per kid per day regardless. Deliberately NOT
+// fired from the 7 AM ET generation cron — a generation-time blast would
+// buzz west-coast kids at 4 AM local (habit-not-compulsion rule). Runs at
+// minute 5 so the 7 AM ET tick never races the 7:00 generation.
+cron.schedule('5 * * * *', async () => {
+  try {
+    await sendMorningPushes();
+  } catch (err) {
+    console.error('[Cron] Morning push sweep threw:', err.message);
+  }
+}, {
+  timezone: 'UTC',
+});
+
+// External trigger — same pattern as send-digest / send-evening-recap.
+// Safe to re-run any time: the push_log ledger dedups per kid per day.
+app.post('/api/cron/send-push', async (req, res) => {
+  const expected = process.env.CRON_SECRET || '';
+  const got = req.header('x-cron-secret') || '';
+  if (!expected || got !== expected) {
+    return res.status(401).json({ ok: false, message: 'Unauthorized.' });
+  }
+  const result = await sendMorningPushes();
+  const httpStatus = result.status === 'ok' || result.status === 'unconfigured' ? 200
+    : result.status === 'no_content' ? 503
+    : 500;
+  return res.status(httpStatus).json(result);
 });
 
 // ============================================================
@@ -1885,6 +1992,32 @@ async function runBootMigrations() {
   } catch (err) {
     console.error('[migrations] pending_glossary migration failed (glossary nominations + admin card will error until fixed):', err.message);
   }
+
+  // Phase 15 — push_log (push notification ledger). Standalone DDL also in
+  // src/schema.sql + src/migrations/add-push-log.sql. Detect via the table's
+  // presence so this is idempotent (mirrors the pending_glossary pattern).
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'push_log'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating push_log table (Phase 15 push notifications)…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS push_log (
+          id          BIGSERIAL    PRIMARY KEY,
+          user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          kind        TEXT         NOT NULL CHECK (kind IN ('morning', 'streak-risk')),
+          digest_date DATE         NOT NULL,
+          sent_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+        );
+        CREATE UNIQUE INDEX IF NOT EXISTS push_log_user_kind_date_uniq
+          ON push_log (user_id, kind, digest_date);
+      `);
+      console.log('[migrations] ✅ push_log table created.');
+    }
+  } catch (err) {
+    console.error('[migrations] push_log migration failed (push notifications will error until fixed):', err.message);
+  }
 }
 
 app.listen(PORT, () => {
@@ -1901,6 +2034,7 @@ app.listen(PORT, () => {
   console.log(`   Delete API:     POST /api/delete-data`);
   console.log(`   Teaser fan-out: POST /api/cron/send-digest (X-Cron-Secret)`);
   console.log(`   Evening recap: POST /api/cron/send-evening-recap (X-Cron-Secret) + hourly UTC sweep at 7 PM local`);
+  console.log(`   Morning push:   POST /api/cron/send-push (X-Cron-Secret) + hourly UTC sweep at 7 AM local`);
   console.log(`   Digest scheduled for 7:00 AM EST daily`);
   console.log(`   Manual trigger: /generate?key=YOUR_ADMIN_KEY`);
   console.log(`   Admin dashboard: /admin?key=***`);

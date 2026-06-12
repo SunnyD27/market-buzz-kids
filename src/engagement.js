@@ -219,6 +219,22 @@ export async function getProgress(userId) {
     [userId],
   );
 
+  // Phase 15: total distinct active days. Drives the push-permission ask
+  // gate in public/pwa.js (don't prompt before the kid's 3rd active day).
+  // daily-visit fires on every /digest load, so COUNT DISTINCT by day;
+  // legacy rows may lack event_data.digestDate — fall back to the NY date
+  // of the event timestamp.
+  const activeDaysRes = await query(
+    `SELECT COUNT(DISTINCT COALESCE(
+              event_data->>'digestDate',
+              TO_CHAR(created_at AT TIME ZONE 'America/New_York', 'YYYY-MM-DD')
+            )) AS n
+       FROM engagement_events
+      WHERE user_id = $1 AND event_type = 'daily-visit'`,
+    [userId],
+  );
+  const activeDays = Number(activeDaysRes.rows[0]?.n || 0);
+
   const rank = rankByKey(progress.rank_key);
   const { next } = rankForCoins(progress.market_coins);
 
@@ -261,6 +277,7 @@ export async function getProgress(userId) {
       weeksActive: progress.weeks_active,
       wordsLearned: progress.words_learned,
       lastActiveDate: progress.last_active_date,
+      activeDays,
     },
     badges,
     records,

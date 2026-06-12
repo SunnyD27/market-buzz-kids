@@ -21,17 +21,21 @@
 
   // ---- Config -----------------------------------------------------------
 
-  // VAPID public key for push subscription. The Phase 6 backend owns the
-  // private key. For now this is a placeholder — the Phase 6 generator will
-  // bake the real key into the digest (or expose via /api/push/public-key).
-  // Without a real key, subscription will fail gracefully and the rest of
-  // the app keeps working.
-  const VAPID_PUBLIC_KEY_PLACEHOLDER = 'REPLACE_IN_PHASE_6';
-
+  // Phase 15: the VAPID public key is fetched from the backend (not baked
+  // into this cached shell asset) so key rotation is an env-var change,
+  // not a deploy + SW cache bump. 404 = push unconfigured → all push UX
+  // skips cleanly and the rest of the app keeps working.
+  const PUBLIC_KEY_ENDPOINT = '/api/push/public-key';
   const SUBSCRIBE_ENDPOINT = '/api/push/subscribe';
   const VISIT_KEY  = 'mj_pwa_visits';
   const DISMISS_KEY = 'mj_pwa_dismissed_at';
+  const PUSH_DISMISS_KEY = 'mj_push_dismissed_at';
   const DISMISS_DURATION_MS = 14 * 24 * 60 * 60 * 1000; // 14 days
+
+  // Don't ask for push permission before the kid's 3rd active day — they
+  // should have demonstrated the habit is worth protecting first. The
+  // count comes from the server engagement state (progress.activeDays).
+  const PUSH_MIN_ACTIVE_DAYS = 3;
 
   // ---- Service worker registration --------------------------------------
 
@@ -79,20 +83,21 @@
     } catch { return 1; }
   }
 
-  function isRecentlyDismissed() {
+  function isRecentlyDismissed(key) {
     try {
-      const ts = parseInt(localStorage.getItem(DISMISS_KEY) || '0', 10);
+      const ts = parseInt(localStorage.getItem(key || DISMISS_KEY) || '0', 10);
       return ts && (Date.now() - ts) < DISMISS_DURATION_MS;
     } catch { return false; }
   }
 
-  function markDismissed() {
-    try { localStorage.setItem(DISMISS_KEY, String(Date.now())); } catch { /* */ }
+  function markDismissed(key) {
+    try { localStorage.setItem(key || DISMISS_KEY, String(Date.now())); } catch { /* */ }
   }
 
   // ---- Install banner ---------------------------------------------------
 
   let deferredPrompt = null; // captured beforeinstallprompt for Chromium
+  let bannerShownThisVisit = false; // install OR push — only one per visit
 
   window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -104,10 +109,21 @@
   window.addEventListener('appinstalled', () => {
     hideBanner();
     deferredPrompt = null;
-    // Once installed, attempt to subscribe to push (after a brief delay so
-    // the install animation finishes).
-    setTimeout(() => maybeSubscribePush(), 1500);
+    // Once installed, silently restore an existing grant (no prompt — the
+    // permission ASK is owned by the 3rd-active-day banner, never install).
+    setTimeout(() => subscribePush({ interactive: false }).catch(() => {}), 1500);
   });
+
+  // Could the install banner still appear this visit? The push banner
+  // defers to this — the two must never show on the same visit, and
+  // install takes priority (a kid can't get iOS push without installing
+  // first anyway).
+  function installBannerEligible() {
+    if (isStandalone()) return false;
+    if (isRecentlyDismissed(DISMISS_KEY)) return false;
+    const visits = parseInt(localStorage.getItem(VISIT_KEY) || '0', 10);
+    return visits >= 2;
+  }
 
   function maybeShowBanner() {
     if (isStandalone()) return;          // already installed
@@ -139,8 +155,9 @@
     }
   }
 
-  function buildBanner({ message, actionLabel, onAction, iconHint }) {
+  function buildBanner({ message, actionLabel, onAction, iconHint, dismissKey }) {
     if (document.getElementById('mj-pwa-banner')) return;
+    bannerShownThisVisit = true;
     const el = document.createElement('div');
     el.id = 'mj-pwa-banner';
     el.innerHTML = `
@@ -157,7 +174,7 @@
       try { onAction(); } catch (e) { console.warn('[PWA] banner action failed:', e); }
     });
     document.getElementById('mj-pwa-close').addEventListener('click', () => {
-      markDismissed();
+      markDismissed(dismissKey);
       hideBanner();
     });
   }
@@ -174,42 +191,125 @@
       ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
   }
 
-  // ---- Push subscription ------------------------------------------------
+  // ---- Push subscription (Phase 15) --------------------------------------
 
-  async function maybeSubscribePush() {
-    if (!('serviceWorker' in navigator) || !('PushManager' in window)) return;
-    if (!isStandalone()) return; // iOS requires this; harmless on Chromium too
-    if (VAPID_PUBLIC_KEY_PLACEHOLDER === 'REPLACE_IN_PHASE_6') {
-      console.info('[PWA] Push subscription skipped — VAPID key not configured (Phase 6).');
-      return;
+  function pushSupported() {
+    return 'serviceWorker' in navigator
+        && 'PushManager' in window
+        && 'Notification' in window
+        // iOS only supports Web Push inside an installed (standalone) PWA.
+        // Android/desktop Chromium supports it in a plain tab too.
+        && (!isIOS() || isStandalone());
+  }
+
+  let cachedVapidKey = null; // fetched once per page; null = not yet tried
+  async function fetchVapidKey() {
+    if (cachedVapidKey) return cachedVapidKey;
+    const res = await fetch(PUBLIC_KEY_ENDPOINT);
+    if (!res.ok) return null; // 404 = push not configured server-side
+    const data = await res.json();
+    cachedVapidKey = data.key || null;
+    return cachedVapidKey;
+  }
+
+  /**
+   * Subscribe + register with the backend.
+   *   interactive: true  → may fire the native permission prompt (only ever
+   *                        called from the kid's tap on the push banner).
+   *   interactive: false → silent: only proceeds when permission is ALREADY
+   *                        granted (restores a lost subscription after an
+   *                        SW update / cache clear / fresh install).
+   */
+  async function subscribePush({ interactive } = {}) {
+    if (!pushSupported()) return false;
+
+    const key = await fetchVapidKey();
+    if (!key) {
+      console.info('[PWA] Push skipped — server has no VAPID key configured.');
+      return false;
     }
 
     try {
-      const perm = await Notification.requestPermission();
-      if (perm !== 'granted') return;
+      let perm = Notification.permission;
+      if (perm === 'default' && interactive) {
+        perm = await Notification.requestPermission();
+      }
+      if (perm !== 'granted') return false;
 
       const reg = await navigator.serviceWorker.ready;
-      const existing = await reg.pushManager.getSubscription();
-      if (existing) return; // already subscribed
-
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlBase64ToUint8Array(VAPID_PUBLIC_KEY_PLACEHOLDER),
-      });
-
-      // POST the subscription to the Phase 6 backend.
-      try {
-        await fetch(SUBSCRIBE_ENDPOINT, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(sub),
+      let sub = await reg.pushManager.getSubscription();
+      if (!sub) {
+        sub = await reg.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(key),
         });
-      } catch (e) {
-        console.warn('[PWA] subscribe POST failed (backend not ready yet?):', e);
       }
+
+      const res = await fetch(SUBSCRIBE_ENDPOINT, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(sub),
+      });
+      if (!res.ok) {
+        console.warn('[PWA] subscribe POST rejected:', res.status);
+        return false;
+      }
+      try { localStorage.setItem('mj_push_subscribed', '1'); } catch { /* */ }
+      return true;
     } catch (e) {
       console.warn('[PWA] push subscription failed:', e);
+      return false;
     }
+  }
+
+  /**
+   * The permission-ask UX. Deliberately NOT the native prompt on page
+   * load: we show our own soft banner first, and the native prompt only
+   * fires from the kid's explicit tap. Gates (all must hold):
+   *   - push supported on this platform (iOS → standalone required)
+   *   - permission not already denied / not already subscribed
+   *   - the kid has >= 3 active days (server engagement state — they've
+   *     demonstrated the habit is worth protecting)
+   *   - not dismissed within the last 14 days
+   *   - the install banner hasn't shown AND can't show this visit
+   *     (install banner always takes priority; one banner per visit, max)
+   */
+  async function maybeShowPushBanner(engagementState) {
+    if (!pushSupported()) return;
+    if (Notification.permission === 'denied') return;
+    if (isRecentlyDismissed(PUSH_DISMISS_KEY)) return;
+    if (bannerShownThisVisit || document.getElementById('mj-pwa-banner')) return;
+    if (installBannerEligible()) return; // install banner owns this visit
+
+    const activeDays = engagementState?.progress?.activeDays || 0;
+    if (activeDays < PUSH_MIN_ACTIVE_DAYS) return;
+
+    try {
+      const reg = await navigator.serviceWorker.ready;
+      const existing = await reg.pushManager.getSubscription();
+      if (existing) {
+        // Already subscribed in the browser — just make sure the server
+        // has it (e.g. the row was cleared), then stay quiet.
+        subscribePush({ interactive: false }).catch(() => {});
+        return;
+      }
+    } catch { return; }
+
+    // Re-check — the awaits above could have raced the install banner.
+    if (bannerShownThisVisit || document.getElementById('mj-pwa-banner')) return;
+
+    buildBanner({
+      message: "Want a morning ping when today's Juice is ready? You can turn it off anytime.",
+      actionLabel: 'Turn on',
+      iconHint: '🔔',
+      dismissKey: PUSH_DISMISS_KEY,
+      onAction: async () => {
+        hideBanner();
+        const ok = await subscribePush({ interactive: true });
+        if (!ok) markDismissed(PUSH_DISMISS_KEY); // don't re-ask tomorrow if they said no
+      },
+    });
   }
 
   function urlBase64ToUint8Array(base64String) {
@@ -229,16 +329,33 @@
   } else {
     maybeShowBanner();
   }
-  // If already standalone on load, kick off the push subscribe flow.
-  if (isStandalone()) {
-    setTimeout(maybeSubscribePush, 2000);
+
+  // Phase 15 — push wiring:
+  // (a) Silent re-subscribe when permission was already granted (restores
+  //     a lost subscription after SW updates; never prompts).
+  if (pushSupported() && Notification.permission === 'granted') {
+    setTimeout(() => subscribePush({ interactive: false }).catch(() => {}), 2000);
+  }
+  // (b) The permission ASK rides the engagement state: engagement.js fires
+  //     mj:state-loaded after a successful /api/engagement/state fetch
+  //     (logged-in kids on /digest only — exactly where the subscribe
+  //     endpoint's session auth works). progress.activeDays gates the ask.
+  document.addEventListener('mj:state-loaded', (e) => {
+    maybeShowPushBanner(e.detail).catch(() => {});
+  });
+  // Cover the race where state loaded before this listener attached.
+  if (window.MarketJuice && typeof window.MarketJuice.getState === 'function') {
+    const s = window.MarketJuice.getState();
+    if (s) maybeShowPushBanner(s).catch(() => {});
   }
 
   // Tiny debug surface for inspection in DevTools.
   window.MJPwa = {
     isStandalone, isIOS, isIOSSafari,
     maybeShowBanner, hideBanner,
+    maybeShowPushBanner, subscribePush,
     _resetVisits: () => localStorage.removeItem(VISIT_KEY),
     _resetDismiss: () => localStorage.removeItem(DISMISS_KEY),
+    _resetPushDismiss: () => localStorage.removeItem(PUSH_DISMISS_KEY),
   };
 })();

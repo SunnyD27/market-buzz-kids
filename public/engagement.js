@@ -366,6 +366,12 @@
       state = await fetchState();
       saveCache(state);
       renderProfileBar();
+      // Phase 15: tell other modules (pwa.js push-permission gate) that
+      // fresh server state is available. Fired only on a successful fetch
+      // so consumers never act on stale cached data.
+      try {
+        document.dispatchEvent(new CustomEvent('mj:state-loaded', { detail: state }));
+      } catch (_) {}
     } catch (err) {
       if (err.status === 401) {
         // Not logged in (e.g. /sample landed users hitting the script).

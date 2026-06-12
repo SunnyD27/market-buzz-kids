@@ -36,7 +36,7 @@ the door for future sponsored content with a 30-day parent notice).
 | 5. Landing + signup + COPPA + privacy + deletion | ✅ | `4a8d8e6` |
 | **6.1** Neon Postgres | ✅ | |
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
-| **6.3** Push notifications | 🔲 **NEXT** | Email-only MVP is live |
+| **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. On `dev` awaiting next PR. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1164,3 +1164,146 @@ passes.
    with position+snippet.
 → Any future novel generation/parse failure is now DETECTED at ~7:01 AM, not
    discovered hours later via a missing email.
+
+---
+
+## Session: Phase 15 — Push notifications (kid-facing trigger)
+
+First session of the June 2026 roadmap build cycle (ROADMAP.md). Also session
+setup: created `CLAUDE.md` (working rules) and renamed the untracked
+`market-juice-roadmap-spec.md` → `ROADMAP.md` so the rules point at a real file.
+
+**Why.** The 7 AM email goes to the PARENT; the kid had no trigger at all.
+Completes the long-deferred Phase 6.3, expanded per the roadmap spec.
+
+**Files**
+- `src/push.js` (new) — the engine. Lazy VAPID init (env at call time, the
+  macOS-launchd pattern; keys unset = fully inert). Copy builders
+  `buildMorningPush` (edition + vibe aware) / `buildStreakRiskPush` (factual,
+  no guilt). `tryLogPush` / `deletePushLog` (the ledger), `sendPushToUser`
+  (404/410 → clears `users.push_subscription`), `sendMorningPushes` (hourly
+  sweep), `sendStreakRiskPush` (evening hook).
+- `push_log` table — `(user_id, kind ∈ morning|streak-risk, digest_date,
+  sent_at)`, UNIQUE `(user_id, kind, digest_date)`. In `schema.sql` +
+  `src/migrations/add-push-log.sql` + idempotent `runBootMigrations()` block.
+  **Ledger-before-send:** the row is INSERTed before delivering, so every
+  sweep/re-trigger is idempotent; on a transient send failure (non-404/410)
+  the row is deleted so the failure doesn't consume the kid's daily slot.
+  The INSERT carries a COUNT guard enforcing the hard 2/day cap in SQL.
+- `src/server.js` — boot migration; `GET /api/push/public-key` (key served
+  from an endpoint, NOT baked into pwa.js — rotation is an env change);
+  `POST /api/push/subscribe` (session auth, validates endpoint/p256dh/auth
+  shape) + `POST /api/push/unsubscribe`; `POST /api/cron/send-push`
+  (X-Cron-Secret, re-run-safe); hourly morning-push cron at **minute 5** UTC;
+  streak push wired into `sendEveningRecaps`'s nudge fork (own try/catch —
+  can never block the parent email; SELECT gained `push_subscription`).
+- `src/storage.js` — `DELETE FROM push_log` added to the COPPA scrub
+  transaction (`push_subscription` was already scrubbed since Phase 10).
+- `src/engagement.js` — `activeDays` added to `getProgress()` (COUNT DISTINCT
+  daily-visit days; legacy rows without `digestDate` fall back to the NY date
+  of `created_at`). Flows to `/api/engagement/state` automatically.
+- `public/pwa.js` — placeholder gone. Permission ask is a soft banner
+  ("Want a morning ping when today's Juice is ready?") gated on: push
+  supported (iOS → standalone; Android Chrome OK in-tab), permission not
+  denied, not subscribed, **activeDays ≥ 3**, not dismissed in 14 days
+  (`mj_push_dismissed_at`), and the install banner neither shown NOR eligible
+  this visit (install takes priority — never both banners in one visit).
+  Native prompt fires only from the kid's tap. Silent re-subscribe on load
+  when permission is already granted (restores lost subscriptions);
+  `appinstalled` no longer prompts.
+- `public/engagement.js` — fires `mj:state-loaded` after a successful state
+  fetch (pwa.js consumes it for the activeDays gate).
+- `public/sw.js` — push handler honors `payload.tag` (`mj-morning` /
+  `mj-streak` so the two kinds don't collapse); VERSION **v3 → v4** (pwa.js +
+  engagement.js are precached shell assets).
+- `package.json` — `web-push@^3.6.7` (only new dependency).
+- `.env` / `.env.example` — `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+  `VAPID_SUBJECT`. Keys generated and set locally.
+- `scripts/test-push.js` (new) — 39 assertions, all green.
+
+**Key decisions (incl. review-round changes from Sunny):**
+1. **Morning push is timezone-aware, with a 7–9 AM local catch-up window** —
+   hourly sweep (same SQL-gate pattern as the Phase 12 evening recap), NOT
+   sent at generation time: a 7 AM ET blast would buzz west-coast kids at
+   4 AM (habit-not-compulsion). Gate: local hour BETWEEN 7 AND 9 AND no
+   'morning' push_log row today (NOT EXISTS in the candidate query) AND
+   today's digest row exists. The window is 7–9 rather than == 7 (second
+   review round) because the == 7 gate dropped Eastern kids whenever
+   generation finished after their 7:05 tick — and Phase 18's planned
+   7:10/7:25 retries will make late digests routine. The ledger guarantees
+   exactly one morning push per kid per day; past 9 AM local the day is
+   simply missed (no mid-morning buzz). Cron runs at minute 5 so the 7 AM
+   ET tick never races the 7:00 generation cron.
+2. **Transient-failure slot release** — a non-404/410 send error deletes the
+   just-reserved push_log row; a 404/410 keeps it (nothing left to retry)
+   and clears the dead subscription.
+3. **Banner exclusivity** — install banner and push banner never share a
+   visit; install wins (a kid can't get iOS push without installing anyway).
+4. **Interim copy** — week-ahead "see what's coming" (spec's "make your
+   picks" references Phase 17) and weekly-wrap "see how your week went"
+   (spec's "Your Week in Juice" is Phase 20). Swap-TODOs recorded in
+   ROADMAP.md under Phases 17 and 20. Added a `mixed`-vibe variant the spec
+   didn't cover (🟡).
+5. The streak push rides the nudge fork because that fork IS the spec's
+   first two gates (streak ≥ 3 AND no engagement today); push_log adds the
+   third (no push of this kind today) + the cap.
+
+**Deviations from ROADMAP.md (codebase-is-truth rule):**
+- Spec said "replace the REPLACE_IN_PHASE_6 placeholder in pwa.js" with the
+  key — pwa.js is a static, SW-precached shell asset, so the key is served
+  via `GET /api/push/public-key` instead (pwa.js's own comment anticipated
+  this). Placeholder removed either way.
+- Spec's push_log columns were `(user_id, kind, sent_at)` — added
+  `digest_date` (NY day) because a UTC timestamp can't dedup "per day"; the
+  unique index on it is what makes the sweeps idempotent.
+- Spec's "prompt after the kid's 3rd active day" had no data source — no
+  active-day counter existed. Added `activeDays` to the engagement state.
+- Doc drift noted: CONTEXT/HANDOFF/ROADMAP say the local repo is
+  `~/market-juice`; the actual working copy is `~/market-buzz-kids`.
+
+**Known edges (accepted, documented in code):**
+- Kids whose whole 7–9 AM local window lands before the 7 AM ET generation
+  (e.g. Europe) find no digest row for the new NY day and skip that day's
+  morning push. Fine at prelaunch scale (all current users are US).
+- A no-digest day also skips the streak push (the evening sweep bails before
+  the per-user loop — nothing to engage with anyway).
+
+**Verified**
+- `node scripts/test-push.js` → **39/39 green** against live Neon (pure copy
+  builders; ledger dedup/cap/slot-release; 404/410 cleanup + transient-failure
+  handling via injected fake senders — no real push service contacted;
+  `sendStreakRiskPush` gates end-to-end; **the morning-sweep window via the
+  REAL gate SQL** — test user's timezone set to Etc/GMT offsets simulating
+  local hours, sweep scoped to the test user via `opts.onlyUserId`: 6 AM
+  excluded, 8 AM delivers after a "late" digest, 9 AM doesn't double-send
+  (NOT EXISTS removes the kid from the candidate set), 10 AM with a cleared
+  ledger is outside the window; activeDays; COPPA scrub covers push_log +
+  push_subscription). Throwaway user fully cleaned up, including the
+  deletion_requests audit row. The sweep section requires today's
+  daily_digests row and fails loudly with instructions if it's missing.
+- `node scripts/run-schema.js` → push_log created on Neon (NOTE: like prior
+  sessions, booting/schema-applying locally ran the forward-only migration
+  against the live DB — additive only).
+- Existing suites still green: `test-glossary.js` (55), `test-engagement.js`
+  (all checks passed — exercises the extended scrub).
+- **Live boot** (port 3199): boot migration no-op (table exists);
+  `GET /api/push/public-key` returns the key; `POST /api/cron/send-push` with
+  secret → `{ok:true, status:'ok', total:0}` (today's digest row exists, no
+  subscribed users yet — correct); 401 without secret; 401 on
+  unauthenticated `POST /api/push/subscribe`.
+- `node --check` clean on all 7 changed JS files.
+- **Code-review-only (not exercised live):** the browser subscribe round-trip
+  + banner UX (needs a logged-in kid with ≥ 3 active days on a real
+  iOS-PWA/Android device and a configured push service) and an actual
+  notification render. The iOS + Android acceptance check from the spec
+  should happen on real devices after the Railway env vars are set.
+
+**⚠️ ACTION (deploy):** set `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY`,
+`VAPID_SUBJECT` in the Railway env (generate a SEPARATE production pair with
+`npx web-push generate-vapid-keys` — don't reuse the local dev pair). Until
+set, push is inert and everything else works unchanged.
+
+**Open / future:**
+- Swap interim morning-push copy when Phases 17 / 20 ship (TODOs in ROADMAP).
+- Real-device verification (iOS PWA + Android Chrome) post-deploy.
+- The Europe-edge above; revisit if non-US families sign up.

@@ -260,6 +260,32 @@ CREATE INDEX IF NOT EXISTS idx_email_events_kind
   ON email_events (email_kind);
 
 -- ============================================================
+-- push_log (Phase 15 — push notification ledger)
+-- ============================================================
+-- One row per push notification sent (or reserved) to a kid. Written
+-- BEFORE the send so the hourly sweeps are idempotent: the unique index
+-- on (user_id, kind, digest_date) is the per-kind daily dedup, and the
+-- INSERT in src/push.js#tryLogPush carries a COUNT guard enforcing the
+-- hard 2-pushes-per-kid-per-day cap. digest_date is the product's NY day
+-- (todayNY()) — sent_at is a UTC timestamp and can't dedup "per day"
+-- across timezones on its own. On a transient send failure the reserved
+-- row is deleted so the failure doesn't consume the kid's daily slot.
+--
+-- COPPA: per-user data — deleted in storage.recordDeletionRequest()'s
+-- scrub transaction (the soft-delete model means ON DELETE CASCADE never
+-- fires; the explicit DELETE there is the real path).
+CREATE TABLE IF NOT EXISTS push_log (
+  id          BIGSERIAL    PRIMARY KEY,
+  user_id     UUID         NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  kind        TEXT         NOT NULL CHECK (kind IN ('morning', 'streak-risk')),
+  digest_date DATE         NOT NULL,
+  sent_at     TIMESTAMPTZ  NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS push_log_user_kind_date_uniq
+  ON push_log (user_id, kind, digest_date);
+
+-- ============================================================
 -- pending_glossary (Glossary auto-grow — AI nomination gate)
 -- ============================================================
 -- The digest generator (src/ai.js) proposes financial terms that appear in a

@@ -24,7 +24,11 @@
 // installed pre-Phase-11 would keep getting the old localStorage-only
 // engagement.js from cache forever. Any future shell-asset change MUST
 // also bump this version.
-const VERSION = 'v3';
+//
+// Bumped to v4 for Phase 15 — `pwa.js` (real push subscription flow +
+// 3rd-active-day permission banner) and `engagement.js` (mj:state-loaded
+// event) changed; both are precached shell assets.
+const VERSION = 'v4';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
@@ -152,8 +156,9 @@ async function cacheFirst(req, cacheName) {
 /* ---- Push notifications ---- */
 
 self.addEventListener('push', (event) => {
-  // Phase 6 backend will send a JSON payload like:
-  //   { title: "📈 Today's Juice is ready!", body: "Today's mover: Nike -4.2%", url: "/" }
+  // Phase 15 backend (src/push.js) sends a JSON payload like:
+  //   { title: "🟢 Green day — today's Juice is ready", body: "…",
+  //     url: "/digest", tag: "mj-morning" }
   let payload = {};
   if (event.data) {
     try { payload = event.data.json(); }
@@ -164,7 +169,10 @@ self.addEventListener('push', (event) => {
     body: payload.body || 'Open the digest to play today\'s games.',
     icon: '/icons/icon.svg',
     badge: '/icons/icon.svg',
-    tag: 'mj-daily', // collapses prior notifications onto this one
+    // Same-tag notifications collapse onto each other. The backend sends
+    // distinct tags per kind (mj-morning / mj-streak) so an unread morning
+    // push isn't silently replaced by the evening streak push.
+    tag: payload.tag || 'mj-daily',
     renotify: true,
     data: { url: payload.url || '/' },
   };
