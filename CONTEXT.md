@@ -64,6 +64,8 @@ Single Node.js process. `node-cron` triggers `generateDigest()` at 7:00 AM `Amer
 
 After generation, `sendDailyTeasers()` emails all active subscribers via Resend.
 
+**Morning-run alert (Telegram, `src/notify.js`).** The 7 AM cron sends exactly ONE outcome notification per run: a ✅ success ping on a clean run (`<date> (<edition>) generated · <sent>/<total> teasers sent to <kids> kids`), or a ❌ failure alert if generation threw OR the fan-out was skipped/errored. The failure alert is actionable — date, edition, stage, the error message, and for a JSON parse error the **byte position + a ±60-char snippet** (the thrown error is enriched in `ai.js`'s `jsonParseError`). This is the detection backstop behind three silent morning failures (truncated JSON, stale-disk teaser, trailing prose after JSON): the cron correctly skips the fan-out on failure, but that silence used to look identical to success. Reuses the same Telegram bot + chat as the `railway-health-check` task. **Config:** `TELEGRAM_BOT_TOKEN` (must be set in Railway to enable — inert/no-op if unset), `TELEGRAM_CHAT_ID` (defaults to the ops chat `8618800483`), `ALERT_SUCCESS_PING` (default ON; set `false` to alert only on failures). All sends are wrapped so a notification failure can never crash generation or the fan-out.
+
 ---
 
 ## Routes

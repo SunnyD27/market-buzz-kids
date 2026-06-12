@@ -1465,7 +1465,23 @@ export function extractFirstJSONObject(s) {
   return null; // unbalanced — truncated mid-object
 }
 
-function parseDigestJSON(text) {
+// Build the thrown error for a failed JSON.parse, ENRICHED with the byte
+// position (parsed out of V8's message) and a ±60-char snippet of the text
+// around it. The morning Telegram alert surfaces these so a parse failure is
+// diagnosable at a glance (date + position + the offending region) instead of
+// requiring a Railway-log dig — exactly what made #37 fixable.
+function jsonParseError(textBeingParsed, innerErr) {
+  const err = new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
+  const m = /position (\d+)/.exec(innerErr.message || '');
+  if (m) {
+    const pos = Number(m[1]);
+    err.parsePosition = pos;
+    err.parseSnippet = String(textBeingParsed).slice(Math.max(0, pos - 60), pos + 60);
+  }
+  return err;
+}
+
+export function parseDigestJSON(text) {
   let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
   // Strip citation tags that come from web search. Claude sometimes wraps
   // referenced phrases in <cite index="...">...</cite> or the namespaced
@@ -1491,7 +1507,7 @@ function parseDigestJSON(text) {
       return JSON.parse(balanced);
     } catch (innerErr) {
       console.error('[AI] Failed to parse balanced JSON object:', balanced.slice(0, 300));
-      throw new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
+      throw jsonParseError(balanced, innerErr);
     }
   }
 
@@ -1503,7 +1519,7 @@ function parseDigestJSON(text) {
       return JSON.parse(cleaned.slice(first, last + 1));
     } catch (innerErr) {
       console.error('[AI] Failed to parse extracted JSON:', cleaned.slice(first, first + 300));
-      throw new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
+      throw jsonParseError(cleaned.slice(first, last + 1), innerErr);
     }
   }
   console.error('[AI] No JSON object found in response. First 400 chars:', cleaned.substring(0, 400));

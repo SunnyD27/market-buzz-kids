@@ -1116,3 +1116,51 @@ row inserted; teaser email sent (3/3, 5 kids). `node --check` clean;
 2. teaser read stale disk file → wrong-day email (fixed → reads DB).
 3. trailing prose after JSON → `lastIndexOf('}')` slice broke (fixed →
    brace-matching `extractFirstJSONObject`).
+
+---
+
+## Session: 7 AM morning-run alert (Telegram) — fail loud + success ping
+
+**Why:** three mornings in a row generation broke and was found hours later via a
+MISSING email, not an alert. The cron correctly skips the fan-out on failure, but
+that correct behavior is SILENT — failures looked identical to a quiet success.
+Robust parsing (#37) lowers recurrence odds but can't hit zero; the durable fix is
+**detection**.
+
+**Built (`src/notify.js` + cron wiring in `src/server.js`):**
+- `sendTelegram(text)` — reuses the railway-health-check bot/chat
+  (`TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID`, chat defaults to `8618800483`).
+  NEVER throws: missing token → logged no-op; network/non-200 → swallowed. Inert
+  until the token is set in Railway.
+- `buildFailureAlert({date,edition,stage,error})` — ❌ header, date+edition, stage
+  (generation | teaser fan-out), error message, and for JSON parse errors the
+  **position + ±60-char snippet** (enriched in `ai.js` `jsonParseError`, which
+  parses V8's "position N" and slices the offending region onto the thrown error).
+  Defensive — never throws on missing fields.
+- `buildSuccessPing({date,edition,sent,failed,total,kids})` — one-line ✅ with
+  counts from the fan-out result; `failed>0` surfaced.
+- Cron observes the FINAL outcome and sends exactly ONE message per run:
+  generation-fail → ❌ + return; fan-out fail/threw → ❌; clean → ✅ (gated by
+  `ALERT_SUCCESS_PING`, default ON). Every send via a `safeAlert` wrapper so a
+  notification bug can't crash the cron.
+
+**Config / env:** `TELEGRAM_BOT_TOKEN` (REQUIRED in Railway to enable),
+`TELEGRAM_CHAT_ID` (default `8618800483`), `ALERT_SUCCESS_PING` (default ON).
+Documented in `.env.example` + CONTEXT.md ops section. ⚠️ ACTION: set
+`TELEGRAM_BOT_TOKEN` in the Railway service env or the alert stays inert.
+
+**Verified:** builder unit tests (parse-fail shows date+position+snippet, generic
+error, success counts, never-throw-on-missing-fields) all pass; `parseDigestJSON`
+enriches the thrown error (pos+snippet) — asserted end-to-end; `sendTelegram`
+fail-safe confirmed (bad token → ok:false no throw; no token → skipped no throw).
+**Live send EXERCISED:** one real ✅ and one real ❌ delivered to the ops chat
+(both `ok:true`). `node --check` clean on all three files; `test-glossary.js`
+passes.
+
+**Recurring-failure ledger — detection backstop now in place:**
+1. `max_tokens` truncation (fixed #34) — a future truncation now pings ❌.
+2. stale-disk teaser (fixed #34).
+3. trailing prose after JSON (fixed #37) — a future novel parse shape pings ❌
+   with position+snippet.
+→ Any future novel generation/parse failure is now DETECTED at ~7:01 AM, not
+   discovered hours later via a missing email.

@@ -23,6 +23,8 @@ import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestions
 import { EVENT_TYPES } from './progression.js';
 import { gatherAdminData, buildAdminHTML } from './admin.js';
 import { refreshActiveGlossary } from './glossary-runtime.js';
+import { getEditionType } from './calendar.js';
+import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -1289,31 +1291,70 @@ app.get('/api/health', async (req, res) => {
 // taking the process down.
 cron.schedule('0 7 * * *', async () => {
   console.log(`[Cron] 7 AM EST daily run at ${new Date().toISOString()}`);
+
+  // Capture the date + edition up front so the alert can name them even if
+  // generation throws. Both reads are defensive — a hiccup here must never
+  // stop the run or the alert.
+  const date = (() => { try { return todayNY(); } catch { return 'unknown'; } })();
+  const edition = (() => { try { return getEditionType().editionType; } catch { return 'unknown'; } })();
+
+  // safeAlert: build + send a Telegram message, swallowing ALL errors. A
+  // notification failure (bad token, network, builder bug) must never take
+  // down generation or the fan-out, and must never throw out of the cron.
+  const safeAlert = async (buildMessage) => {
+    try {
+      await sendTelegram(buildMessage());
+    } catch (e) {
+      console.error('[Cron] alert send failed (non-fatal):', e?.message || e);
+    }
+  };
+
   // generateDigest() is idempotent — if today's row was already created
   // by a boot-time bootstrap (rare on a quiet deploy day), this just
   // reads it back from Postgres and writes it to disk. No double work,
   // no overwriting. The first generation of the day wins.
   let generated = false;
+  let genErr = null;
   try {
     await generateDigest();
     process.env.LAST_GENERATED = new Date().toISOString();
     generated = true;
     console.log('[Cron] Digest ready (fresh or cached).');
   } catch (err) {
+    genErr = err;
     console.error('[Cron] Generation failed — SKIPPING teaser fan-out to avoid sending stale content:', err.message);
   }
 
-  if (!generated) return;
+  // ── Outcome alert (exactly ONE per run: one ❌ OR one ✅) ──────────────
+  // Branch A — generation failed → teasers were NOT sent. Alert + bail.
+  if (!generated) {
+    await safeAlert(() => buildFailureAlert({ date, edition, stage: 'generation', error: genErr }));
+    return;
+  }
 
+  // Branch B — generation succeeded → attempt the fan-out, then alert on its
+  // final outcome (success ping with counts, or failure alert if it was
+  // skipped/errored for any reason).
   try {
     const result = await sendDailyTeasers();
     if (result.ok) {
       console.log(`[Cron] Teaser fan-out done · sent=${result.sent} failed=${result.failed} total=${result.total}`);
+      // Daily success ping (positive confirmation that the alert path itself
+      // is alive). Default ON; opt out with ALERT_SUCCESS_PING=false.
+      if (process.env.ALERT_SUCCESS_PING !== 'false') {
+        await safeAlert(() => buildSuccessPing({
+          date, edition, sent: result.sent, failed: result.failed, total: result.total, kids: result.kids,
+        }));
+      }
     } else {
       console.error(`[Cron] Teaser fan-out failed (${result.status}): ${result.error}`);
+      await safeAlert(() => buildFailureAlert({
+        date, edition, stage: 'teaser fan-out', error: result.error || `fan-out status: ${result.status}`,
+      }));
     }
   } catch (err) {
     console.error('[Cron] Teaser fan-out threw:', err.message);
+    await safeAlert(() => buildFailureAlert({ date, edition, stage: 'teaser fan-out', error: err }));
   }
 }, {
   timezone: 'America/New_York',
