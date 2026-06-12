@@ -37,7 +37,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.1** Neon Postgres | ✅ | |
 | **6.2** Resend email (verify, consent, welcome, deletion ack, daily teaser) | ✅ | |
 | **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
-| **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | On `dev` awaiting next PR. 75-assertion smoke test + full-suite regression green; live AI generation + browser-driven guest play verified. See the Phase 16 session entry. |
+| **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | Shipped to `main` via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; live AI generation + browser-driven guest play verified. See the Phase 16 session entries. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
