@@ -1081,3 +1081,38 @@ before/after screenshots of Big Picture + a story + scoreboard. Live-vs-code
 split: measure-fills-card + paragraphing + word-integrity verified LIVE
 in-browser and via real generation; `ai.js` prompt verified by one live
 `generateContent` call (not persisted).
+
+---
+
+## Session: Generation fix — robust JSON extraction (trailing prose)
+
+**Symptom:** 2026-06-12 7 AM cron failed to generate again → no digest, no
+email. THIRD distinct cause in this saga (after max_tokens truncation and the
+stale-disk teaser).
+
+**Root cause (from Railway logs):** `[AI] stop_reason: end_turn` (NOT
+max_tokens — the response was COMPLETE), but parse died with
+`Unexpected non-whitespace character after JSON at position 16759`. The model
+returned a valid JSON object FOLLOWED by a trailing remark, and the parser's
+fallback used `lastIndexOf('}')`, which grabbed a stray `}` inside that trailing
+prose → the slice had junk after the real object.
+
+**Fix (`src/ai.js`):** new `extractFirstJSONObject()` — scans from the first `{`
+and brace-matches (string/escape-aware, so braces & quotes inside JSON string
+values don't affect depth) to return the FIRST complete balanced object,
+ignoring any preamble before OR commentary after it. `parseDigestJSON()` now
+tries: (1) straight `JSON.parse`, (2) `extractFirstJSONObject`, (3) the old
+widest-span heuristic as last resort. Exported the helper for unit testing.
+
+**Verified:** unit tests cover the exact failure shape (valid JSON + trailing
+prose w/ stray brace), leading preamble, braces/quotes inside strings, nested
+objects/arrays, truncated→null, no-object→null — all pass. Regenerated
+2026-06-12 live against prod DB (full FMP+Claude pipeline) → parsed cleanly,
+row inserted; teaser email sent (3/3, 5 kids). `node --check` clean;
+`test-glossary.js` still passes.
+
+**Recurring-failure ledger (all three now fixed):**
+1. `max_tokens: 8000` too low → truncated JSON (fixed → 16000 + loud guard).
+2. teaser read stale disk file → wrong-day email (fixed → reads DB).
+3. trailing prose after JSON → `lastIndexOf('}')` slice broke (fixed →
+   brace-matching `extractFirstJSONObject`).

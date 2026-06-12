@@ -1440,6 +1440,31 @@ function parseAndScrubDigestJSON(text) {
   return scrubProfanity(parseDigestJSON(text));
 }
 
+// Extract the FIRST complete, balanced top-level {...} object from a string,
+// ignoring any prose BEFORE it (citation/synthesis preamble) AND any commentary
+// the model appends AFTER it. String-aware: braces and quotes inside JSON string
+// values (respecting \" escapes) never affect nesting depth, so a "}" sitting in
+// a trailing sentence can't fool it. Returns the object substring, or null if no
+// balanced object exists (e.g. a genuinely truncated response).
+export function extractFirstJSONObject(s) {
+  const start = s.indexOf('{');
+  if (start === -1) return null;
+  let depth = 0, inStr = false, esc = false;
+  for (let i = start; i < s.length; i++) {
+    const ch = s[i];
+    if (inStr) {
+      if (esc) esc = false;
+      else if (ch === '\\') esc = true;
+      else if (ch === '"') inStr = false;
+      continue;
+    }
+    if (ch === '"') inStr = true;
+    else if (ch === '{') depth++;
+    else if (ch === '}' && --depth === 0) return s.slice(start, i + 1);
+  }
+  return null; // unbalanced — truncated mid-object
+}
+
 function parseDigestJSON(text) {
   let cleaned = text.replace(/```json\s*/g, '').replace(/```\s*/g, '').trim();
   // Strip citation tags that come from web search. Claude sometimes wraps
@@ -1449,23 +1474,38 @@ function parseDigestJSON(text) {
   // literal text in the final HTML).
   cleaned = cleaned.replace(/<\/?cite[^>]*>/g, '');
   cleaned = cleaned.replace(/<\/?antml:cite[^>]*>/g, '');
+
+  // 1) Straight parse — works when the model returned ONLY the JSON.
   try {
     return JSON.parse(cleaned);
-  } catch {
-    // Fallback: with web search enabled, Claude may prepend a short
-    // citation/synthesis paragraph before the JSON. Extract the largest
-    // {...} span and try that.
-    const first = cleaned.indexOf('{');
-    const last = cleaned.lastIndexOf('}');
-    if (first !== -1 && last > first) {
-      try {
-        return JSON.parse(cleaned.slice(first, last + 1));
-      } catch (innerErr) {
-        console.error('[AI] Failed to parse extracted JSON:', cleaned.slice(first, first + 300));
-        throw new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
-      }
+  } catch { /* fall through to extraction */ }
+
+  // 2) Robust extraction: pull the FIRST balanced {...} object and ignore
+  //    anything the model wrote before OR after it. This is the 2026-06-12 fix:
+  //    the model returned valid JSON followed by a trailing remark, and the old
+  //    lastIndexOf('}') slice grabbed a stray brace in that remark → "Unexpected
+  //    non-whitespace character after JSON". Brace-matching ignores the trailer.
+  const balanced = extractFirstJSONObject(cleaned);
+  if (balanced) {
+    try {
+      return JSON.parse(balanced);
+    } catch (innerErr) {
+      console.error('[AI] Failed to parse balanced JSON object:', balanced.slice(0, 300));
+      throw new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
     }
-    console.error('[AI] No JSON object found in response. First 400 chars:', cleaned.substring(0, 400));
-    throw new Error('Failed to parse AI response as JSON');
   }
+
+  // 3) Last resort — the old widest-span heuristic, in case (1)+(2) both miss.
+  const first = cleaned.indexOf('{');
+  const last = cleaned.lastIndexOf('}');
+  if (first !== -1 && last > first) {
+    try {
+      return JSON.parse(cleaned.slice(first, last + 1));
+    } catch (innerErr) {
+      console.error('[AI] Failed to parse extracted JSON:', cleaned.slice(first, first + 300));
+      throw new Error(`Failed to parse AI response as JSON: ${innerErr.message}`);
+    }
+  }
+  console.error('[AI] No JSON object found in response. First 400 chars:', cleaned.substring(0, 400));
+  throw new Error('Failed to parse AI response as JSON');
 }
