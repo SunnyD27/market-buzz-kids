@@ -1451,6 +1451,8 @@ zero-identifier emoji share grid.
   MarketJuice.recordEvent call from the game module (needs a consented
   kid login; the recordEvent server path itself is fully covered by the
   smoke test). Spot-check after deploy with a real kid account.
+  → **CLOSED 2026-06-12 post-deploy** — see the post-deploy verification
+  addendum below.
 
 **⚠️ Deliberate immutability exception (flagged):** today's (2026-06-12)
 daily_digests row was patched ADDITIVELY via jsonb_set to carry a reserve
@@ -1463,7 +1465,7 @@ bakes the puzzle in normally.
 **Open / future:**
 - Glossary nominations from the deleted DATE_OVERRIDE test row remain in
   pending_glossary (3 real terms, admin-gated — harmless).
-- Spot-check the logged-in MC award path on prod after deploy.
+- ~~Spot-check the logged-in MC award path on prod after deploy.~~ Done — see the post-deploy addendum.
 - Phase 22's Headline-or-Hoax anonymous stat will want the same
   aggregate-events query pattern this phase avoided (nothing blocking).
 
@@ -1498,3 +1500,24 @@ SW handoff was also observed working (old cache reaped, new module served
 on the next load) — good real-world confirmation of the version-bump
 mechanism for installed PWAs. Real mobile share sheet: check on a phone
 after deploy (headless has no native sheet).
+
+
+---
+
+## Post-deploy verification: Phase 16 (2026-06-12, after PR #39 → main)
+
+Sunny verified the three things local headless testing couldn't exercise:
+
+- **Logged-in MC award confirmed** — a real kid account played the Mystery
+  Mover on /digest and the MC landed (the client recordEvent →
+  'mystery-mover-played' → server award path, end to end on prod). The
+  Phase 16 session entry's "code-review-only gap" is CLOSED.
+- **Sample puzzle played on mobile** — guest play on /sample works on a
+  real phone.
+- **Native share sheet worked** — navigator.share opened the mobile share
+  sheet with the grid + ?src=mm-share link pre-filled (the Web Share branch
+  from the follow-up session, now confirmed on real hardware).
+
+Phase 16 is fully verified in production. No open verification items remain
+for Phases 15–16 except the Phase 15 real-device push check, which is still
+gated on setting the VAPID env vars in Railway.
