@@ -55,6 +55,26 @@ const GLOSS_PRINCIPLES = {
  *  - The term source is the merged seed + approved-DB view (glossary-runtime),
  *    cached per process — so approved nominations grow the glossary live.
  */
+// Phase 19 — section-header line icons (replacing the emoji nav). Lucide/
+// Tabler outline paths, inlined (no runtime dep), stroke=currentColor so they
+// tint via CSS `color: var(--citrus-text)`. Emoji stays welcome INSIDE content; it
+// just stops being the navigation system.
+const SECTION_ICON_PATHS = {
+  trophy: '<path d="M6 9H4.5a2.5 2.5 0 0 1 0-5H6"/><path d="M18 9h1.5a2.5 2.5 0 0 0 0-5H18"/><path d="M4 22h16"/><path d="M10 14.66V17c0 .55-.47.98-.97 1.21C7.85 18.75 7 20.24 7 22"/><path d="M14 14.66V17c0 .55.47.98.97 1.21C16.15 18.75 17 20.24 17 22"/><path d="M18 2H6v7a6 6 0 0 0 12 0V2Z"/>',
+  globe: '<circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/>',
+  flame: '<path d="M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"/>',
+  rocket: '<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z"/><path d="M12 15l-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z"/><path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0"/><path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5"/>',
+  lightbulb: '<path d="M15 14c.2-1 .7-1.7 1.5-2.5C17.7 10.2 18 9 18 7.5a6 6 0 0 0-12 0c0 1.5.3 2.7 1.5 4 .8.8 1.3 1.5 1.5 2.5"/><path d="M9 18h6"/><path d="M10 22h4"/>',
+  book: '<path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>',
+  search: '<circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/>',
+  sparkles: '<path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .962 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.962 0z"/>',
+  target: '<circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>',
+};
+export function sectionIcon(name) {
+  const path = SECTION_ICON_PATHS[name] || SECTION_ICON_PATHS.sparkles;
+  return `<svg class="ico" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${path}</svg>`;
+}
+
 // One tap-to-reveal gloss span (the prose `.tip` bubble shape). Module-level
 // so both the first-occurrence prose linker and the always-on standalone
 // helper below share one copy of the markup.
@@ -296,6 +316,21 @@ export function buildHTML(content, opts = {}) {
 
   const vibeCircle = marketVibe === 'green' ? '🟢' : marketVibe === 'red' ? '🔴' : '🟡';
 
+  // Phase 19 — vibe-tinted header. The wash is keyed off editionType first
+  // (weekly-wrap → mixed, week-ahead → its own ahead tint) then marketVibe
+  // on trading-day editions. Server-rendered, so OLD digest rows tint
+  // correctly (they already carry marketVibe + editionType).
+  const headerVibe = editionType === 'week-ahead' ? 'ahead'
+    : editionType === 'weekly-wrap' ? 'mixed'
+    : (marketVibe === 'green' || marketVibe === 'red') ? marketVibe : 'mixed';
+  const headerPillLabel = {
+    green: 'Green day ▲',
+    red: 'Red day ▼',
+    mixed: editionType === 'weekly-wrap' ? 'The Weekly Wrap' : 'Mixed day',
+    ahead: 'The Week Ahead',
+  }[headerVibe];
+  const headerPillHTML = `<div class="header-pill header-pill--${headerVibe}">${escapeHTML(headerPillLabel)}</div>`;
+
   // ── Glossary tap-to-reveal (first-occurrence-per-digest) ───────────────
   // Wrap the FIRST mention of each known term, ONCE across the whole digest,
   // walking sections in teaching order: big picture → scoreboard → stories →
@@ -526,7 +561,7 @@ export function buildHTML(content, opts = {}) {
 
     return `
   <div class="section-header">
-    <span class="emoji">🔮</span>
+    ${sectionIcon('sparkles')}
     <h2>Tomorrow's Call</h2>
     <div class="line"></div>
   </div>
@@ -556,7 +591,7 @@ export function buildHTML(content, opts = {}) {
         : "📊 Markets were closed yesterday — here's where things stand heading into the week")
     : null;
   const marketClosedHTML = marketClosedNote
-    ? `<div style="text-align: center; font-size: 12px; color: rgba(255,255,255,0.45); font-style: italic; margin: 0 16px 10px; padding: 8px 0;">${escapeHTML(marketClosedNote)}</div>`
+    ? `<div style="text-align: center; font-size: 12px; color: var(--ink-soft); font-style: italic; margin: 0 16px 10px; padding: 8px 0;">${escapeHTML(marketClosedNote)}</div>`
     : '';
 
   // Sunday Challenge — Sunday-only interactive game (4 rotating types).
@@ -589,7 +624,7 @@ export function buildHTML(content, opts = {}) {
     : (weeklyChallenge?.headline && weeklyChallenge?.body
         ? `
   <div class="section-header">
-    <span class="emoji">🎯</span>
+    ${sectionIcon('target')}
     <h2>Weekly Challenge</h2>
     <div class="line"></div>
   </div>
@@ -610,7 +645,7 @@ export function buildHTML(content, opts = {}) {
   const hasDailyChallenge = !!(dailyChallenge && Array.isArray(dailyChallenge.games) && dailyChallenge.games.length);
   const dailyChallengeSectionHTML = hasDailyChallenge ? `
   <div class="section-header">
-    <span class="emoji">🚀</span>
+    ${sectionIcon('rocket')}
     <h2>Today's Daily Challenge</h2>
     <div class="line"></div>
   </div>
@@ -720,7 +755,7 @@ export function buildHTML(content, opts = {}) {
   // Sample chip + banner — only when content.isSample is true. Extracted
   // up here as constants so we don't have to nest single-quoted CSS inside
   // the main backtick-template (the escaping turns into a mess fast).
-  const sampleChipHTML = isSample ? `<span style="font-family:'Space Mono',monospace; font-size:11px; color:var(--yellow); -webkit-text-fill-color:var(--yellow); letter-spacing:2px; vertical-align:middle; padding:3px 8px; border:1px solid var(--yellow); border-radius:6px; margin-left:10px;">SAMPLE</span>` : '';
+  const sampleChipHTML = isSample ? `<span style="font-family:'Space Grotesk',sans-serif; font-size:11px; color:var(--yellow); -webkit-text-fill-color:var(--yellow); letter-spacing:2px; vertical-align:middle; padding:3px 8px; border:1px solid var(--yellow); border-radius:6px; margin-left:10px;">SAMPLE</span>` : '';
 
   const sampleBannerHTML = isSample ? `
   <div class="sample-banner" role="region" aria-label="Sample digest banner">
@@ -739,7 +774,7 @@ export function buildHTML(content, opts = {}) {
   const topMoverWhyHTML = (_moverSpec && lk.moverProse)
     ? `
       <p style="font-size: 13px; color: var(--text-dim); margin-top: 10px;">
-        ⭐ <strong style="color: var(--yellow);">${_moverSpec.kind === 'forward'
+        ⭐ <strong style="color: var(--sun-text);">${_moverSpec.kind === 'forward'
             ? `Why watch ${escapeHTML(_moverSpec.name)}:`
             : `Why ${escapeHTML(_moverSpec.name)} moved:`}</strong> ${lk.moverProse}
       </p>`
@@ -753,12 +788,17 @@ export function buildHTML(content, opts = {}) {
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Market Juice">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#FFF8EF">
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon.svg">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <title>Market Juice</title>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<!-- Phase 19 type system: Fredoka (display), Lexend (body/labels), Space Grotesk
+     (numerals). preconnect speeds the CDN handshake; display=swap keeps text
+     visible during font load (no FOIT/invisible-text flash on slow links). -->
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lexend:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/engagement.css">
 <link rel="stylesheet" href="/games/styles.css">
 <script>
@@ -776,30 +816,105 @@ export function buildHTML(content, opts = {}) {
 <script src="/pwa.js" defer></script>
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* ============================================================
+     Phase 19 — "Morning Juice" light theme.
+     The spec's NEW token names (--surface/--ink/--citrus/…) are the
+     canonical palette; the OLD names the rest of the codebase wires
+     through (--card/--text/--green/…) are ALIASED onto them, so every
+     component re-skins without rewriting hundreds of var() references.
+     The dark palette is preserved verbatim under [data-theme="dark"] —
+     it becomes the Phase 23 "Night Mode" unlock (one attribute flip).
+     ============================================================ */
   :root {
-    --bg: #0d1117; --card: #161b22; --card-border: #21262d;
-    --green: #3fb950; --green-glow: rgba(63,185,80,0.15);
-    --red: #f85149; --red-glow: rgba(248,81,73,0.15);
-    --blue: #58a6ff; --blue-glow: rgba(88,166,255,0.12);
-    --purple: #bc8cff; --yellow: #f0c040; --yellow-glow: rgba(240,192,64,0.12);
-    --text: #e6edf3; --text-dim: #8b949e; --text-bright: #ffffff;
-    --orange: #f0883e;
-    /* Readability tokens (2026-06 overhaul). Body-copy typography is driven
-       off these so the reading experience is tuned in ONE place, not per
-       element. Values approved from the before/after mockup. PURELY visual —
-       no content is shortened or reworded anywhere. */
-    --body-size: 16.5px;        /* digest body copy (was ~14–15px) */
-    --body-leading: 1.72;       /* line-height — highest-impact change (was ~1.4–1.65) */
-    --prose-measure: 64ch;      /* max line length for flowing prose only — fills the card without a right-side void; clamps to card content width on narrow screens */
+    /* Canonical light palette */
+    --bg: #FFF8EF;            /* warm cream page */
+    --surface: #FFFFFF;       /* cards */
+    --surface-border: #F0E4D3;
+    --ink: #2B2118;           /* body text */
+    --ink-soft: #5E5349;      /* secondary — darkened from spec #6E6258 so it clears WCAG AA (4.5:1) on cream AND the vibe washes */
+    --citrus: #FF7A1A;        /* primary brand */
+    --sun: #FFC233;           /* accent / mover card */
+    --up: #1E9E5A;            /* green day / gains — FILLS / washes / borders */
+    --down: #E5484D;          /* red day / losses — FILLS / washes / borders */
+    --up-text: #0E7A3E;       /* darker green for TEXT — clears WCAG AA 4.5:1 on cream/white (bright --up is only ~3.4:1 as text; measured live) */
+    --down-text: #C92A2F;     /* darker red for TEXT — clears AA */
+    --sun-text: #8A5E12;      /* dark amber for gold TEXT (MC counts, labels) — bright --sun is ~1.5:1 as text */
+    --citrus-text: #B0500B;   /* dark citrus for orange TEXT + section icons — bright --citrus is ~2.5:1 as text */
+    --berry: #5B4FC7;         /* quiz, lesson boxes, parent links */
+    --vibe-green: #E7F3E6;    /* header wash, green day */
+    --vibe-red: #FBEAEA;      /* header wash, red day */
+    --vibe-mixed: #FBF1DC;    /* header wash, mixed + weekend/closed */
+    --vibe-ahead: #EFEDFA;    /* header wash, week-ahead Monday */
+
+    /* Aliases — older names used across template/engagement/games CSS.
+       --green/--red point at the TEXT variants (most uses are colored text);
+       fills that need the brighter hue use --up/--down directly. */
+    --card: var(--surface);
+    --card-border: var(--surface-border);
+    --text: var(--ink);
+    --text-dim: var(--ink-soft);
+    --text-bright: var(--ink);
+    --green: var(--up-text);
+    --red: var(--down-text);
+    --orange: var(--citrus);
+    --yellow: var(--sun);
+    --purple: var(--berry);
+    --blue: var(--berry);     /* the spec palette has no blue — collapse to berry */
+    --green-glow: rgba(30,158,90,0.12);
+    --red-glow: rgba(229,72,77,0.12);
+    --blue-glow: rgba(91,79,199,0.10);
+    --yellow-glow: rgba(255,194,51,0.18);
+
+    /* Readability tokens (Phase 19 bumps from the 2026-06 overhaul). */
+    --body-size: 17px;          /* spec body size */
+    --body-leading: 1.7;        /* spec leading */
+    --prose-measure: 64ch;      /* max line length for flowing prose only */
     --para-gap: 0.95em;         /* space between split paragraphs */
-    --gloss-underline: rgba(255,122,26,0.45); /* softened dotted underline (was solid #FF7A1A) */
+    --gloss-underline: rgba(255,122,26,0.6); /* citrus dotted underline, legible on cream */
   }
-  body { background: var(--bg); color: var(--text); font-family: 'Fredoka', sans-serif; min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
-  .stars { position: fixed; top: 0; left: 0; right: 0; bottom: 0; pointer-events: none; z-index: 0; }
-  .star { position: absolute; width: 2px; height: 2px; background: white; border-radius: 50%; animation: twinkle 3s ease-in-out infinite alternate; }
-  @keyframes twinkle { 0% { opacity: 0.2; } 100% { opacity: 0.8; } }
+  /* Phase 23 unlock — the preserved dark theme. Only the canonical tokens
+     need redeclaring; the aliases above resolve through them. */
+  [data-theme="dark"] {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-border: #21262d;
+    --ink: #e6edf3;
+    --ink-soft: #8b949e;
+    --citrus: #f0883e;
+    --sun: #f0c040;
+    --up: #3fb950;
+    --down: #f85149;
+    --up-text: #3fb950;   /* on dark, the bright accents ARE legible — no darkening */
+    --down-text: #f85149;
+    --sun-text: #f0c040;
+    --citrus-text: #f0883e;
+    --berry: #bc8cff;
+    --vibe-green: rgba(30,158,90,0.10);
+    --vibe-red: rgba(229,72,77,0.10);
+    --vibe-mixed: rgba(255,194,51,0.08);
+    --vibe-ahead: rgba(91,79,199,0.10);
+    --text-bright: #ffffff;
+    --green-glow: rgba(30,158,90,0.15);
+    --red-glow: rgba(229,72,77,0.15);
+    --blue-glow: rgba(91,79,199,0.12);
+    --yellow-glow: rgba(255,194,51,0.12);
+    --gloss-underline: rgba(255,122,26,0.45);
+  }
+  body { background: var(--bg); color: var(--text); font-family: 'Lexend', sans-serif; min-height: 100vh; overflow-x: hidden; -webkit-font-smoothing: antialiased; }
+  /* Display type stays Fredoka; numerals use Space Grotesk (set per element). */
+  h1, h2, h3, .logo, .section-header h2, .bp-header h3 { font-family: 'Fredoka', sans-serif; }
   .container { max-width: 680px; margin: 0 auto; padding: 24px 16px 60px; position: relative; z-index: 1; }
-  .header { text-align: center; margin-bottom: 32px; animation: slideDown 0.6s ease-out; }
+  /* Phase 19 — header band gets a soft vibe wash (keyed class set server-side). */
+  .header { text-align: center; margin-bottom: 32px; padding: 22px 18px 20px; border-radius: 22px; border: 1px solid var(--surface-border); animation: slideDown 0.6s ease-out; }
+  .header--green { background: linear-gradient(180deg, var(--vibe-green), var(--bg)); }
+  .header--red   { background: linear-gradient(180deg, var(--vibe-red), var(--bg)); }
+  .header--mixed { background: linear-gradient(180deg, var(--vibe-mixed), var(--bg)); }
+  .header--ahead { background: linear-gradient(180deg, var(--vibe-ahead), var(--bg)); }
+  .header-pill { display: inline-block; margin-top: 8px; font-family: 'Lexend', sans-serif; font-weight: 600; font-size: 12px; letter-spacing: 0.3px; padding: 4px 12px; border-radius: 999px; }
+  .header-pill--green { background: var(--vibe-green); color: var(--up-text); border: 1px solid rgba(30,158,90,0.3); }
+  .header-pill--red   { background: var(--vibe-red); color: var(--down-text); border: 1px solid rgba(229,72,77,0.3); }
+  .header-pill--mixed { background: var(--vibe-mixed); color: #8A5E12; border: 1px solid rgba(255,194,51,0.45); }
+  .header-pill--ahead { background: var(--vibe-ahead); color: var(--berry); border: 1px solid rgba(91,79,199,0.3); }
   @keyframes slideDown { from { opacity: 0; transform: translateY(-20px); } to { opacity: 1; transform: translateY(0); } }
   /* Brand lockup: PNG mark + wordmark in one flex container, matching the
      landing-page hero treatment (Phase 9). The wordmark keeps the
@@ -809,7 +924,8 @@ export function buildHTML(content, opts = {}) {
     display: inline-flex; align-items: center;
     gap: clamp(0.2rem, 0.6vw, 0.45rem);
     font-size: 42px; font-weight: 700;
-    background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow));
+    /* Phase 19 — recolored to the Morning Juice brand: citrus → berry → sun. */
+    background: linear-gradient(135deg, var(--citrus), var(--berry), var(--sun));
     -webkit-background-clip: text;
     -webkit-text-fill-color: transparent;
     background-clip: text;
@@ -821,47 +937,51 @@ export function buildHTML(content, opts = {}) {
     height: auto;
     display: inline-block;
     flex-shrink: 0;
-    filter: drop-shadow(0 6px 18px rgba(188,140,255,0.22));
+    filter: drop-shadow(0 6px 18px rgba(255,122,26,0.20));
     -webkit-text-fill-color: initial;
   }
-  /* "Juice" accent — solid gold to mirror the landing-page logo treatment. */
-  .logo em { font-style: normal; color: var(--yellow); -webkit-text-fill-color: var(--yellow); }
-  .date-line { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
+  /* "Juice" accent — solid citrus to anchor the lockup on the cream page. */
+  .logo em { font-style: normal; color: var(--citrus); -webkit-text-fill-color: var(--citrus); }
+  .date-line { font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: var(--text-dim); margin-top: 6px; letter-spacing: 1px; }
   .tagline { font-size: 15px; color: var(--text-dim); margin-top: 4px; }
   .section-header { display: flex; align-items: center; gap: 10px; margin: 32px 0 16px; animation: fadeIn 0.5s ease-out both; }
   .section-header .emoji { font-size: 28px; line-height: 1; }
+  /* Phase 19 — inline SVG section icons, citrus-tinted via currentColor. */
+  .ico { width: 26px; height: 26px; flex-shrink: 0; }
+  .section-header .ico { color: var(--citrus-text); }
+  .bp-header .ico { width: 22px; height: 22px; color: var(--citrus-text); }
   .section-header h2 { font-size: 22px; font-weight: 700; color: var(--text-bright); }
   .section-header .line { flex: 1; height: 2px; background: linear-gradient(90deg, var(--card-border), transparent); border-radius: 1px; }
   @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
   .scoreboard { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; animation: fadeIn 0.5s ease-out 0.1s both; }
   .score-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 16px 14px; text-align: center; transition: transform 0.2s, box-shadow 0.2s; cursor: default; }
   .score-card:hover { transform: translateY(-4px); }
-  .score-card.up { box-shadow: 0 4px 20px var(--green-glow); border-color: rgba(63,185,80,0.3); }
-  .score-card.down { box-shadow: 0 4px 20px var(--red-glow); border-color: rgba(248,81,73,0.3); }
-  .score-card .name { font-family: 'Space Mono', monospace; font-size: 11px; color: var(--text-dim); letter-spacing: 1.5px; text-transform: uppercase; margin-bottom: 6px; }
+  .score-card.up { box-shadow: 0 4px 20px var(--green-glow); border-color: rgba(30,158,90,0.3); }
+  .score-card.down { box-shadow: 0 4px 20px var(--red-glow); border-color: rgba(229,72,77,0.3); }
+  .score-card .name { font-family: 'Lexend', sans-serif; font-weight: 600; font-size: 11px; color: var(--text-dim); letter-spacing: 0.4px; text-transform: uppercase; margin-bottom: 6px; }
   .score-card .price { font-size: 20px; font-weight: 700; color: var(--text-bright); margin-bottom: 4px; }
-  .score-card .change { font-family: 'Space Mono', monospace; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px; }
+  .score-card .change { font-family: 'Space Grotesk', sans-serif; font-size: 16px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 4px; }
   .score-card.up .change { color: var(--green); }
   .score-card.down .change { color: var(--red); }
   .arrow-up::before { content: "▲"; font-size: 12px; }
   .arrow-down::before { content: "▼"; font-size: 12px; }
   .score-card .vibe { font-size: 12px; color: var(--text-dim); margin-top: 6px; font-style: italic; }
-  .score-card.mover { background: linear-gradient(135deg, rgba(240,192,64,0.10), rgba(240,136,62,0.08)); border-color: rgba(240,192,64,0.4); box-shadow: 0 4px 24px rgba(240,192,64,0.18), inset 0 0 30px rgba(240,192,64,0.03); position: relative; }
-  .score-card.mover:hover { box-shadow: 0 6px 28px rgba(240,192,64,0.28), inset 0 0 30px rgba(240,192,64,0.05); }
-  .mover-badge { font-family: 'Space Mono', monospace; font-size: 9px; letter-spacing: 2px; background: linear-gradient(135deg, var(--yellow), var(--orange)); color: #0d1117; padding: 3px 8px; border-radius: 6px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
-  .mover-name { font-size: 14px; font-weight: 700; color: var(--yellow); margin-bottom: 2px; line-height: 1.2; }
-  .mover-ticker { font-family: 'Space Mono', monospace; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
+  .score-card.mover { background: linear-gradient(135deg, rgba(255,194,51,0.10), rgba(255,122,26,0.08)); border-color: rgba(255,194,51,0.4); box-shadow: 0 4px 24px rgba(255,194,51,0.18), inset 0 0 30px rgba(255,194,51,0.03); position: relative; }
+  .score-card.mover:hover { box-shadow: 0 6px 28px rgba(255,194,51,0.28), inset 0 0 30px rgba(255,194,51,0.05); }
+  .mover-badge { font-family: 'Lexend', sans-serif; font-size: 9px; letter-spacing: 0.6px; background: linear-gradient(135deg, var(--sun), var(--citrus)); color: #2B2118; padding: 3px 8px; border-radius: 6px; font-weight: 700; margin-bottom: 6px; display: inline-block; }
+  .mover-name { font-size: 14px; font-weight: 700; color: var(--sun-text); margin-bottom: 2px; line-height: 1.2; }
+  .mover-ticker { font-family: 'Space Grotesk', sans-serif; font-size: 10px; color: var(--text-dim); letter-spacing: 1.5px; margin-bottom: 6px; }
   /* Week-ahead "One to Watch" — forward-looking variant of the gold mover
      card. No price / arrow / % change; the catalyst replaces the numbers. */
   .mover-catalyst { font-size: 12px; font-weight: 600; color: var(--text); line-height: 1.35; margin-top: 2px; }
   .story-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; margin-bottom: 14px; animation: fadeIn 0.5s ease-out both; transition: transform 0.2s; }
   .story-card:hover { transform: translateY(-2px); }
-  .story-card .badge { display: inline-block; font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 1px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; font-weight: 700; }
-  .badge.hot { background: var(--red-glow); color: var(--red); border: 1px solid rgba(248,81,73,0.3); }
-  .badge.new { background: var(--blue-glow); color: var(--blue); border: 1px solid rgba(88,166,255,0.3); }
-  .badge.money { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.3); }
-  .badge.world { background: var(--yellow-glow); color: var(--yellow); border: 1px solid rgba(240,192,64,0.3); }
-  .badge.brain { background: rgba(188,140,255,0.12); color: var(--purple); border: 1px solid rgba(188,140,255,0.3); }
+  .story-card .badge { display: inline-block; font-family: 'Lexend', sans-serif; font-size: 10px; letter-spacing: 0.3px; text-transform: uppercase; padding: 4px 10px; border-radius: 20px; margin-bottom: 10px; font-weight: 600; }
+  .badge.hot { background: var(--red-glow); color: var(--red); border: 1px solid rgba(229,72,77,0.3); }
+  .badge.new { background: var(--blue-glow); color: var(--blue); border: 1px solid rgba(91,79,199,0.3); }
+  .badge.money { background: var(--green-glow); color: var(--green); border: 1px solid rgba(30,158,90,0.3); }
+  .badge.world { background: var(--yellow-glow); color: var(--sun-text); border: 1px solid rgba(255,194,51,0.3); }
+  .badge.brain { background: rgba(91,79,199,0.12); color: var(--purple); border: 1px solid rgba(91,79,199,0.3); }
   .story-card h3 { font-size: 18px; font-weight: 600; color: var(--text-bright); margin-bottom: 8px; line-height: 1.3; }
   /* Body prose: bigger, roomier, measure-capped. max-width keeps lines from
      running the full card width; left-aligned (not centered) so the column
@@ -869,61 +989,61 @@ export function buildHTML(content, opts = {}) {
      field contains \n\n breaks and renders as multiple <p>. */
   .story-card p { font-size: var(--body-size); line-height: var(--body-leading); color: var(--text); max-width: var(--prose-measure); margin: 0 0 var(--para-gap); }
   .story-card p:last-child { margin-bottom: 0; }
-  .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(88,166,255,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); }
+  .story-card .why-it-matters { margin-top: 12px; padding: 12px 14px; background: rgba(91,79,199,0.06); border-left: 3px solid var(--blue); border-radius: 0 10px 10px 0; font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); }
   .story-card .why-it-matters p { margin: 0 0 var(--para-gap); }
   .story-card .why-it-matters p:last-child { margin-bottom: 0; }
   .story-card .why-it-matters strong { color: var(--blue); font-weight: 600; }
-  .dyk-card { background: linear-gradient(135deg, rgba(188,140,255,0.10), rgba(88,166,255,0.06)); border: 1px solid rgba(188,140,255,0.3); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
-  .dyk-card .dyk-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; }
+  .dyk-card { background: linear-gradient(135deg, rgba(91,79,199,0.10), rgba(91,79,199,0.06)); border: 1px solid rgba(91,79,199,0.3); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
+  .dyk-card .dyk-label { font-family: 'Lexend', sans-serif; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--purple); margin-bottom: 10px; }
   .dyk-card .dyk-fact { font-size: 17px; font-weight: 500; color: var(--text-bright); line-height: var(--body-leading); max-width: var(--prose-measure); margin-bottom: 12px; }
   .dyk-card .dyk-fact p { margin: 0 0 var(--para-gap); }
   .dyk-card .dyk-fact p:last-child { margin-bottom: 0; }
-  .dyk-card .dyk-connection { font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); padding: 12px 14px; background: rgba(188,140,255,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
+  .dyk-card .dyk-connection { font-size: var(--body-size); color: var(--text); line-height: var(--body-leading); padding: 12px 14px; background: rgba(91,79,199,0.08); border-left: 3px solid var(--purple); border-radius: 0 10px 10px 0; }
   .dyk-card .dyk-connection p { margin: 0 0 var(--para-gap); }
   .dyk-card .dyk-connection p:last-child { margin-bottom: 0; }
   .dyk-card .dyk-connection strong { color: var(--purple); font-weight: 600; }
-  .quiz-card { background: linear-gradient(135deg, rgba(188,140,255,0.08), rgba(88,166,255,0.08)); border: 1px solid rgba(188,140,255,0.25); border-radius: 16px; padding: 24px; text-align: center; animation: fadeIn 0.5s ease-out both; }
-  .quiz-card .quiz-label { font-family: 'Space Mono', monospace; font-size: 11px; letter-spacing: 2px; text-transform: uppercase; color: var(--purple); margin-bottom: 12px; }
+  .quiz-card { background: linear-gradient(135deg, rgba(91,79,199,0.08), rgba(91,79,199,0.08)); border: 1px solid rgba(91,79,199,0.25); border-radius: 16px; padding: 24px; text-align: center; animation: fadeIn 0.5s ease-out both; }
+  .quiz-card .quiz-label { font-family: 'Lexend', sans-serif; font-weight: 600; font-size: 11px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--purple); margin-bottom: 12px; }
   .quiz-card .quiz-question { font-size: 18px; font-weight: 600; color: var(--text-bright); margin-bottom: 20px; line-height: 1.4; }
   .quiz-options { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
   .quiz-btn { background: var(--card); border: 2px solid var(--card-border); border-radius: 12px; padding: 12px; color: var(--text); font-family: 'Fredoka', sans-serif; font-size: 15px; font-weight: 500; cursor: pointer; transition: all 0.2s; }
-  .quiz-btn:hover { border-color: var(--purple); background: rgba(188,140,255,0.08); transform: scale(1.03); }
+  .quiz-btn:hover { border-color: var(--purple); background: rgba(91,79,199,0.08); transform: scale(1.03); }
   .quiz-btn.correct { border-color: var(--green); background: var(--green-glow); color: var(--green); }
   .quiz-btn.wrong { border-color: var(--red); background: var(--red-glow); color: var(--red); opacity: 0.6; }
-  .quiz-answer { display: none; font-size: 14px; color: var(--text); line-height: 1.5; padding: 14px; background: rgba(63,185,80,0.06); border-radius: 12px; border: 1px solid rgba(63,185,80,0.2); }
+  .quiz-answer { display: none; font-size: 14px; color: var(--text); line-height: 1.5; padding: 14px; background: rgba(30,158,90,0.06); border-radius: 12px; border: 1px solid rgba(30,158,90,0.2); }
   .quiz-answer.visible { display: block; }
   /* Phase 17 — Tomorrow's Call prediction card (per-user, end of digest) */
   .tc-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; text-align: center; }
   .tc-verdict { font-size: 17px; font-weight: 600; border-radius: 10px; padding: 10px 12px; margin-bottom: 12px; }
-  .tc-verdict-win { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.35); }
-  .tc-verdict-miss { background: var(--red-glow); color: var(--text); border: 1px solid rgba(248,81,73,0.3); }
+  .tc-verdict-win { background: var(--green-glow); color: var(--green); border: 1px solid rgba(30,158,90,0.35); }
+  .tc-verdict-miss { background: var(--red-glow); color: var(--text); border: 1px solid rgba(229,72,77,0.3); }
   .tc-record { color: var(--text-dim); font-size: 13.5px; margin-bottom: 12px; }
-  .tc-record strong { color: var(--yellow); font-family: 'Space Mono', monospace; }
+  .tc-record strong { color: var(--sun-text); font-family: 'Space Grotesk', sans-serif; }
   .tc-question { font-size: 17px; font-weight: 500; margin-bottom: 14px; }
   .tc-buttons { display: flex; gap: 10px; justify-content: center; }
   .tc-btn { flex: 1; max-width: 180px; border: none; border-radius: 12px; padding: 14px 10px; font-family: inherit; font-weight: 600; font-size: 16px; cursor: pointer; transition: filter 0.15s, transform 0.1s; }
   .tc-btn:hover { filter: brightness(1.15); }
   .tc-btn:active { transform: scale(0.97); }
   .tc-btn:disabled { opacity: 0.5; cursor: default; }
-  .tc-btn-green { background: var(--green-glow); color: var(--green); border: 1px solid rgba(63,185,80,0.45); }
-  .tc-btn-red { background: var(--red-glow); color: var(--red); border: 1px solid rgba(248,81,73,0.45); }
-  .tc-locked { background: rgba(188,140,255,0.1); border: 1px solid rgba(188,140,255,0.3); color: var(--text); border-radius: 10px; padding: 12px; font-size: 14.5px; }
+  .tc-btn-green { background: var(--green-glow); color: var(--green); border: 1px solid rgba(30,158,90,0.45); }
+  .tc-btn-red { background: var(--red-glow); color: var(--red); border: 1px solid rgba(229,72,77,0.45); }
+  .tc-locked { background: rgba(91,79,199,0.1); border: 1px solid rgba(91,79,199,0.3); color: var(--text); border-radius: 10px; padding: 12px; font-size: 14.5px; }
   .tc-feedback { margin-top: 10px; color: var(--text-dim); font-size: 13.5px; min-height: 1.2em; }
   .tc-caption { margin-top: 12px; color: var(--text-dim); font-size: 12.5px; }
-  .tc-intro { background: var(--blue-glow); border: 1px solid rgba(88,166,255,0.3); border-radius: 12px; padding: 14px; margin-bottom: 14px; text-align: left; }
+  .tc-intro { background: var(--blue-glow); border: 1px solid rgba(91,79,199,0.3); border-radius: 12px; padding: 14px; margin-bottom: 14px; text-align: left; }
   .tc-intro-title { font-weight: 600; font-size: 15px; margin-bottom: 6px; }
   .tc-intro-body { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 10px; }
-  .tc-intro-btn { background: var(--blue); color: #0d1117; border: none; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
+  .tc-intro-btn { background: var(--blue); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
   .tc-intro-btn:hover { filter: brightness(1.1); }
 
   /* Phase 16 — Mystery Mover (client-hydrated by games/mystery-mover.js) */
   .mm-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; }
   .mm-tagline { color: var(--text-dim); font-size: 13.5px; margin-bottom: 14px; }
-  .mm-clue { background: rgba(240,136,62,0.08); border: 1px solid rgba(240,136,62,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: var(--body-size); line-height: 1.55; }
-  .mm-clue-num { color: var(--orange); font-weight: 600; font-size: 12px; letter-spacing: 0.5px; margin-right: 6px; }
+  .mm-clue { background: rgba(255,122,26,0.08); border: 1px solid rgba(255,122,26,0.25); border-radius: 10px; padding: 10px 12px; margin-bottom: 8px; font-size: var(--body-size); line-height: 1.55; }
+  .mm-clue-num { color: var(--citrus-text); font-weight: 600; font-size: 12px; letter-spacing: 0.5px; margin-right: 6px; }
   .mm-controls { display: flex; gap: 8px; margin-top: 12px; }
   .mm-input { flex: 1; min-width: 0; background: var(--bg); color: var(--text); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 12px; font-family: inherit; font-size: 15px; }
-  .mm-input:focus { outline: none; border-color: var(--orange); }
+  .mm-input:focus { outline: none; border-color: var(--citrus-text); }
   .mm-guess-btn { background: var(--orange); color: #1a1208; border: none; border-radius: 10px; padding: 10px 18px; font-family: inherit; font-weight: 600; font-size: 15px; cursor: pointer; }
   .mm-guess-btn:hover { filter: brightness(1.1); }
   .mm-meta { display: flex; justify-content: space-between; align-items: center; gap: 10px; margin-top: 10px; color: var(--text-dim); font-size: 13px; flex-wrap: wrap; }
@@ -933,12 +1053,12 @@ export function buildHTML(content, opts = {}) {
   .mm-result { font-size: 19px; font-weight: 600; margin-top: 6px; }
   .mm-grid-preview { font-size: 22px; letter-spacing: 2px; margin: 10px 0 14px; }
   .mm-share-btn { background: var(--card); color: var(--text); border: 1px solid var(--orange); border-radius: 10px; padding: 10px 16px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
-  .mm-share-btn:hover { background: rgba(240,136,62,0.12); }
-  .mm-signup-cta { display: block; margin-top: 14px; color: var(--yellow); font-weight: 600; text-decoration: none; }
+  .mm-share-btn:hover { background: rgba(255,122,26,0.12); }
+  .mm-signup-cta { display: block; margin-top: 14px; color: var(--sun-text); font-weight: 600; text-decoration: none; }
   .mm-signup-cta:hover { text-decoration: underline; }
   .word-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; text-align: center; }
-  .word-card .word-label { font-family: 'Space Mono', monospace; font-size: 10px; letter-spacing: 2px; text-transform: uppercase; color: var(--yellow); margin-bottom: 8px; }
-  .word-card .the-word { font-size: 28px; font-weight: 700; color: var(--yellow); margin-bottom: 4px; }
+  .word-card .word-label { font-family: 'Lexend', sans-serif; font-weight: 600; font-size: 10px; letter-spacing: 0.5px; text-transform: uppercase; color: var(--citrus-text); margin-bottom: 8px; }
+  .word-card .the-word { font-size: 28px; font-weight: 700; color: var(--sun-text); margin-bottom: 4px; }
   .word-card .word-type { font-size: 12px; color: var(--text-dim); font-style: italic; margin-bottom: 10px; }
   .word-card .word-def { font-size: 15px; color: var(--text); line-height: 1.55; max-width: 500px; margin: 0 auto; }
   /* ── Glossary tap-to-reveal ───────────────────────────────────────────
@@ -967,7 +1087,7 @@ export function buildHTML(content, opts = {}) {
   }
   .gloss.is-new::after {
     content: "NEW";
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 8px; vertical-align: super;
     color: var(--green); margin-left: 2px; letter-spacing: 0.5px;
   }
@@ -977,7 +1097,7 @@ export function buildHTML(content, opts = {}) {
     transform: translateX(-50%) translateY(6px) scale(0.96);
     width: min(260px, 78vw);
     background: #1C1A17; color: #FFF8EE;
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(43,33,24,0.10);
     border-radius: 12px; padding: 12px 14px;
     font-size: 13.5px; line-height: 1.5; font-weight: 400;
     font-family: 'Fredoka', sans-serif;
@@ -993,13 +1113,13 @@ export function buildHTML(content, opts = {}) {
     border: 7px solid transparent; border-top-color: #1C1A17;
   }
   .gloss .tip .tip-term {
-    font-family: 'Space Mono', monospace; font-size: 11px;
+    font-family: 'Space Grotesk', sans-serif; font-size: 11px;
     text-transform: uppercase; letter-spacing: 0.6px;
     color: #FFC23C; display: block; margin-bottom: 4px;
   }
   .gloss .tip .tip-principle {
     display: block; margin-top: 8px; padding-top: 8px;
-    border-top: 1px solid rgba(255,255,255,0.15);
+    border-top: 1px solid rgba(43,33,24,0.12);
     font-size: 11.5px; color: #C9BFB0;
   }
   .gloss.open .tip {
@@ -1017,7 +1137,7 @@ export function buildHTML(content, opts = {}) {
     text-decoration-color: #FF7A1A; text-underline-offset: 3px;
   }
   .score-card.tappable .sg-i {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 10px; vertical-align: super;
     color: #FF7A1A; margin-left: 3px; opacity: 0.85;
   }
@@ -1026,14 +1146,14 @@ export function buildHTML(content, opts = {}) {
   }
   /* Active tile cue while its drawer is open. */
   .score-card.tappable.open {
-    border-color: rgba(240,192,64,0.55);
-    box-shadow: 0 4px 20px rgba(240,192,64,0.18);
+    border-color: rgba(255,194,51,0.55);
+    box-shadow: 0 4px 20px rgba(255,194,51,0.18);
   }
   .score-gloss-panel {
     display: none;
     margin-top: 12px;
     background: #1C1A17; color: #FFF8EE;
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(43,33,24,0.10);
     border-radius: 12px; padding: 14px 16px;
     text-align: left;
     font-family: 'Fredoka', sans-serif;
@@ -1041,7 +1161,7 @@ export function buildHTML(content, opts = {}) {
   }
   .score-gloss-panel.open { display: block; animation: fadeIn 0.25s ease-out both; }
   .score-gloss-panel .sg-term {
-    font-family: 'Space Mono', monospace; font-size: 11px;
+    font-family: 'Space Grotesk', sans-serif; font-size: 11px;
     text-transform: uppercase; letter-spacing: 0.6px;
     color: #FFC23C; display: block; margin-bottom: 6px;
   }
@@ -1050,11 +1170,11 @@ export function buildHTML(content, opts = {}) {
   }
   .score-gloss-panel .sg-principle {
     display: block; margin-top: 10px; padding-top: 10px;
-    border-top: 1px solid rgba(255,255,255,0.15);
+    border-top: 1px solid rgba(43,33,24,0.12);
     font-size: 12px; color: #C9BFB0;
   }
-  .vibe-bar { margin-top: 16px; text-align: center; background: linear-gradient(135deg, rgba(63,185,80,0.06), rgba(88,166,255,0.06)); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; animation: fadeIn 0.5s ease-out both; }
-  .big-picture { margin-top: 16px; background: linear-gradient(135deg, rgba(88,166,255,0.12), rgba(88,166,255,0.03)); border: 1px solid rgba(88,166,255,0.25); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
+  .vibe-bar { margin-top: 16px; text-align: center; background: linear-gradient(135deg, rgba(30,158,90,0.06), rgba(91,79,199,0.06)); border: 1px solid var(--card-border); border-radius: 16px; padding: 18px 20px; animation: fadeIn 0.5s ease-out both; }
+  .big-picture { margin-top: 16px; background: linear-gradient(135deg, rgba(91,79,199,0.12), rgba(91,79,199,0.03)); border: 1px solid rgba(91,79,199,0.25); border-radius: 16px; padding: 20px 22px; animation: fadeIn 0.5s ease-out both; }
   .big-picture .bp-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .big-picture .bp-header .emoji { font-size: 24px; line-height: 1; }
   .big-picture .bp-header h3 { font-size: 18px; font-weight: 700; color: var(--text-bright); }
@@ -1087,8 +1207,8 @@ export function buildHTML(content, opts = {}) {
     margin-top: 10px;
     display: inline-flex; align-items: center; gap: 12px;
     padding: 5px 12px;
-    background: rgba(88,166,255,0.08);
-    border: 1px solid rgba(88,166,255,0.25);
+    background: rgba(91,79,199,0.08);
+    border: 1px solid rgba(91,79,199,0.25);
     border-radius: 999px;
     font-size: 13px;
   }
@@ -1097,21 +1217,21 @@ export function buildHTML(content, opts = {}) {
     color: var(--text-dim);
     text-decoration: none;
     font-size: 12px;
-    border-left: 1px solid rgba(255,255,255,0.15);
+    border-left: 1px solid rgba(43,33,24,0.12);
     padding-left: 12px;
   }
   .kid-greeting .logout-link:hover { color: var(--text-bright); }
   /* Weekly Challenge card — Sunday-only. Distinct blue/purple gradient
      so it doesn't visually compete with the purple dyk-card next to it. */
   .wc-card {
-    background: linear-gradient(135deg, rgba(88,166,255,0.14), rgba(188,140,255,0.08));
-    border: 1px solid rgba(88,166,255,0.30);
+    background: linear-gradient(135deg, rgba(91,79,199,0.14), rgba(91,79,199,0.08));
+    border: 1px solid rgba(91,79,199,0.30);
     border-radius: 16px;
     padding: 20px 22px;
     animation: fadeIn 0.5s ease-out both;
   }
   .wc-card .wc-label {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 10px; letter-spacing: 2px;
     text-transform: uppercase; color: var(--blue);
     margin-bottom: 10px;
@@ -1139,16 +1259,16 @@ export function buildHTML(content, opts = {}) {
     font-style: italic;
   }
   .sc-card {
-    background: linear-gradient(135deg, rgba(240,192,64,0.10), rgba(88,166,255,0.10));
-    border: 1px solid rgba(240,192,64,0.35);
+    background: linear-gradient(135deg, rgba(255,194,51,0.10), rgba(91,79,199,0.10));
+    border: 1px solid rgba(255,194,51,0.35);
     border-radius: 16px;
     padding: 20px 22px;
     animation: fadeIn 0.5s ease-out both;
   }
   .sc-round-meta {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; letter-spacing: 1.5px;
-    text-transform: uppercase; color: var(--yellow);
+    text-transform: uppercase; color: var(--sun-text);
     margin-bottom: 12px;
   }
   .sc-headline {
@@ -1164,10 +1284,10 @@ export function buildHTML(content, opts = {}) {
     margin: 0;
   }
   .sc-year {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 12px; letter-spacing: 2px;
     text-transform: uppercase;
-    color: var(--yellow);
+    color: var(--sun-text);
     margin-bottom: 8px;
   }
   .sc-allocation {
@@ -1183,7 +1303,7 @@ export function buildHTML(content, opts = {}) {
   }
   .sc-stock {
     background: rgba(26,34,53,0.85);
-    border: 1px solid rgba(255,255,255,0.10);
+    border: 1px solid rgba(43,33,24,0.09);
     border-radius: 12px;
     padding: 12px;
     text-align: left;
@@ -1192,31 +1312,31 @@ export function buildHTML(content, opts = {}) {
     font-family: inherit;
     transition: transform 0.1s, border-color 0.15s, background 0.15s;
   }
-  .sc-stock:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(240,192,64,0.4); }
+  .sc-stock:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(255,194,51,0.4); }
   .sc-stock:disabled { opacity: 0.7; cursor: default; }
-  .sc-stock.sc-selected { border-color: var(--yellow); background: rgba(240,192,64,0.10); }
+  .sc-stock.sc-selected { border-color: var(--sun-text); background: rgba(255,194,51,0.10); }
   .sc-stock-ticker { font-weight: 700; font-size: 14px; color: var(--text-bright); }
   .sc-stock-name { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
-  .sc-stock-price { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--text); }
+  .sc-stock-price { font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: var(--text); }
   .sc-stock-alloc {
     margin-top: 6px;
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 12px;
-    color: var(--yellow);
+    color: var(--sun-text);
     font-weight: 700;
   }
   .sc-total-row {
     display: flex; align-items: center; justify-content: space-between;
     margin-bottom: 12px; font-size: 14px; color: var(--text);
   }
-  .sc-total { color: var(--yellow); }
+  .sc-total { color: var(--sun-text); }
   .sc-options {
     display: flex; flex-direction: column; gap: 10px;
     margin-bottom: 12px;
   }
   .sc-option {
     background: rgba(26,34,53,0.85);
-    border: 1px solid rgba(255,255,255,0.12);
+    border: 1px solid rgba(43,33,24,0.10);
     border-radius: 12px;
     padding: 12px 14px;
     text-align: left;
@@ -1228,28 +1348,28 @@ export function buildHTML(content, opts = {}) {
     display: flex; align-items: flex-start; gap: 12px;
     transition: transform 0.1s, border-color 0.15s, background 0.15s;
   }
-  .sc-option:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(88,166,255,0.45); }
+  .sc-option:hover:not(:disabled) { transform: translateY(-1px); border-color: rgba(91,79,199,0.45); }
   .sc-option:disabled { cursor: default; }
   .sc-option-letter {
     flex-shrink: 0;
     width: 24px; height: 24px; border-radius: 50%;
-    background: rgba(88,166,255,0.18);
+    background: rgba(91,79,199,0.18);
     color: var(--blue);
-    font-family: 'Space Mono', monospace; font-size: 12px;
+    font-family: 'Space Grotesk', sans-serif; font-size: 12px;
     display: inline-flex; align-items: center; justify-content: center;
     font-weight: 700;
   }
   .sc-option-text { flex: 1; }
   .sc-option.sc-correct { border-color: rgba(72,187,120,0.7); background: rgba(72,187,120,0.10); }
   .sc-option.sc-wrong   { border-color: rgba(245,101,101,0.7); background: rgba(245,101,101,0.10); }
-  .sc-option.sc-selected { border-color: var(--blue); background: rgba(88,166,255,0.10); }
+  .sc-option.sc-selected { border-color: var(--blue); background: rgba(91,79,199,0.10); }
   .sc-result-area { margin-top: 14px; }
   .sc-result-head {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; letter-spacing: 1.5px;
     text-transform: uppercase;
     margin-bottom: 10px;
-    color: var(--yellow);
+    color: var(--sun-text);
   }
   .sc-result-head.win  { color: #6bd687; }
   .sc-result-head.miss { color: #f0808a; }
@@ -1270,12 +1390,12 @@ export function buildHTML(content, opts = {}) {
     display: grid;
     grid-template-columns: 90px 1fr 60px;
     align-items: center; gap: 8px;
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 12px;
   }
   .sc-result-bar-label { color: var(--text-dim); }
   .sc-result-bar {
-    background: rgba(255,255,255,0.06);
+    background: rgba(43,33,24,0.04);
     height: 8px; border-radius: 4px;
     overflow: hidden;
   }
@@ -1291,7 +1411,7 @@ export function buildHTML(content, opts = {}) {
     background: linear-gradient(135deg, var(--yellow), #b08a4a);
     border: none; border-radius: 10px;
     padding: 10px 16px; font-family: inherit;
-    font-size: 14px; font-weight: 600; color: #0d1117;
+    font-size: 14px; font-weight: 600; color: #2B2118;
     cursor: pointer; margin-top: 8px;
     transition: transform 0.1s, opacity 0.15s;
   }
@@ -1300,21 +1420,21 @@ export function buildHTML(content, opts = {}) {
   .sc-dots { display: flex; gap: 6px; margin-bottom: 10px; }
   .sc-dot {
     width: 8px; height: 8px; border-radius: 50%;
-    background: rgba(255,255,255,0.15);
+    background: rgba(43,33,24,0.12);
   }
   .sc-dot.active { background: var(--yellow); }
-  .sc-dot.done   { background: rgba(88,166,255,0.55); }
+  .sc-dot.done   { background: rgba(91,79,199,0.55); }
   .sc-timer-row {
     display: flex; flex-direction: column; gap: 6px;
     margin-bottom: 14px;
   }
   .sc-q-counter {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; letter-spacing: 1.5px;
     color: var(--text-dim);
   }
   .sc-timer-bar {
-    height: 6px; background: rgba(255,255,255,0.06);
+    height: 6px; background: rgba(43,33,24,0.04);
     border-radius: 3px; overflow: hidden;
   }
   .sc-timer-fill {
@@ -1332,16 +1452,16 @@ export function buildHTML(content, opts = {}) {
   }
   .sc-analysis-card {
     background: rgba(13,17,23,0.55);
-    border: 1px solid rgba(255,255,255,0.08);
+    border: 1px solid rgba(43,33,24,0.08);
     border-radius: 12px;
     padding: 14px;
   }
   .sc-analysis-card.sc-your-choice {
-    border-color: rgba(88,166,255,0.55);
-    background: rgba(88,166,255,0.06);
+    border-color: rgba(91,79,199,0.55);
+    background: rgba(91,79,199,0.06);
   }
   .sc-analysis-tag {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 10px; letter-spacing: 1.5px;
     text-transform: uppercase;
     color: var(--blue);
@@ -1353,7 +1473,7 @@ export function buildHTML(content, opts = {}) {
     color: var(--text-bright); margin-bottom: 8px;
   }
   .sc-metrics {
-    background: rgba(255,255,255,0.03);
+    background: rgba(43,33,24,0.025);
     border-radius: 8px;
     padding: 8px 10px;
     margin-bottom: 10px;
@@ -1362,21 +1482,21 @@ export function buildHTML(content, opts = {}) {
     display: flex; justify-content: space-between; align-items: center;
     font-size: 13px;
     padding: 4px 0;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
+    border-bottom: 1px solid rgba(43,33,24,0.03);
   }
   .sc-metric-row:last-child { border-bottom: none; }
   .sc-metric-label { color: var(--text-dim); }
   .sc-metric-value {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     color: var(--text-bright); font-weight: 600;
   }
   .sc-analysis-takeaway { font-size: 13px; line-height: 1.55; color: var(--text); }
   .sc-principle-tag {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; letter-spacing: 1px;
-    color: var(--yellow);
-    background: rgba(240,192,64,0.10);
-    border: 1px solid rgba(240,192,64,0.25);
+    color: var(--sun-text);
+    background: rgba(255,194,51,0.10);
+    border: 1px solid rgba(255,194,51,0.25);
     border-radius: 999px;
     padding: 5px 12px;
     display: inline-block;
@@ -1384,16 +1504,16 @@ export function buildHTML(content, opts = {}) {
   }
   .sc-xp-badge {
     margin-top: 14px;
-    background: linear-gradient(135deg, rgba(240,192,64,0.18), rgba(88,166,255,0.10));
-    border: 1px solid rgba(240,192,64,0.45);
+    background: linear-gradient(135deg, rgba(255,194,51,0.18), rgba(91,79,199,0.10));
+    border: 1px solid rgba(255,194,51,0.45);
     border-radius: 12px;
     padding: 12px 14px;
     display: flex; align-items: center; gap: 12px;
   }
   .sc-xp-amount {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 18px; font-weight: 700;
-    color: var(--yellow);
+    color: var(--sun-text);
   }
   .sc-xp-label { font-size: 13px; color: var(--text); }
   .sc-final {
@@ -1413,7 +1533,7 @@ export function buildHTML(content, opts = {}) {
     .sc-final-grid:has(> :nth-child(2)) { grid-template-columns: 1fr 1fr; }
   }
   .sc-final-label {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 10px; letter-spacing: 1.5px;
     text-transform: uppercase;
     color: var(--text-dim);
@@ -1423,7 +1543,7 @@ export function buildHTML(content, opts = {}) {
     font-size: 22px; font-weight: 700;
     color: var(--text-bright);
   }
-  .sc-final-pct { font-family: 'Space Mono', monospace; font-size: 13px; color: var(--yellow); }
+  .sc-final-pct { font-family: 'Space Grotesk', sans-serif; font-size: 13px; color: var(--sun-text); }
   .sc-final-lesson { font-size: 14px; line-height: 1.55; color: var(--text); }
   .sc-done {
     text-align: center;
@@ -1435,8 +1555,8 @@ export function buildHTML(content, opts = {}) {
      LOOK like a real digest while making it clear the content is generic
      and the real version arrives by email. */
   .sample-banner {
-    background: linear-gradient(135deg, rgba(240,192,64,0.16), rgba(188,140,255,0.10));
-    border: 1px solid rgba(240,192,64,0.40);
+    background: linear-gradient(135deg, rgba(255,194,51,0.16), rgba(91,79,199,0.10));
+    border: 1px solid rgba(255,194,51,0.40);
     border-radius: 16px;
     padding: 14px 18px;
     margin: 0 0 22px;
@@ -1451,7 +1571,7 @@ export function buildHTML(content, opts = {}) {
   }
   .sample-banner .sample-cta {
     background: linear-gradient(135deg, var(--yellow), var(--orange));
-    color: #0d1117;
+    color: #2B2118;
     padding: 10px 18px;
     border-radius: 999px;
     font-weight: 700; text-decoration: none; font-size: 14px;
@@ -1470,15 +1590,15 @@ export function buildHTML(content, opts = {}) {
 </head>
 <body>
 
-<div class="stars" id="stars"></div>
 
 <div class="container">
 
   ${sampleBannerHTML}
 
-  <div class="header">
+  <div class="header header--${headerVibe}">
     <div class="logo"><img src="/icons/logo.png" alt="" class="logo-mark" width="160" height="160"/>Market&nbsp;<em>Juice</em>${sampleChipHTML}</div>
     <div class="date-line">${escapeHTML(date.toUpperCase())}</div>
+    ${headerPillHTML}
     ${editionLabelHTML}
     <div class="tagline">Your daily squeeze of market smarts</div>
     ${greetingHTML}
@@ -1490,7 +1610,7 @@ export function buildHTML(content, opts = {}) {
   ${marketClosedHTML}
 
   <div class="section-header">
-    <span class="emoji">🏆</span>
+    ${sectionIcon('trophy')}
     <h2>Market Scoreboard</h2>
     <div class="line"></div>
   </div>
@@ -1510,7 +1630,7 @@ export function buildHTML(content, opts = {}) {
 
   <div class="big-picture">
     <div class="bp-header">
-      <span class="emoji">🌎</span>
+      ${sectionIcon('globe')}
       <h3>The Big Picture</h3>
     </div>
     ${lk.bigPicture}
@@ -1518,7 +1638,7 @@ export function buildHTML(content, opts = {}) {
   </div>
 
   <div class="section-header">
-    <span class="emoji">🔥</span>
+    ${sectionIcon('flame')}
     <h2>${storiesHeading}</h2>
     <div class="line"></div>
   </div>
@@ -1532,7 +1652,7 @@ export function buildHTML(content, opts = {}) {
   ${storiesHTML}
 
   <div class="section-header">
-    <span class="emoji">🤯</span>
+    ${sectionIcon('lightbulb')}
     <h2>Did You Know?</h2>
     <div class="line"></div>
   </div>
@@ -1556,7 +1676,7 @@ export function buildHTML(content, opts = {}) {
        section, header included. -->
   <div id="mystery-mover-section" hidden>
     <div class="section-header">
-      <span class="emoji">🕵️</span>
+      ${sectionIcon('search')}
       <h2>Mystery Mover</h2>
       <div class="line"></div>
     </div>
@@ -1564,7 +1684,7 @@ export function buildHTML(content, opts = {}) {
   </div>
 
   <div class="section-header">
-    <span class="emoji">📖</span>
+    ${sectionIcon('book')}
     <h2>Word of the Day</h2>
     <div class="line"></div>
   </div>
@@ -1669,18 +1789,6 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
 </script>
 
 <script>
-  // ---- Twinkling starfield ----
-  const starsEl = document.getElementById('stars');
-  for (let i = 0; i < 80; i++) {
-    const star = document.createElement('div');
-    star.className = 'star';
-    star.style.left = Math.random() * 100 + '%';
-    star.style.top = Math.random() * 100 + '%';
-    star.style.animationDelay = Math.random() * 3 + 's';
-    star.style.width = star.style.height = (Math.random() * 2 + 1) + 'px';
-    starsEl.appendChild(star);
-  }
-
   // ---- Word of Day tap-to-reveal — fires word-learned event ----
   function revealWord() {
     document.getElementById('word-card').classList.add('word-revealed');

@@ -12,7 +12,7 @@
 // Layout mirrors the spec (Part 7A): profile header, How MC Works explainer,
 // rank ladder, badge collection grid, personal records, Emergency Fund.
 //
-// Design system matches the digest — Fredoka headings, Space Mono numerics,
+// Design system matches the digest — Fredoka headings, Lexend body, Space Grotesk numerics,
 // dark navy background, gold/purple/blue accent gradients. Styles inline so
 // the page renders coherently even before /engagement.css loads.
 
@@ -42,25 +42,32 @@ export function buildProgressHTML(state, opts = {}) {
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>${escapeHTML(kidName)}'s Progress — Market Juice</title>
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lexend:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <style>
   * { margin: 0; padding: 0; box-sizing: border-box; }
+  /* Phase 19 — Morning Juice light theme (mirrors the digest token swap). */
   :root {
-    --bg: #0d1117; --card: #161b22; --card-border: #21262d;
-    --green: #3fb950; --red: #f85149; --blue: #58a6ff;
-    --purple: #bc8cff; --yellow: #f0c040; --orange: #f0883e;
-    --text: #c9d1d9; --text-bright: #f0f6fc; --text-dim: #8b949e;
+    --bg: #FFF8EF; --surface: #FFFFFF; --surface-border: #F0E4D3;
+    --ink: #2B2118; --ink-soft: #5E5349;
+    --citrus: #FF7A1A; --citrus-text: #B0500B; --sun: #FFC233; --sun-text: #8A5E12; --up: #1E9E5A; --down: #E5484D; --berry: #5B4FC7;
+    --card: var(--surface); --card-border: var(--surface-border);
+    --green: #0E7A3E; --red: #C92A2F; --blue: var(--berry);
+    --purple: var(--berry); --yellow: var(--sun); --orange: var(--citrus);
+    --text: var(--ink); --text-bright: var(--ink); --text-dim: var(--ink-soft);
   }
   body {
     background:
-      radial-gradient(ellipse at 20% 0%, rgba(188,140,255,0.10), transparent 50%),
-      radial-gradient(ellipse at 80% 100%, rgba(88,166,255,0.10), transparent 55%),
+      radial-gradient(ellipse at 20% 0%, rgba(91,79,199,0.06), transparent 50%),
+      radial-gradient(ellipse at 80% 100%, rgba(255,122,26,0.06), transparent 55%),
       var(--bg);
     color: var(--text);
-    font-family: 'Fredoka', sans-serif;
+    font-family: 'Lexend', sans-serif;
     min-height: 100vh;
     padding: 28px 16px 60px;
   }
+  h1, h2, h3 { font-family: 'Fredoka', sans-serif; }
   .container { max-width: 720px; margin: 0 auto; }
 
   /* ---- Header ---- */
@@ -74,7 +81,7 @@ export function buildProgressHTML(state, opts = {}) {
     font-size: 13px;
     text-decoration: none;
     margin-bottom: 16px;
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
   }
   .pg-back:hover { color: var(--text-bright); }
   .pg-title {
@@ -84,13 +91,13 @@ export function buildProgressHTML(state, opts = {}) {
   }
   .pg-subtitle {
     font-size: 13px; color: var(--text-dim);
-    font-family: 'Space Mono', monospace; letter-spacing: 1px;
+    font-family: 'Space Grotesk', sans-serif; letter-spacing: 1px;
     text-transform: uppercase;
   }
 
   /* ---- Profile card ---- */
   .pg-profile {
-    background: linear-gradient(135deg, rgba(188,140,255,0.12), rgba(88,166,255,0.08));
+    background: linear-gradient(135deg, rgba(91,79,199,0.12), rgba(91,79,199,0.08));
     border: 1px solid var(--card-border);
     border-radius: 18px;
     padding: 22px 22px 18px;
@@ -107,15 +114,15 @@ export function buildProgressHTML(state, opts = {}) {
     line-height: 1.1;
   }
   .pg-rank-mc {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 13px; color: var(--text-dim);
     margin-top: 4px;
   }
-  .pg-rank-mc .pg-coins { color: var(--yellow); font-weight: 700; }
-  .pg-rank-mc .pg-streak { color: var(--orange); font-weight: 700; }
+  .pg-rank-mc .pg-coins { color: var(--sun-text); font-weight: 700; }
+  .pg-rank-mc .pg-streak { color: var(--citrus-text); font-weight: 700; }
   .pg-progress-track {
     height: 10px;
-    background: rgba(255,255,255,0.06);
+    background: rgba(43,33,24,0.06);
     border-radius: 5px;
     overflow: hidden;
   }
@@ -126,7 +133,7 @@ export function buildProgressHTML(state, opts = {}) {
     transition: width 0.6s cubic-bezier(.34,1.2,.64,1);
   }
   .pg-progress-label {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 12px; color: var(--text-dim);
     margin-top: 8px;
     text-align: center;
@@ -157,7 +164,7 @@ export function buildProgressHTML(state, opts = {}) {
   .pg-how-list {
     list-style: none;
     margin: 12px 0;
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 13px;
   }
   .pg-how-list li {
@@ -167,9 +174,9 @@ export function buildProgressHTML(state, opts = {}) {
   }
   .pg-how-list li:last-child { border-bottom: none; }
   .pg-how-list .pg-how-label { flex: 1; color: var(--text); }
-  .pg-how-list .pg-how-value { color: var(--yellow); font-weight: 700; white-space: nowrap; }
+  .pg-how-list .pg-how-value { color: var(--sun-text); font-weight: 700; white-space: nowrap; }
   .pg-how-eyebrow {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 10px; letter-spacing: 1.5px;
     color: var(--purple); font-weight: 700;
     margin-bottom: 6px;
@@ -187,8 +194,8 @@ export function buildProgressHTML(state, opts = {}) {
   .pg-rung {
     display: flex; align-items: center; gap: 12px;
     padding: 10px 18px;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    font-family: 'Space Mono', monospace;
+    border-bottom: 1px solid rgba(43,33,24,0.04);
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 13px;
     transition: background 0.2s;
   }
@@ -204,10 +211,10 @@ export function buildProgressHTML(state, opts = {}) {
   .pg-rung-locked .pg-rung-status { color: var(--text-dim); opacity: 0.55; }
 
   .pg-rung-current {
-    background: linear-gradient(90deg, rgba(240,192,64,0.15), transparent 70%);
+    background: linear-gradient(90deg, rgba(255,194,51,0.15), transparent 70%);
   }
-  .pg-rung-current .pg-rung-name { color: var(--yellow); font-weight: 700; }
-  .pg-rung-current .pg-rung-status { color: var(--yellow); }
+  .pg-rung-current .pg-rung-name { color: var(--sun-text); font-weight: 700; }
+  .pg-rung-current .pg-rung-status { color: var(--sun-text); }
 
   .pg-rung-completed .pg-rung-name { color: var(--text); }
   .pg-rung-completed .pg-rung-status { color: var(--green); }
@@ -227,8 +234,8 @@ export function buildProgressHTML(state, opts = {}) {
     transition: border-color 0.2s;
   }
   .pg-badge-tile.pg-badge-unlocked {
-    border-color: rgba(188,140,255,0.45);
-    background: linear-gradient(135deg, rgba(188,140,255,0.08), var(--card) 80%);
+    border-color: rgba(91,79,199,0.45);
+    background: linear-gradient(135deg, rgba(91,79,199,0.08), var(--card) 80%);
   }
   .pg-badge-tile.pg-badge-locked .pg-badge-icon { opacity: 0.4; filter: grayscale(0.7); }
   .pg-badge-tile.pg-badge-locked .pg-badge-name { color: var(--text-dim); }
@@ -242,14 +249,14 @@ export function buildProgressHTML(state, opts = {}) {
     line-height: 1.2;
   }
   .pg-badge-tier {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; color: var(--text-dim);
     margin-top: 2px;
   }
-  .pg-badge-tier .pg-tier-num { color: var(--yellow); font-weight: 700; }
+  .pg-badge-tier .pg-tier-num { color: var(--sun-text); font-weight: 700; }
   .pg-badge-bar-track {
     height: 6px;
-    background: rgba(255,255,255,0.06);
+    background: rgba(43,33,24,0.06);
     border-radius: 3px;
     overflow: hidden;
   }
@@ -259,7 +266,7 @@ export function buildProgressHTML(state, opts = {}) {
     border-radius: 3px;
   }
   .pg-badge-detail {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; color: var(--text-dim);
   }
   .pg-badge-detail .pg-badge-next { color: var(--text); }
@@ -272,20 +279,20 @@ export function buildProgressHTML(state, opts = {}) {
   }
   .pg-record {
     background: var(--card);
-    border: 1px solid rgba(240,192,64,0.20);
+    border: 1px solid rgba(255,194,51,0.20);
     border-radius: 14px;
     padding: 14px 16px;
   }
   .pg-record-icon { font-size: 22px; }
   .pg-record-name {
     font-size: 13px; color: var(--text-dim);
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     margin: 4px 0 2px;
     text-transform: uppercase;
     letter-spacing: 1px;
   }
   .pg-record-value {
-    font-size: 22px; font-weight: 700; color: var(--yellow);
+    font-size: 22px; font-weight: 700; color: var(--sun-text);
     line-height: 1.1;
   }
   .pg-record-value .pg-record-unit {
@@ -293,7 +300,7 @@ export function buildProgressHTML(state, opts = {}) {
     margin-left: 4px;
   }
   .pg-record-date {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 11px; color: var(--text-dim);
     margin-top: 6px;
   }
@@ -316,15 +323,15 @@ export function buildProgressHTML(state, opts = {}) {
   .pg-shield-locked-msg {
     color: var(--text-dim);
     font-size: 13px;
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     margin-bottom: 12px;
   }
   .pg-shield-count {
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
     font-size: 14px; color: var(--text);
     margin-bottom: 10px;
   }
-  .pg-shield-count strong { color: var(--yellow); }
+  .pg-shield-count strong { color: var(--sun-text); }
   .pg-shield-explain {
     font-size: 13px; color: var(--text-dim); line-height: 1.5;
   }
@@ -334,7 +341,7 @@ export function buildProgressHTML(state, opts = {}) {
     text-align: center;
     margin-top: 36px;
     font-size: 12px; color: var(--text-dim);
-    font-family: 'Space Mono', monospace;
+    font-family: 'Space Grotesk', sans-serif;
   }
   .pg-footer a { color: var(--text-dim); text-decoration: underline; }
   .pg-footer a:hover { color: var(--text-bright); }

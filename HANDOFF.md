@@ -39,7 +39,8 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
 | **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | **Merged + deployed to production** via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; post-deploy verification complete (logged-in MC award, mobile guest play, native share sheet — see the post-deploy addendum). See the Phase 16 session entries. |
 | **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | **Merged + deployed to production** via PR #40. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. Post-deploy spot-check pending: in-browser tap→locked-chip + explainer with a real kid account. See the Phase 17 session entry. |
-| **18** Generation pipeline hardening — two-pass + zod + retry ladder + sensitive-news rule | ✅ | On `dev` awaiting next PR. 49-assertion smoke test + full-suite regression green; live two-pass generation verified for ALL THREE editions (repair retry and mystery reserve fallback both fired and recovered live). See the Phase 18 session entry. |
+| **18** Generation pipeline hardening — two-pass + zod + retry ladder + sensitive-news rule | ✅ | **Merged + live in production** via PR #41 — running on the two-pass pipeline, all editions verified live. 49-assertion smoke test + full-suite regression green; repair retry and mystery reserve fallback both fired and recovered during verification. See the Phase 18 session entry. |
+| **19** "Morning Juice" visual redesign — cream light theme | ✅ | On `dev` awaiting next PR. 33-assertion theme smoke test + full-suite regression green; WCAG AA verified LIVE with the inspector on every surface (all text ≥4.5:1); before/after screenshots of all 5 header states + 7 surfaces. See the Phase 19 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1796,3 +1797,98 @@ are rare and search-free.
 - Eyeball the first week of production two-pass digests for prose depth.
 - The ✅ ping is quiet on first-try success (notes the attempt only when
   >1) — flag if you want it explicit every morning.
+
+---
+
+## Session: Phase 19 — "Morning Juice" visual redesign
+
+Dark navy starfield → warm-cream light theme. The redesign that's judged by
+eye; the dominant work was a careful dark→light token migration + a live
+WCAG pass.
+
+**Token strategy (approved): alias, don't rename.** The spec introduces new
+token names (`--surface`/`--ink`/`--citrus`/`--sun`/`--up`/`--down`/`--berry`
++ four `--vibe-*`); the codebase wires through OLD names
+(`--card`/`--text`/`--green`/`--orange`/`--yellow`/`--purple`/`--blue`). I
+made the new palette canonical in `:root` and ALIASED the old names onto it
+(`--card: var(--surface)`, `--green: var(--up-text)`, …). Result: every
+component — including `engagement.css` and `games/styles.css`, which inherit
+the page `:root` — re-skinned with zero `var()` churn. CSS custom-property
+references resolve lazily, so the **dark theme is preserved verbatim under
+`[data-theme="dark"]`** by redeclaring only the canonical tokens; the aliases
+resolve through them. Phase 23's "Night Mode" is now a one-attribute flip.
+
+**WCAG — the hard requirement, done live with the inspector on real pages
+(not estimated).** Measured contrast on rendered elements across the digest
+and /progress. Findings + fixes:
+- Secondary text (`--ink-soft`): I pre-darkened the spec's #6E6258 → **#5E5349**;
+  measured **7.09–7.47:1** — clears AA comfortably (the spec value was the
+  ~4.6:1 borderline I'd flagged).
+- Body `--ink` #2B2118: 15.75:1. Berry: 6.2:1. All fine.
+- **Bright brand accents FAIL as text on cream** — measured: green gains
+  3.45:1, red losses 3.91:1, green header pill 3.01:1, sun/gold MC text
+  **1.5:1**, citrus 2.47:1. Fix: added darker **`-text` variants**
+  (`--up-text #0E7A3E`, `--down-text #C92A2F`, `--sun-text #8A5E12`,
+  `--citrus-text #B0500B`); `--green`/`--red` alias to the text variants;
+  fills/washes keep the bright `--up`/`--down`/`--sun`/`--citrus`. Section
+  SVG icons use `--citrus-text` (≥3:1 graphical bar). The brand wordmark
+  keeps bright citrus (logo exemption).
+- **Re-measured live after the fix:** green 5.42, red 5.45, green pill 4.74,
+  sun MC 5.4–5.69, citrus 4.98–5.25, icons 4.98 — **every text/graphic
+  element ≥4.5:1** (icons ≥3:1). Dark variants are bright again under
+  `[data-theme="dark"]`.
+
+**Files**
+- `src/template.js` — `:root` light palette + aliases + `[data-theme="dark"]`
+  block; body → Lexend, headings → Fredoka, numerals → Space Grotesk;
+  `sectionIcon()` (exported, inline Lucide/Tabler SVG) replacing the 9
+  section-nav emoji; `headerVibe`/`headerPill` resolver + `.header--*` washes;
+  wordmark gradient → citrus/berry/sun; starfield CSS+div+JS removed; every
+  literal old-palette rgba retinted to the new hues; white-on-dark overlays →
+  ink; fonts `<link>` (Fredoka/Lexend/Space Grotesk + preconnect + `display=swap`);
+  theme-color → cream.
+- `src/progress-template.js`, `public/auth.css`, `public/landing.css` — same
+  light `:root` + alias swap, font swap, accent-text fix, brand recolor.
+- `public/engagement.css` — install-banner LIGHT restyle; profile-bar `.ip-*`
+  accents → `-text` variants; literals retinted. The celebration popups
+  (toasts, rank-up modal) are **deliberately kept DARK** (they pop against the
+  cream page, like iOS notifications) — flagged.
+- `public/landing.html` + `login/forgot-password/reset-password.html` — font
+  links + cream theme-color; landing starfield div+JS removed.
+- `public/sw.js` — **v6 → v7** (engagement.css is a precached shell asset; the
+  bump is what stops installed PWAs serving the old dark engagement.css);
+  offline-shell colors → cream.
+- `scripts/test-theme.js` (new, 33 assertions).
+
+**Deviations / decisions (codebase-is-truth + approved calls):**
+1. **Alias, not rename** tokens (approved) — contained, engagement/games CSS untouched.
+2. **Kept the Google Fonts CDN** (approved) with `display=swap` — verified the swap survives into the link (no invisible-text flash); offline-cold falls back to system fonts (SW doesn't cache cross-origin — unchanged).
+3. **Wordmark recolored** citrus/berry/sun (approved).
+4. **14-day banner dismissal kept** (approved; spec said 7 — 14 over-satisfies).
+5. **The "Got it" button (19e) was ALREADY styled** (engagement.css, added after the ROADMAP was written) — spec's "unstyled native button" is stale; verified it re-skins via tokens. No work needed.
+6. **Install-banner anchoring/dismissal already done in Phase 15** — 19e reduced to a light restyle.
+7. **WCAG `-text` accent variants** — beyond the spec, required by the live audit + the user's hard "darken until it passes" rule. The bright spec hues are kept for fills/washes.
+8. **Celebration popups kept dark** by design (not in the redesign's digest-theme scope).
+
+**Verified**
+- `scripts/test-theme.js` → 33/33 (vibe header ×5 states, SVG icons not emoji,
+  starfield gone, fonts + display=swap + preconnect, `[data-theme="dark"]`
+  preserved, cream theme-color, no stray dark hex in any light `:root`,
+  old-row re-render).
+- Full 11-script suite green.
+- **WCAG live**: inspector contrast on real rendered /digest + /progress —
+  all text ≥4.5:1, icons ≥3:1 (numbers above).
+- **Before/after screenshots**: all 5 header states (standard green/red/mixed,
+  weekly-wrap, week-ahead), /sample, /progress, /login, landing — captured
+  AFTER (light) and BEFORE (dark, via a temp `git stash` + preview restart,
+  popped cleanly). Old DB rows re-render in the new theme by construction
+  (pure template; vibe from existing marketVibe/editionType).
+- `node --check` clean on both templates.
+
+**Open / future:**
+- Phase 23 "Night Mode" unlock: flip `data-theme="dark"` on `<html>`/`<body>`
+  — the preserved dark block does the rest.
+- Out-of-scope utility pages still dark: `games-preview.html` (dev harness),
+  `parent-delete-data.html` (its starfield div is now an inert no-op).
+- Glossary `.tip` tooltip + the celebration popups stay dark by design — a
+  future pass could light-theme them if desired.
