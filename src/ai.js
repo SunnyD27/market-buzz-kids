@@ -1,5 +1,7 @@
 import Anthropic from '@anthropic-ai/sdk';
 import { knownTermList, isKnownTerm } from './glossary.js';
+import { validateDigest } from './digest-schema.js';
+import { finalizeMysteryMover } from './mystery.js';
 
 // Lazy client init. Constructing at module load runs before dotenv
 // finishes overriding stale env (real gotcha on macOS where launchd can
@@ -61,6 +63,12 @@ const PROFANITY_RULE = `LANGUAGE RULES (NON-NEGOTIABLE):
 - This is a product for kids 10-14. NEVER use mild profanity or coarse language. That includes "hell" (no "production hell," no "what the hell," no "hell of a"), "damn," "crap," "sucks," "screwed," "pissed," or any stronger word. Use kid-friendly alternatives: "rough patch," "tough stretch," "an incredible," "really," "junk," "is bad," "in trouble," "frustrated."
 - No slang for body parts, no innuendo, no insults aimed at people or groups.
 - If you're tempted to use a stronger word for emphasis, rewrite the sentence instead.`;
+
+// Phase 18d — the missing safety rule, injected alongside PROFANITY_RULE in
+// all three edition builders AND the pass-1 research prompt (research
+// summaries feed the writer — the rule must hold upstream too).
+const SENSITIVE_NEWS_RULE = `SENSITIVE NEWS RULES (NON-NEGOTIABLE):
+When covering war, conflict, violence, disasters, deaths, or mass layoffs: state facts without graphic detail; never dwell on casualties or suffering; frame through the economic lens; acknowledge seriousness without alarm ("this is a serious situation that markets are watching"); never speculate about worst cases; end such sections on what's known, not what's feared.`;
 
 // The 11 core investing principles every piece of generated content should
 // reinforce. Surfaced to the model so every "Why It Matters", quiz
@@ -302,7 +310,7 @@ Write each of those fields as 2-3 short paragraphs separated by a blank line (a 
 This is for readability only. Keep the EXACT same depth, detail, and total length — do NOT shorten, summarize, or drop anything; you are only inserting paragraph breaks between ideas. Same reading level and voice.
 Example of one field's value: "Oracle just had a monster day. Its cloud business is growing faster than almost anyone expected, and big customers keep signing up.\\n\\nBut here's the twist — the stock actually fell. Investors got nervous that all the money Oracle is spending to build AI data centers will eat into profits for a while."`;
 
-function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = [], mysteryCompany = null) {
+function buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests = [], mysteryCompany = null, researchBrief = '') {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — pick the most kid-recognizable name from the broader movers list instead and flag that fact in the vibe.';
@@ -311,17 +319,21 @@ function buildStandardPrompt(marketData, news, movers, topMover, recentWords, re
 
 ${PROFANITY_RULE}
 
+${SENSITIVE_NEWS_RULE}
+
 CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
 
 ${INVESTING_PRINCIPLES}
 
 ${PRINCIPLE_APPLICATION_GUIDE}
 
-STEP 1: Before writing anything, use web_search to search for today's top stock market and business news headlines. Search for:
-- 'stock market news today'
-- 'biggest business news today'
-- any major earnings, IPOs, or economic events happening today
-Use what you find PLUS the raw data below to write the digest. The web search results should be your PRIMARY source for story selection — the raw FMP data below is mainly for the market scoreboard numbers and Today's Mover.
+YOUR RESEARCH BRIEF — gathered minutes ago by a dedicated research pass with live web search. This is your PRIMARY source for story selection — the raw FMP data below is mainly for the market scoreboard numbers and Today's Mover. You have NO web access in this step.
+
+<research_brief>
+${researchBrief}
+</research_brief>
+
+HARD RULE — USE ONLY FIGURES PRESENT IN THE RESEARCH BRIEF OR THE RAW DATA BELOW. Never invent, estimate, or recall a statistic from memory. If a number or fact you want is not in the brief or the raw data, choose different material instead.
 
 VOICE & TONE RULES:
 - Write like a cool older sibling explaining the markets — casual, fun, never boring.
@@ -435,7 +447,7 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
       "price": "$XX.XX",
       "change": "+X.XX%",
       "direction": "up/down",
-      "vibe": "One concrete sentence connecting today's move to a real business reason (use web search to find the cause). End with a tiny nod to one of the 11 principles."
+      "vibe": "One concrete sentence connecting today's move to a real business reason (from the research brief). End with a tiny nod to one of the 11 principles."
     }
   },
   "stories": [
@@ -492,7 +504,7 @@ RULES ON OUTPUT:
 - "stories" array length: 3 by default. Only drop to 2 if the news genuinely doesn't support a third. Never 1, never 4+.
 - "glossaryNominations": up to 5 financial terms that appear in today's content but are NOT already in the glossary list above (empty array [] if none). See GLOSSARY NOMINATION RULES.
 - "principle" fields are integers 1-11 matching the numbered list at the top of this prompt.
-- Stories should be from the provided news + web search — don't invent them.
+- Stories should be from the provided news + the research brief — don't invent them.
 - Do NOT include any citation tags, <cite> tags, or source references in your output. Write everything in your own words as clean plain text. The output must be valid JSON with no HTML tags inside the string values.`;
 }
 
@@ -505,10 +517,10 @@ RULES ON OUTPUT:
  * public/games/sunday-challenge.js — it reads `sundayChallenge.type` and
  * dispatches to the right sub-renderer.
  */
-function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null) {
+function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '') {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
-    : 'null  // no curated mover available — use web_search to identify the week\'s biggest mover from a kid-recognizable name.';
+    : 'null  // no curated mover available — identify the week\'s biggest mover from a kid-recognizable name using the research brief.';
 
   // ── Sunday Challenge rotation ────────────────────────────────────────
   // 4-week cycle. We derive the week number from edition.dateStr (NOT
@@ -603,17 +615,21 @@ function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, e
 
 ${PROFANITY_RULE}
 
+${SENSITIVE_NEWS_RULE}
+
 CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles. Use them as the lens for every "Why It Matters" box, every quiz explanation, every Did You Know fact, every Word of the Day analogy:
 
 ${INVESTING_PRINCIPLES}
 
 ${PRINCIPLE_APPLICATION_GUIDE}
 
-STEP 1: Before writing anything, use web_search to RECAP THE WEEK. Search for:
-- 'stock market weekly recap'
-- 'biggest stock market movers this week'
-- 'biggest business news this week'
-The web search results should be your PRIMARY source. The raw FMP data below shows Friday's close, but you are recapping the FULL WEEK arc.
+YOUR RESEARCH BRIEF — gathered minutes ago by a dedicated research pass with live web search. This is your PRIMARY source for recapping the FULL WEEK arc — the raw FMP data below shows Friday's close only. You have NO web access in this step.
+
+<research_brief>
+${researchBrief}
+</research_brief>
+
+HARD RULE — USE ONLY FIGURES PRESENT IN THE RESEARCH BRIEF OR THE RAW DATA BELOW. Never invent, estimate, or recall a statistic from memory. If a number or fact you want is not in the brief or the raw data, choose different material instead.
 
 VOICE & TONE RULES:
 - Write like a cool older sibling explaining the markets — casual, fun, never boring.
@@ -636,7 +652,7 @@ WEEKLY WRAP STORY RULES (CRITICAL — different from a daily digest):
 ${storyDedupBlock(recentDigests)}
 
 TODAY'S MOVER (weekly edition):
-- Identify the WEEK'S BIGGEST mover from the curated kid-recognizable list using web search. The FMP data below shows Friday's single-day winner — that MAY or may not match the week's biggest mover. Use the week's winner.
+- Identify the WEEK'S BIGGEST mover from the curated kid-recognizable list using the research brief. The FMP data below shows Friday's single-day winner — that MAY or may not match the week's biggest mover. Use the week's winner.
 - Write a one-liner connecting the WEEK'S move to WHY it happened. End with a tiny nod to one of the 11 principles.
 - "change" should describe weekly change ("+8.4% on the week"), not Friday's single-day change.
 
@@ -809,7 +825,7 @@ INVEST-A-THON CONTENT RULES:
    f) PSYCHOLOGY & BEHAVIOR: "What percentage of day traders lose money?" / "What's the #1 reason people sell stocks?"
    g) REAL-WORLD CONNECTIONS: "How many iPhones does Apple sell per MINUTE?" / "If you bought one share of Disney at its IPO, how many shares would you have today?"
    h) MONEY SCALE: "How long would it take to count to one billion if you counted one number per second?"
-3. VERIFY ALL FACTS. Use web search if needed. Do NOT fabricate statistics. If you're unsure of a number, search for it.
+3. USE ONLY FACTS PRESENT IN THE RESEARCH BRIEF. Do NOT fabricate statistics. If the brief lacks a number you need, build the challenge from material the brief DOES support.
 4. Do NOT ask the same type of question twice in a row. Alternate between categories.
 5. Do NOT include questions whose answers can be deduced purely from the question wording (e.g., "True or false: compound interest earns interest on interest" — the answer is in the name).
 6. Include at least 2 questions that connect to things kids already know: Roblox, YouTube, Nike, McDonald's, Disney, Fortnite, iPhone, TikTok, Minecraft.
@@ -886,7 +902,7 @@ DILEMMA CONTENT RULES:
 UNIVERSAL SUNDAY CHALLENGE RULES (apply to ALL game types):
 - Generate ONLY the game type specified for this week: "${sundayChallengeType}"
 - NEVER generate content that reveals well-known outcomes where the answer is obvious in hindsight
-- Use web_search to verify any historical stock prices, company facts, or financial statistics you're unsure about
+- Use only historical prices, company facts, and statistics present in the research brief — if it isn't there, pick different material
 - Every round/question must tie to one of the 11 investing principles
 - Spread principle coverage — don't assign the same principle to every round
 - Content must be appropriate for ages 10-14: no references to alcohol, drugs, gambling, adult themes
@@ -899,7 +915,7 @@ PREVIOUS TRADING DAY: ${edition.previousTradingDay} (${edition.previousTradingDa
 RAW MARKET DATA (Friday's close — use for scoreboard prices; the recap is the WEEK):
 ${JSON.stringify(marketData, null, 2)}
 
-TODAY'S FMP MOVER (Friday's curated winner — MAY differ from the week's biggest mover; use web search to confirm):
+TODAY'S FMP MOVER (Friday's curated winner — MAY differ from the week's biggest mover; check the research brief):
 ${topMoverBlock}
 
 ${PARAGRAPH_RULE}
@@ -1013,7 +1029,7 @@ RULES ON OUTPUT:
  * Forward-looking preview instead of a recap; stories highlight upcoming
  * earnings/events; word-of-day picks a forward-looking term.
  */
-function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null) {
+function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '') {
   // NOTE: `topMover` (Friday's biggest curated mover) is intentionally NOT
   // surfaced in this prompt — a forward-looking preview has no "today's
   // mover," and Friday's % move wearing a "today" label is the bug we're
@@ -1030,17 +1046,21 @@ function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, e
 
 ${PROFANITY_RULE}
 
+${SENSITIVE_NEWS_RULE}
+
 CORE PHILOSOPHY: Every piece of content you generate must reinforce at least one of these 11 core investing principles:
 
 ${INVESTING_PRINCIPLES}
 
 ${PRINCIPLE_APPLICATION_GUIDE}
 
-STEP 1: Before writing anything, use web_search to PREVIEW THE WEEK AHEAD. Search for:
-- 'stock market week ahead preview'
-- 'earnings reports this week'
-- 'economic calendar this week'
-The web search results are your PRIMARY source — the raw FMP data below is ${prevDayName}'s close, included for the scoreboard only.
+YOUR RESEARCH BRIEF — gathered minutes ago by a dedicated research pass with live web search. This is your PRIMARY source for previewing the week ahead — the raw FMP data below is ${prevDayName}'s close, included for the scoreboard only. You have NO web access in this step.
+
+<research_brief>
+${researchBrief}
+</research_brief>
+
+HARD RULE — USE ONLY FIGURES PRESENT IN THE RESEARCH BRIEF OR THE RAW DATA BELOW. Never invent, estimate, or recall a statistic from memory. If a number or fact you want is not in the brief or the raw data, choose different material instead.
 
 VOICE & TONE RULES:
 - Write like a cool older sibling explaining the markets — casual, fun, never boring.
@@ -1259,78 +1279,257 @@ export async function generateContent(marketData, news, movers, topMover, opts =
     tradingDayLabel = 'Friday';
   }
 
-  // Pick the right prompt for today's edition.
-  let prompt;
-  switch (edition.editionType) {
-    case 'weekly-wrap':
-      prompt = buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany);
-      break;
-    case 'week-ahead':
-      prompt = buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany);
-      break;
-    default:
-      prompt = buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests, mysteryCompany);
+  // ── Phase 18a — TWO-PASS GENERATION ─────────────────────────────────
+  // The three historical morning failures (max_tokens truncation,
+  // stale-disk teaser, trailing prose after JSON) shared one root cause: a
+  // single API call doing research + writing + strict serialization at
+  // once. Split:
+  //   PASS 1 (research) — web_search, FREE-TEXT brief. No JSON requested →
+  //     cannot parse-fail. Sanity-gated (assertBriefUsable): an empty or
+  //     hollow brief is a pass-1 FAILURE that feeds the cron retry ladder —
+  //     never handed to pass 2, where it would yield a structurally-valid
+  //     but substantively-empty digest zod can't catch.
+  //   PASS 2 (write) — NO web search. Brief + FMP data + edition rules in;
+  //     digest out via a FORCED emit_digest tool call: the API returns
+  //     structured input — no fences, no trailing prose, no stray braces.
+  //     Cheap (search-free) → the validation repair retry re-runs ONLY
+  //     this pass.
+  // opts._test = { research, write } are injectable test seams (offline
+  // smoke tests drive the repair loop without API calls).
+  const research = opts._test?.research || runResearchPass;
+  const write = opts._test?.write || runWritePass;
+
+  console.log(`[AI] Pass 1/2: research (${edition.editionType}, reason=${edition.reason})…`);
+  const brief = await research({
+    editionType: edition.editionType, dateStr, marketData, news, movers,
+    topMover, mysteryCompany, prevDayName: edition.previousTradingDayName,
+  });
+  assertBriefUsable(brief);
+  console.log(`[AI]   research brief: ${brief.length} chars`);
+
+  // Prompt builder closure — re-invoked unchanged for the repair retry.
+  const buildPrompt = () => {
+    switch (edition.editionType) {
+      case 'weekly-wrap':
+        return buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief);
+      case 'week-ahead':
+        return buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief);
+      default:
+        return buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests, mysteryCompany, brief);
+    }
+  };
+
+  // Post-processing shared by the first attempt AND the repair retry:
+  // cite-strip (defensive — pass 2 has no search, but cheap), profanity
+  // scrub, glossary-nomination filter, then the Phase 16 mystery
+  // finalize (name-leak gate + reserve fallback) so zod always validates
+  // the FINALIZED puzzle — a leaky puzzle is repaired by the cheap
+  // deterministic fallback, never by burning the repair retry.
+  const today = edition.dateStr || new Date().toISOString().slice(0, 10);
+  const recentMystery = Array.isArray(opts.recentMystery) ? opts.recentMystery : [];
+  const postProcess = (raw) => {
+    const content = scrubProfanity(stripCiteTagsDeep(raw));
+    content.glossaryNominations = filterGlossaryNominations(content.glossaryNominations);
+    if (content.glossaryNominations.length) {
+      console.log(`[AI] glossaryNominations after filter: ${content.glossaryNominations.map(n => n.term).join(', ')}`);
+    }
+    if (mysteryCompany) {
+      const { puzzle, usedFallback, errors } = finalizeMysteryMover(content.mysteryMover, mysteryCompany, today, recentMystery);
+      if (usedFallback) {
+        console.warn(`[AI]   ⚠ Mystery Mover validation failed (${errors.join(' | ')}) — using reserve puzzle ${puzzle.name} (${puzzle.ticker})`);
+      } else {
+        console.log(`[AI]   Mystery Mover clues validated clean (${puzzle.ticker})`);
+      }
+      content.mysteryMover = puzzle;
+    }
+    return content;
+  };
+
+  console.log('[AI] Pass 2/2: write (forced emit_digest tool call, no web search)…');
+  const prompt = buildPrompt();
+  let content = postProcess(await write(prompt));
+
+  // ── Phase 18b — zod validation + ONE repair retry ────────────────────
+  let check = validateDigest(content, edition);
+  if (!check.ok) {
+    console.warn(`[AI] digest failed validation (${check.errors.length} issue(s)) — repair retry:\n  - ${check.errors.join('\n  - ')}`);
+    const repairPrompt = `${prompt}
+
+IMPORTANT — REPAIR PASS. Your previous emit_digest output failed these validation checks:
+${check.errors.map(e => `- ${e}`).join('\n')}
+
+Produce the COMPLETE digest again with every listed problem fixed. Change only what the checks require — keep everything else at the same quality and depth.`;
+    content = postProcess(await write(repairPrompt));
+    check = validateDigest(content, edition);
+    if (!check.ok) {
+      const err = new Error(`Digest failed validation after the repair retry: ${check.errors.join(' | ')}`);
+      err.validationErrors = check.errors;
+      throw err; // → cron retry ladder → Telegram ❌ with the error list
+    }
+    console.log('[AI]   repair retry passed validation.');
+  }
+  return content;
+}
+
+// ── Phase 18a internals ──────────────────────────────────────────────────
+
+/**
+ * Pass-1 sanity gate. A research call that "succeeds" but returns nothing
+ * usable must count as a FAILURE (feeding the 7:00/7:10/7:25 retry
+ * ladder) — never reach pass 2. Exported for the smoke test.
+ */
+export const MIN_BRIEF_CHARS = 500;
+export function assertBriefUsable(brief) {
+  const len = typeof brief === 'string' ? brief.trim().length : 0;
+  if (len < MIN_BRIEF_CHARS) {
+    throw new Error(`Research brief unusable (${len} chars < ${MIN_BRIEF_CHARS}) — pass-1 failure, not handing a hollow brief to the writer.`);
+  }
+  return true;
+}
+
+/** Recursively strip web-search citation tags from every string value. */
+function stripCiteTagsDeep(v) {
+  if (typeof v === 'string') {
+    return v.replace(/<\/?cite[^>]*>/g, '').replace(/<\/?antml:cite[^>]*>/g, '');
+  }
+  if (Array.isArray(v)) return v.map(stripCiteTagsDeep);
+  if (v && typeof v === 'object') {
+    const out = {};
+    for (const [k, val] of Object.entries(v)) out[k] = stripCiteTagsDeep(val);
+    return out;
+  }
+  return v;
+}
+
+/** Edition-forked research goals for pass 1. */
+function buildResearchPrompt({ editionType, dateStr, news, topMover, mysteryCompany, prevDayName }) {
+  const newsList = Array.isArray(news) && news.length
+    ? `\nRAW HEADLINES FROM OUR FEED (starting points — verify and expand with web_search):\n${news.slice(0, 12).map(n => `- ${n.title || n}`).join('\n')}\n`
+    : '';
+  const moverLine = topMover
+    ? `\n2. TODAY'S MOVER CONTEXT: the likely business reason ${topMover.displayName || topMover.ticker} (${topMover.ticker}) moved ${topMover.changesPercentage?.toFixed ? topMover.changesPercentage.toFixed(2) + '%' : ''} — search for the cause; say so plainly if it's unclear.`
+    : '';
+  const mysteryBlock = mysteryCompany
+    ? `\nMYSTERY COMPANY FACTS (for a guess-the-company puzzle): gather about ${mysteryCompany.name} (${mysteryCompany.ticker}): founding decade, headquarters region, their famous products DESCRIBED WITHOUT brand or product names, and 2-3 surprising kid-friendly facts. With sources.`
+    : '';
+
+  const goals = {
+    'standard': `1. TOP BUSINESS STORIES (5-8): for each — what happened, the key figures WITH THEIR SOURCE ("raised $75B — from Reuters"), and a one-line note on why a 10-14 year-old might care. Prioritize: major earnings from huge companies (Nvidia, Apple, Google, Amazon, Tesla); IPOs, mergers, big product launches; macro events (Fed, oil, inflation, jobs); cool tech/business stories kids find interesting.${moverLine}`,
+    'weekly-wrap': `1. THE WEEK'S ARC: how markets did overall this week and what drove it, with figures + sources.
+2. WEEK-DEFINING THEMES (3-5): the biggest stories of the past 5 trading days — what happened, key figures WITH SOURCES, kid-relevance notes.
+3. WEEK'S BIGGEST MOVER: which kid-recognizable household-name company moved most THIS WEEK (weekly % change + the reason), with source.
+4. GAME RAW MATERIAL: 4-6 surprising, VERIFIABLE company stories or historical market facts with real numbers + sources — suitable for a kid trivia/decision game. No fabrication.`,
+    'week-ahead': `1. SCHEDULED CATALYSTS: earnings reports due this coming week (company + specific day), economic calendar events (what + which day), with sources.
+2. ONE-TO-WATCH CANDIDATES: kid-recognizable household-name companies with a SPECIFIC, SCHEDULED, NAMEABLE catalyst this week. If nothing genuinely qualifies, say "no strong candidate this week" — do NOT manufacture one.
+3. CARRY-OVER CONTEXT: 1-2 ongoing stories kids will hear about this week, with figures + sources. (The raw FMP data the writer gets is ${prevDayName || 'Friday'}'s close.)`,
+  };
+
+  return `You are the RESEARCH ASSISTANT for "Market Juice," a daily stock market digest for kids ages 10-14. Today is ${dateStr}. A separate writer (with NO web access) will turn your brief into the digest — your brief is everything they get, so be concrete and complete.
+
+Use web_search and gather the following:
+
+${goals[editionType] || goals['standard']}
+${mysteryBlock}
+${newsList}
+${SENSITIVE_NEWS_RULE}
+
+OUTPUT RULES (CRITICAL):
+- Plain text organized under clear section headers. NO JSON, no code fences.
+- CARRY EVERY FIGURE WITH ITS SOURCE — every number, percentage, and dollar amount gets a "— from <source>" attribution. The writer may only use figures present in this brief.
+- Facts only; flag anything uncertain as UNCERTAIN rather than guessing.
+- Aim for 600-1200 words.`;
+}
+
+/** Pass 1: web_search + free text. Cannot parse-fail by construction. */
+async function runResearchPass(args) {
+  // STREAMING (accumulated via finalMessage) — not for incremental output,
+  // but so the connection is never silent: a multi-minute non-streaming
+  // call sits idle while server-side searches run, and idle-connection
+  // killers (routers/VPNs/proxies) surface that as read ETIMEDOUT — which
+  // is exactly how this call died in pre-ship verification. Streaming
+  // keeps bytes flowing; the SDK also recommends it for long requests.
+  const stream = client().messages.stream({
+    model: 'claude-sonnet-4-6',
+    max_tokens: 5000,
+    tools: [{ type: 'web_search_20250305', name: 'web_search' }],
+    messages: [{ role: 'user', content: buildResearchPrompt(args) }],
+  });
+  const response = await stream.finalMessage();
+
+  const searchUses = response.content.filter(b => b.type === 'server_tool_use');
+  if (searchUses.length) {
+    const queries = searchUses.map(b => b.input?.query).filter(Boolean);
+    console.log(`[AI]   research web_search ran — ${searchUses.length} queries: ${JSON.stringify(queries)}`);
+  } else {
+    console.log('[AI]   research web_search did NOT run (no server_tool_use blocks)');
   }
 
-  console.log(`[AI] Building ${edition.editionType} prompt (reason=${edition.reason})`);
+  return response.content
+    .filter(b => b.type === 'text')
+    .map(b => b.text)
+    .join('');
+}
 
-  const response = await client().messages.create({
+// Structural tool schema — deliberately LOOSE (types + required field
+// names only). The strict edition-aware gate is zod (src/digest-schema.js);
+// one tool schema serves all three editions.
+const EMIT_DIGEST_TOOL = {
+  name: 'emit_digest',
+  description: 'Emit the final, complete Market Juice digest as structured data. Call exactly once with the ENTIRE digest.',
+  input_schema: {
+    type: 'object',
+    properties: {
+      date: { type: 'string' },
+      tradingDay: { type: 'string' },
+      editionType: { type: 'string', enum: ['standard', 'weekly-wrap', 'week-ahead'] },
+      editionLabel: { type: 'string' },
+      marketVibe: { type: 'string', enum: ['green', 'red', 'mixed'] },
+      vibeEmoji: { type: 'string' },
+      vibeSummary: { type: 'string' },
+      marketClosed: { type: 'boolean' },
+      bigPicture: { type: 'string' },
+      bigPictureParentExplainer: { type: 'object' },
+      scoreboard: { type: 'object' },
+      oneToWatch: { type: 'object' },
+      stories: { type: 'array', items: { type: 'object' } },
+      didYouKnow: { type: 'object' },
+      quiz: { type: 'object' },
+      wordOfDay: { type: 'object' },
+      sundayChallenge: { type: 'object' },
+      mysteryMover: { type: 'object' },
+      glossaryNominations: { type: 'array', items: { type: 'object' } },
+    },
+    required: ['date', 'marketVibe', 'vibeSummary', 'bigPicture', 'scoreboard', 'stories', 'didYouKnow', 'quiz', 'wordOfDay', 'mysteryMover'],
+    additionalProperties: true,
+  },
+};
+
+/**
+ * Pass 2: NO web search; the digest arrives as the forced tool call's
+ * parsed `input` — no fences, no trailing prose, no stray braces. A
+ * max_tokens stop is an explicit, detectable failure (it feeds the repair
+ * retry / cron ladder) instead of silent JSON corruption.
+ */
+async function runWritePass(prompt) {
+  // Streaming for the same idle-connection reason as runResearchPass.
+  const stream = client().messages.stream({
     model: 'claude-sonnet-4-6',
-    // 16000, not 8000. On heavy-news days the digest JSON (full content +
-    // games + glossary nominations) plus the model's web-search synthesis
-    // ran PAST an 8000-token cap, returning stop_reason:max_tokens with the
-    // JSON truncated mid-field — which threw a JSON parse error and aborted
-    // the whole 7 AM generation (no digest, no email). 2026-06-10 and -11
-    // both died this way. Doubling the ceiling gives comfortable headroom;
-    // a complete digest is well under this.
     max_tokens: 16000,
-    tools: [
-      {
-        type: 'web_search_20250305',
-        name: 'web_search',
-      },
-    ],
+    tools: [EMIT_DIGEST_TOOL],
+    tool_choice: { type: 'tool', name: 'emit_digest' },
     messages: [{ role: 'user', content: prompt }],
   });
+  const response = await stream.finalMessage();
 
-  // Web search is a server-side tool — Anthropic executes the search and
-  // returns search results inline alongside text blocks in the same response,
-  // so no client-side tool_use loop is needed. We log the search activity for
-  // visibility, then pull just the final text content.
-  const searchUses = response.content.filter(b => b.type === 'server_tool_use');
-  const searchResults = response.content.filter(b => b.type === 'web_search_tool_result');
-  if (searchUses.length || searchResults.length) {
-    const queries = searchUses
-      .map(b => b.input?.query)
-      .filter(Boolean);
-    console.log(`[AI] web_search ran — ${searchUses.length} queries, ${searchResults.length} result blocks. Queries: ${JSON.stringify(queries)}`);
-  } else {
-    console.log('[AI] web_search did NOT run (no server_tool_use blocks in response)');
-  }
-  console.log(`[AI] stop_reason: ${response.stop_reason}, content blocks: ${response.content.map(b => b.type).join(', ')}`);
-
-  // Fail LOUD and EARLY on a truncated response. If we ever hit the cap
-  // again, the JSON is incomplete and JSON.parse() would throw a cryptic
-  // "Unexpected non-whitespace character at position N" far downstream.
-  // This turns that into an unambiguous, actionable error in the cron log.
+  console.log(`[AI]   write stop_reason: ${response.stop_reason}, blocks: ${response.content.map(b => b.type).join(', ')}`);
   if (response.stop_reason === 'max_tokens') {
-    throw new Error('AI response hit max_tokens — digest JSON truncated. Raise max_tokens in ai.js.');
+    throw new Error('Write pass hit max_tokens — digest tool call truncated.');
   }
-
-  const text = response.content
-    .filter(block => block.type === 'text')
-    .map(block => block.text)
-    .join('');
-
-  const parsed = parseAndScrubDigestJSON(text);
-  // Server-side gate on the model's nominations: drop anything already known
-  // (incl. seed aliases), malformed, or duplicated; cap at 5. Definitions were
-  // already run through scrubProfanity by parseAndScrubDigestJSON above.
-  parsed.glossaryNominations = filterGlossaryNominations(parsed.glossaryNominations);
-  if (parsed.glossaryNominations.length) {
-    console.log(`[AI] glossaryNominations after filter: ${parsed.glossaryNominations.map(n => n.term).join(', ')}`);
+  const toolUse = response.content.find(b => b.type === 'tool_use' && b.name === 'emit_digest');
+  if (!toolUse || !toolUse.input || typeof toolUse.input !== 'object') {
+    throw new Error(`Write pass returned no emit_digest tool call (blocks: ${response.content.map(b => b.type).join(', ')}).`);
   }
-  return parsed;
+  return toolUse.input;
 }
 
 // ============================================================

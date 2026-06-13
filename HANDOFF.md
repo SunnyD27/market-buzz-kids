@@ -39,6 +39,7 @@ the door for future sponsored content with a 30-day parent notice).
 | **6.3** Push notifications | ✅ | Completed by **Phase 15** (June 2026 roadmap) — see the Phase 15 session entry. Shipped to `main` via PR #38. ⚠️ Inert in prod until the VAPID env vars are set in Railway. |
 | **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | **Merged + deployed to production** via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; post-deploy verification complete (logged-in MC award, mobile guest play, native share sheet — see the post-deploy addendum). See the Phase 16 session entries. |
 | **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | **Merged + deployed to production** via PR #40. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. Post-deploy spot-check pending: in-browser tap→locked-chip + explainer with a real kid account. See the Phase 17 session entry. |
+| **18** Generation pipeline hardening — two-pass + zod + retry ladder + sensitive-news rule | ✅ | On `dev` awaiting next PR. 49-assertion smoke test + full-suite regression green; live two-pass generation verified for ALL THREE editions (repair retry and mystery reserve fallback both fired and recovered live). See the Phase 18 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1667,3 +1668,131 @@ weekly-wrap copy TODO remains.
 - Spot-check the live card with a real kid account post-deploy.
 - The recap email doesn't yet mention the kid's pick/verdict — possible
   small Phase 20 add-on alongside "Your Week in Juice".
+
+---
+
+## Session: Phase 18 — Generation pipeline hardening
+
+Removes the failure CLASS behind the three historical morning outages (one
+call doing research + writing + strict serialization), catches what's left
+with zod, retries what can't be prevented, and adds the missing safety rule.
+
+**(a) Two-pass generation (`src/ai.js`).**
+- Pass 1 — `runResearchPass`: web_search, FREE-TEXT brief (cannot
+  parse-fail). Edition-forked goals (standard: today's stories; wrap: the
+  week's arc + Sunday Challenge raw material; ahead: scheduled catalysts +
+  oneToWatch candidates, with the never-manufacture rule restated) + the
+  spec-plus items: **Mystery Mover company facts** (pass 2 has no search —
+  clue quality depends on the brief) and the SENSITIVE NEWS rule (research
+  summaries feed the writer). Core rule: CARRY EVERY FIGURE WITH ITS
+  SOURCE. **Sanity gate** (Sunny's addition): `assertBriefUsable`, ≥500
+  chars — a hollow brief throws as a pass-1 failure feeding the retry
+  ladder, never reaching pass 2 where it would yield a structurally-valid
+  but substantively-empty digest zod can't catch.
+- Pass 2 — `runWritePass`: NO web search; brief + FMP + the existing
+  edition builders (their STEP-1 search instructions replaced by the
+  embedded brief + a use-only-brief-figures hard rule). Output via a
+  **forced `emit_digest` tool call** — parsed structured input, no fences/
+  trailing prose/stray braces; a max_tokens stop is an explicit failure.
+  The tool schema is deliberately LOOSE; zod is the strict gate.
+- **BOTH passes STREAM** (`messages.stream` + `finalMessage()`) — found in
+  pre-ship verification: three consecutive `read ETIMEDOUT` failures on
+  the research call from this network; a multi-minute NON-streaming call
+  sits silent while server-side searches run and idle-connection killers
+  drop it. Streaming keeps bytes flowing; the SDK recommends it for long
+  requests anyway. (The old single-call pipeline had the same latent
+  exposure on other networks.)
+- Legacy `parseDigestJSON`/`extractFirstJSONObject` + cite-strip survive
+  for the two game reframer calls; a recursive cite-strip + the recursive
+  `scrubProfanity` run on the tool input.
+- `opts._test = { research, write }` — injectable seams; the smoke test
+  drives the repair loop offline.
+
+**(b) zod validation (`src/digest-schema.js`, new; zod is the only new
+dependency).** `validateDigest(content, edition)` runs after post-
+processing (cite-strip → scrub → glossary filter → **mystery finalize** —
+the Phase 16 reserve fallback fires BEFORE zod so puzzle problems never
+burn the repair retry; the finalize moved from generate.js into ai.js's
+orchestration for this ordering). Edition-aware rules incl. the codebase-
+over-spec calls: 2–3 standard stories (house rule, approved), oneToWatch
+optional / topMover ABSENT on week-ahead, `bigPictureParentExplainer`
+field-name quirk, sundayChallenge on Sundays, marketClosed on weekend
+editions. On failure: ONE repair retry (pass 2 re-run, no re-search, with
+the errors appended), then throw with `.validationErrors` → ladder →
+Telegram ❌ listing the errors (notify.js renders up to 8).
+
+**Two zod-vs-prompt mismatches found BY the live runs (codebase is truth —
+fixed in the schema, not the prompts):** the wrap builder's topMover
+carries its explanation in `vibe` with NO `principle`/`reason` fields, and
+the four sundayChallenge type schemas keep `principle` inside their
+rounds/scenarios, not top-level. (CONTEXT's documented schema disagreed
+with the actual prompts; the prompts win.) TopMover now accepts both real
+shapes and requires at least one explanatory sentence.
+
+**(c) Retry ladder (`src/morning-run.js`, new).** `runMorningPipeline`:
+7:00 attempt → on failure sleep 10 min → 7:10 → sleep 15 min → 7:25 → only
+then ONE ❌ listing every attempt's error (+ validation errors). SINGLE
+handler, not three cron entries — the teaser fan-out has no per-recipient
+ledger; a second entry after a 7:00 success would double-email every
+parent. Fan-out runs exactly once after the first success; the ✅ notes
+the attempt when >1 ("⚠️ needed attempt 2/3" — quiet on a clean first
+try). A fan-out-stage failure still alerts immediately, unretried (no send
+ledger — unchanged behavior, flagged in the plan). Trade-off accepted:
+in-process timers die on container restart; the boot bootstrap is itself a
+generation retry. All collaborators injectable. server.js's cron handler
+shrank to a thin wrapper.
+
+**Phase 15/16/17 interplay (verified):** resolveTomorrowCalls runs at the
+top of every generateDigest call → attempt 1 resolves, attempts 2/3 are
+idempotent no-ops (source-asserted ordering + test-picks' re-run
+assertion); the 7–9 AM push catch-up window (15) was built for exactly
+this ladder; mysteryMover is part of the validated schema and its facts
+ride pass 1.
+
+**(d) SENSITIVE NEWS rule** — verbatim spec wording as
+`SENSITIVE_NEWS_RULE`, injected in all 3 edition builders + the research
+prompt (4 sites, source-asserted). Reframers (which rewrite verified game
+scenarios, not news) deliberately out of scope.
+
+**Verified**
+- `scripts/test-digest-schema.js` → **49/49 green** (pure/offline): zod
+  fixtures per edition + 15 broken-shape rejections (incl. both real
+  topMover shapes), the sanity gate, the repair loop via injected passes
+  (errors fed back verbatim; second failure throws with validationErrors;
+  hollow brief never reaches pass 2), the full retry-ladder matrix
+  (fail/fail/succeed → ✅ "needed attempt 3/3", sleeps 10+15 min, fan-out
+  once; all-fail → one ❌ with every attempt + validation errors, no
+  fan-out; clean first try → quiet ✅; fan-out failure → immediate ❌),
+  sensitive-rule presence ×4, no STEP-1 search instruction remains,
+  resolution-before-cache-check ordering.
+- Full 10-script suite green.
+- **Live two-pass generation, ALL THREE editions** (approved; ran over the
+  ~$1 estimate — 3 extra research-pass attempts died to the ETIMEDOUT bug
+  before the streaming fix, ~$1.60 total):
+  · weekly-wrap (2026-06-21): 15-query research → 14.7k-char brief → clean
+    first write → zod PASS (investathon Sunday Challenge, marketClosed).
+  · week-ahead (2026-06-22): zod PASS; oneToWatch=MU (real catalyst);
+    topMover correctly absent; **the Phase 16 name-leak gate fired live**
+    (PayPal clue leaked "pay" → reserve puzzle Spotify shipped, no repair
+    retry burned — the exact designed division of labor).
+  · standard (2026-06-23): **the repair retry fired live** — first write
+    emitted an invalid editionType enum; the repair pass fixed it and
+    validation passed. 3 stories, AAPL mystery clean.
+  All three rows re-validated from the DB, then deleted along with their
+  9 content_history rows; today's disk digest restored. The runs' glossary
+  nominations remain in pending_glossary (real terms, admin-gated — Phase
+  16 precedent).
+- `node --check` clean across all changed files.
+- **Watch items:** tool-forced outputs can skimp on prose length vs
+  free-text JSON — zod min-lengths catch egregious cases; eyeball the
+  first few production digests. Research-pass query logging shows query
+  strings as empty arrays (SDK streaming shape) — cosmetic.
+
+**Cost:** ~+10–20% of the morning AI line (~$0.03–0.07/day): searches
+happen once (pass 1); the brief is generated then re-read; repair retries
+are rare and search-free.
+
+**Open / future:**
+- Eyeball the first week of production two-pass digests for prose depth.
+- The ✅ ping is quiet on first-try success (notes the attempt only when
+  >1) — flag if you want it explicit every morning.
