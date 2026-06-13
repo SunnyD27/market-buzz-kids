@@ -44,7 +44,7 @@
 | **17** ✅ | Tomorrow's Call (daily prediction) — shipped 2026-06-12 | S–M | High | — |
 | **18** ✅ | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) — shipped 2026-06-13 | M | High (reliability) | — |
 | **19** ✅ | "Morning Juice" visual redesign — shipped 2026-06-13 | M | High | — |
-| **20** | Weekly rhythm: Weekly Hold + "Your Week in Juice" | M | High | 17 (shares `user_picks`) |
+| **20** ✅ | Weekly rhythm: Weekly Hold + "Your Week in Juice" — shipped 2026-06-13 | M | High | 17 (shares `user_picks`) |
 | **21** | Watchlist ("Your Companies") | M | Med-High | — |
 | **22** | Game lineup refresh (Panic or Patience, Bigger Fish, Headline or Hoax; retirements) | M | Med | — |
 | **23** | MC cosmetic shop (dark mode as unlock) | S–M | Med | 19 (dark theme becomes the unlock) |
@@ -362,13 +362,20 @@ re-render cleanly (the template is a pure function — no content migration need
 
 ---
 
-## Phase 20 — Weekly rhythm: Weekly Hold + "Your Week in Juice"
+## Phase 20 — Weekly rhythm: Weekly Hold + "Your Week in Juice" ✅ SHIPPED
 
-> **TODO (from Phase 15):** when 20b ships, swap the weekly-wrap morning-push
-> copy in `src/push.js#buildMorningPush` from the interim
-> "📋 Weekly Wrap is ready — see how your week went" to the spec's
-> "📋 Your Week in Juice is ready — see your stats" (it references the 20b card).
-> Update the matching assertion in `scripts/test-push.js`.
+> **Status: built 2026-06-13.** `src/weekly.js` (server-picked candidates +
+> finalize), Weekly Hold pick/resolve in `src/picks.js` (parallel to
+> Tomorrow's Call, same isolation), `getWeekStats` + the Sunday card,
+> reuses `user_picks` kind='weekly-hold' (no migration). Deviations in the
+> HANDOFF entry — notably: server picks the 3 candidates (not Claude; Claude
+> writes the cases), the blind-pick gate locks at the week's first open,
+> resolution = first-open→last-close intra-week from FMP full OHLC, and the
+> engagement semantics (pick=engaged-not-streak, resolved=MC-only). Live
+> OHLC round-trip verified.
+
+> **TODO (from Phase 15): DONE** — weekly-wrap push copy swapped to
+> "📋 Your Week in Juice is ready — see your stats" when 20b shipped.
 
 **Why.** Gives each closed-market day a JOB: Saturday pays out, Sunday celebrates the
 kid, Monday places the bets. Fixes Sunday's low-novelty problem with the one thing

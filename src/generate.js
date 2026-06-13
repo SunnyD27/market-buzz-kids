@@ -13,7 +13,8 @@ import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
 import { pickMysteryCompany } from './mystery.js';
-import { resolveTomorrowCalls } from './picks.js';
+import { pickWeeklyHoldCandidates, finalizeWeeklyHold } from './weekly.js';
+import { resolveTomorrowCalls, resolveWeeklyHolds } from './picks.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
 import { storage } from './storage.js';
@@ -58,12 +59,14 @@ export async function generateDigest(opts = {}) {
   // todayNY().
   const today = getEditionDate();
 
-  // Phase 17 — resolve yesterday's Tomorrow's Call picks BEFORE anything
-  // else, on BOTH the fresh and cached-replay paths (a redeploy/bootstrap
-  // after the 7 AM run still resolves; resolved_at IS NULL keeps re-runs
-  // idempotent). resolveTomorrowCalls never throws and fetches its own
-  // single ^GSPC quote — a resolution failure can NEVER block the digest.
+  // Phase 17/20 — resolve outstanding picks BEFORE anything else, on BOTH
+  // the fresh and cached-replay paths (a redeploy/bootstrap after the 7 AM
+  // run still resolves; resolved_at IS NULL keeps re-runs idempotent).
+  // Both sweeps NEVER throw and fetch their own market data — a resolution
+  // failure can NEVER block the digest. Weekly Hold resolves once the
+  // week's last trading day close is in (Saturday's digest).
   await resolveTomorrowCalls(today);
+  await resolveWeeklyHolds(today);
 
   // ── Cache check: today's row already in Postgres? ────────────────
   // The idempotency check MUST come before edition detection — if today's
@@ -135,6 +138,16 @@ export async function generateDigest(opts = {}) {
   const recentMystery = await getRecent('mystery', 30);
   const mysteryCompany = pickMysteryCompany(today, recentMystery);
   console.log(`[Generate]   Mystery Mover: ${mysteryCompany.name} (${mysteryCompany.ticker}) — excluding ${recentMystery.length} recent answer(s)`);
+
+  // Phase 20 — Weekly Hold: on week-ahead editions, the SERVER picks 3
+  // curated candidates (stateless, deterministic by ISO week) and Claude
+  // writes only the one-line case for each. Same for all kids → immutable.
+  const weeklyHoldCandidates = edition.editionType === 'week-ahead'
+    ? pickWeeklyHoldCandidates(today)
+    : null;
+  if (weeklyHoldCandidates) {
+    console.log(`[Generate]   Weekly Hold candidates: ${weeklyHoldCandidates.map(c => c.ticker).join(', ')}`);
+  }
   if (recentWords.length) {
     console.log(`[Generate]   Avoiding ${recentWords.length} recent word(s): ${recentWords.slice(0, 8).join(', ')}${recentWords.length > 8 ? '…' : ''}`);
   }
@@ -166,7 +179,16 @@ export async function generateDigest(opts = {}) {
     edition,
     mysteryCompany,
     recentMystery,
+    weeklyHoldCandidates,
   });
+
+  // Phase 20 — finalize Weekly Hold: merge the server's 3 candidates with
+  // Claude's cases (canned fallback per company if missing), so the field
+  // is always complete + curated-75-guaranteed. Week-ahead only.
+  if (weeklyHoldCandidates) {
+    content.weeklyHold = finalizeWeeklyHold(content.weeklyHold, weeklyHoldCandidates);
+    console.log(`[Generate]   Weekly Hold finalized (${content.weeklyHold.candidates.length} cases)`);
+  }
 
   const dailyChallenge = await hydrateDailyGames({
     fmpKey,

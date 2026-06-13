@@ -19,16 +19,16 @@ import { storage } from './storage.js';
 import { healthCheck as dbHealthCheck, query as dbQuery, getClient as dbGetClient } from './db.js';
 import { getTodaysDigest, getDigestForDate, todayNY } from './digest-store.js';
 import { requireAuth, setSession, clearSession } from './auth.js';
-import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate } from './engagement.js';
+import { getProgress, recordEvent, getDailyEngagementSummary, getParentQuestionsForDate, getWeekStats } from './engagement.js';
 import { EVENT_TYPES } from './progression.js';
 import { gatherAdminData, buildAdminHTML } from './admin.js';
 import { refreshActiveGlossary } from './glossary-runtime.js';
-import { getEditionType } from './calendar.js';
+import { getEditionType, getLastTradingDayOfWeek } from './calendar.js';
 import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
 import { runMorningPipeline } from './morning-run.js';
 import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush, shouldSendStreakRiskPush } from './push.js';
 import { isCorrectGuess } from './mystery.js';
-import { createPick, getPickState, targetLabelFor } from './picks.js';
+import { createPick, getPickState, targetLabelFor, createWeeklyHoldPick, getWeeklyHoldState } from './picks.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -205,7 +205,28 @@ app.get('/digest', requireAuth, async (req, res) => {
   try {
     const dbDigest = await getTodaysDigest();
     if (dbDigest?.content) {
-      const html = buildHTML(dbDigest.content, { kidName, digestDate, prediction });
+      const content = dbDigest.content;
+
+      // Phase 20 — per-user Weekly Hold card (candidates on week-ahead,
+      // verdict on the resolution weekend) + the Sunday "Your Week in Juice"
+      // card. Both fail-soft and render-time only; nothing per-user enters
+      // the immutable daily row or the static disk file.
+      let weeklyHold = null;
+      try {
+        weeklyHold = await getWeeklyHoldState(req.user.id, digestDate, content);
+      } catch (err) {
+        console.error('[digest] weekly-hold state failed (card skipped):', err.message);
+      }
+      let weekStats = null;
+      if (content.editionType === 'weekly-wrap') {
+        try {
+          weekStats = await getWeekStats(req.user.id, digestDate);
+        } catch (err) {
+          console.error('[digest] week stats failed (card skipped):', err.message);
+        }
+      }
+
+      const html = buildHTML(content, { kidName, digestDate, prediction, weeklyHold, weekStats });
       return res.status(200).type('html').send(html);
     }
   } catch (err) {
@@ -522,6 +543,39 @@ app.post('/api/picks', requireAuth, async (req, res) => {
     return res.json({ success: true, choice, targetDate, targetLabel });
   } catch (err) {
     console.error('[picks] create failed:', err.message);
+    return res.status(500).json({ error: 'Could not save your pick.' });
+  }
+});
+
+// Phase 20 — Weekly Hold: pick one of Monday's 3 server-baked candidates.
+// The candidate set + the blind-pick window (locks at the week's first
+// trading-day open) are validated server-side against the digest's content.
+app.post('/api/weekly-hold', requireAuth, async (req, res) => {
+  const ticker = req.body?.ticker;
+  if (typeof ticker !== 'string' || !ticker.trim()) {
+    return res.status(400).json({ error: 'ticker is required.' });
+  }
+  const digestDate = todayNY();
+  try {
+    const row = await getTodaysDigest();
+    const candidates = row?.content?.weeklyHold?.candidates || null;
+    if (!candidates) {
+      return res.status(404).json({ error: 'No Weekly Hold for today.' });
+    }
+    const { inserted, open, invalid } = await createWeeklyHoldPick(req.user.id, digestDate, ticker, candidates);
+    if (!open) return res.status(409).json({ closed: true, message: 'Picks are closed for this week.' });
+    if (invalid) return res.status(400).json({ error: 'That company is not one of this week\'s choices.' });
+    if (!inserted) return res.status(409).json({ duplicate: true });
+    try {
+      await recordEvent(req.user.id, 'weekly-hold-pick', {
+        digestDate, chosen: ticker, targetDate: getLastTradingDayOfWeek(digestDate),
+      });
+    } catch (err) {
+      console.error('[weekly-hold] pick event failed (pick kept):', err.message);
+    }
+    return res.json({ success: true, chosen: ticker });
+  } catch (err) {
+    console.error('[weekly-hold] create failed:', err.message);
     return res.status(500).json({ error: 'Could not save your pick.' });
   }
 });

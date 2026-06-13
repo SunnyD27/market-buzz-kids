@@ -77,6 +77,10 @@ export const MC_AWARDS = {
   // Making the pick itself awards nothing.
   predictionCorrect: 5,
 
+  // Weekly Hold (Phase 20) — +20 if the held company beats BOTH others
+  // over the week, +5 participation otherwise. Making the pick awards 0.
+  weeklyHold: { win: 20, participation: 5 },
+
   // Streak bonus: +2 MC per streak day, capped at +30. Applied once per
   // calendar day on the first game completion that extends the streak.
   streakBonus: (streakDays) => Math.min(Math.max(0, streakDays) * 2, 30),
@@ -190,6 +194,11 @@ export const EVENT_TYPES = new Set([
   // (+5 MC correct / 0 incorrect) — never engagement, never streak.
   'prediction-made',
   'prediction-resolved',
+  // Phase 20 — Weekly Hold. weekly-hold-pick (Mon, kid-initiated): 0 MC,
+  // counts as engaged, does NOT extend the streak. weekly-hold-resolved
+  // (Sat, server-initiated): +20/+5 MC, never engagement/streak.
+  'weekly-hold-pick',
+  'weekly-hold-resolved',
 ]);
 
 // Helpers — useful on both server and client (re-implemented in the client

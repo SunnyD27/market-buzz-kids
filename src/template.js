@@ -573,6 +573,86 @@ export function buildHTML(content, opts = {}) {
     ${captionHTML}
   </div>`;
   })();
+
+  // Phase 20a — Weekly Hold card (per-user; opts.weeklyHold from the /digest
+  // render path). Pick UI on Monday's week-ahead; locked chip mid-week;
+  // verdict (all 3 returns + win) on the resolution weekend. Absent on
+  // /sample + logged-out → not rendered. Uses Phase 19 tokens + --up-text/
+  // --down-text for the green/red returns (WCAG-legible on cream).
+  const weeklyHold = opts.weeklyHold || null;
+  const weeklyHoldCardHTML = (() => {
+    if (!weeklyHold || !weeklyHold.phase) return '';
+    const pctSpan = (pct) => {
+      const up = pct >= 0;
+      const sign = up ? '+' : '';
+      return `<span class="wh-pct ${up ? 'wh-up' : 'wh-down'}">${sign}${Number(pct).toFixed(1)}%</span>`;
+    };
+    let body = '';
+    if (weeklyHold.phase === 'verdict') {
+      const v = weeklyHold.verdict;
+      const rows = (v.returns || []).slice()
+        .sort((a, b) => (b.pct ?? -999) - (a.pct ?? -999))
+        .map(r => `<div class="wh-result-row${r.ticker === v.chosen ? ' wh-chosen' : ''}">
+          <span class="wh-result-name">${escapeHTML(r.name || r.ticker)}${r.ticker === v.chosen ? ' <span class="wh-yours">your pick</span>' : ''}</span>
+          ${pctSpan(r.pct)}
+        </div>`).join('');
+      const headline = v.win
+        ? `🏆 Your pick ${escapeHTML(v.chosenName || v.chosen)} ${pctSpan(v.returns.find(r => r.ticker === v.chosen)?.pct ?? 0)} — beat both!`
+        : `Your pick ${escapeHTML(v.chosenName || v.chosen)} held strong — not the top this week.`;
+      body = `<div class="wh-verdict-head">${headline}</div><div class="wh-results">${rows}</div>`;
+    } else if (weeklyHold.phase === 'locked') {
+      const name = (weeklyHold.candidates || []).find(c => c.ticker === weeklyHold.chosen)?.name || weeklyHold.chosen;
+      body = `<div class="wh-locked">You're holding <strong>${escapeHTML(name)}</strong> this week — check back Saturday to see how it did.</div>`;
+    } else { // 'pick' | 'closed'
+      const open = weeklyHold.phase === 'pick';
+      const cards = (weeklyHold.candidates || []).map(c => `
+        <button type="button" class="wh-cand" data-ticker="${escapeHTML(c.ticker)}"${open ? '' : ' disabled'}>
+          <span class="wh-cand-name">${escapeHTML(c.name)}</span>
+          <span class="wh-cand-case">${escapeHTML(c.case || '')}</span>
+        </button>`).join('');
+      body = `<div class="wh-prompt">Pick one company to <strong>hold all week</strong>. Beat the other two and earn <strong>+20 Market Coins</strong>.</div>
+        <div class="wh-cands" id="wh-cands">${cards}</div>
+        ${open ? '<div class="wh-caption">Locks Monday at 9:30 AM when the market opens.</div>' : '<div class="wh-caption">Picks are closed for this week — here\'s what was on offer.</div>'}
+        <div class="wh-feedback" id="wh-feedback" aria-live="polite"></div>`;
+    }
+    return `
+  <div class="section-header">
+    ${sectionIcon('target')}
+    <h2>Weekly Hold</h2>
+    <div class="line"></div>
+  </div>
+  <div class="wh-card" id="wh-card">${body}</div>`;
+  })();
+
+  // Phase 20b — "Your Week in Juice" card (per-user; opts.weekStats, Sunday
+  // weekly-wrap only). Built entirely from existing data. Celebration tone,
+  // you-vs-you — no percentile/comparison. Renders near the TOP.
+  const weekStats = opts.weekStats || null;
+  const weekInJuiceHTML = (() => {
+    if (!weekStats) return '';
+    const stat = (label, value) => `<div class="wj-stat"><div class="wj-stat-value">${value}</div><div class="wj-stat-label">${label}</div></div>`;
+    const rec = weekStats.predictionRecord;
+    const recordLine = weekStats.brokenRecord
+      ? `<div class="wj-record">🎉 ${escapeHTML(weekStats.brokenRecord.label)}!</div>`
+      : '';
+    const next = weekStats.nextRank;
+    const rankLine = next
+      ? `<div class="wj-rank">${escapeHTML(weekStats.rank?.badge || '')} ${escapeHTML(weekStats.rank?.name || '')} · <strong>${next.remaining}</strong> MC to ${escapeHTML(next.name)}</div>`
+      : `<div class="wj-rank">${escapeHTML(weekStats.rank?.badge || '')} ${escapeHTML(weekStats.rank?.name || '')} — top rank! 👑</div>`;
+    return `
+  <div class="wj-card">
+    <div class="wj-title">📋 Your Week in Juice</div>
+    <div class="wj-stats">
+      ${stat('MC earned', weekStats.mcThisWeek)}
+      ${stat('games won', `${weekStats.gamesWon}/${weekStats.gamesPlayed}`)}
+      ${rec ? stat('calls right', `${rec.correct} of ${rec.total}`) : stat('day streak', `🔥 ${weekStats.currentStreak}`)}
+    </div>
+    ${rec ? `<div class="wj-streak">🔥 ${weekStats.currentStreak}-day streak</div>` : ''}
+    ${rankLine}
+    ${recordLine}
+  </div>`;
+  })();
+
   const greetingHTML = kidName
     ? `<div class="kid-greeting">
          <span class="kid-greeting-name">Hey, ${escapeHTML(kidName)}! 👋</span>
@@ -1035,6 +1115,42 @@ export function buildHTML(content, opts = {}) {
   .tc-intro-body { color: var(--text); font-size: 14px; line-height: 1.55; margin-bottom: 10px; }
   .tc-intro-btn { background: var(--blue); color: #fff; border: none; border-radius: 8px; padding: 8px 18px; font-family: inherit; font-weight: 600; font-size: 14px; cursor: pointer; }
   .tc-intro-btn:hover { filter: brightness(1.1); }
+
+  /* Phase 20a — Weekly Hold card (Phase 19 tokens; --up-text/--down-text for returns) */
+  .wh-card { background: var(--surface); border: 1px solid var(--surface-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; }
+  .wh-pct { font-family: 'Space Grotesk', sans-serif; font-weight: 700; }
+  .wh-up { color: var(--up-text); }
+  .wh-down { color: var(--down-text); }
+  .wh-prompt { font-size: 15px; color: var(--ink); margin-bottom: 14px; line-height: 1.5; }
+  .wh-cands { display: grid; gap: 10px; }
+  .wh-cand { display: flex; flex-direction: column; gap: 4px; text-align: left; background: var(--bg); border: 1px solid var(--surface-border); border-radius: 12px; padding: 12px 14px; font-family: inherit; cursor: pointer; transition: border-color 0.15s, transform 0.1s; }
+  .wh-cand:hover:not(:disabled) { border-color: var(--berry); transform: translateY(-1px); }
+  .wh-cand:active:not(:disabled) { transform: scale(0.99); }
+  .wh-cand:disabled { opacity: 0.6; cursor: default; }
+  .wh-cand-name { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 16px; color: var(--ink); }
+  .wh-cand-case { font-size: 13.5px; color: var(--ink-soft); line-height: 1.4; }
+  .wh-cand.wh-cand-chosen { border-color: var(--berry); background: var(--vibe-ahead); }
+  .wh-caption { margin-top: 12px; color: var(--ink-soft); font-size: 12.5px; }
+  .wh-feedback { margin-top: 8px; color: var(--ink-soft); font-size: 13.5px; min-height: 1em; }
+  .wh-locked { background: var(--vibe-ahead); border: 1px solid rgba(91,79,199,0.25); color: var(--ink); border-radius: 12px; padding: 14px; font-size: 14.5px; }
+  .wh-verdict-head { font-size: 16px; font-weight: 600; color: var(--ink); margin-bottom: 12px; line-height: 1.4; }
+  .wh-results { display: grid; gap: 8px; }
+  .wh-result-row { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; border-radius: 10px; background: var(--bg); border: 1px solid var(--surface-border); }
+  .wh-result-row.wh-chosen { background: var(--vibe-ahead); border-color: var(--berry); }
+  .wh-result-name { font-weight: 500; color: var(--ink); }
+  .wh-yours { font-size: 11px; font-weight: 600; color: var(--berry); background: rgba(91,79,199,0.12); padding: 1px 7px; border-radius: 999px; }
+
+  /* Phase 20b — "Your Week in Juice" Sunday card */
+  .wj-card { background: linear-gradient(180deg, var(--vibe-mixed), var(--surface)); border: 1px solid var(--surface-border); border-radius: 18px; padding: 18px 20px; margin-bottom: 24px; animation: fadeIn 0.5s ease-out both; }
+  .wj-title { font-family: 'Fredoka', sans-serif; font-weight: 700; font-size: 18px; color: var(--ink); margin-bottom: 14px; }
+  .wj-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px; }
+  .wj-stat { background: var(--surface); border: 1px solid var(--surface-border); border-radius: 12px; padding: 12px 8px; text-align: center; }
+  .wj-stat-value { font-family: 'Space Grotesk', sans-serif; font-weight: 700; font-size: 22px; color: var(--citrus-text); }
+  .wj-stat-label { font-size: 11.5px; color: var(--ink-soft); margin-top: 2px; }
+  .wj-streak { font-size: 14px; color: var(--ink); margin-bottom: 6px; }
+  .wj-rank { font-size: 13.5px; color: var(--ink-soft); }
+  .wj-rank strong { color: var(--sun-text); font-family: 'Space Grotesk', sans-serif; }
+  .wj-record { margin-top: 10px; font-weight: 600; font-size: 14.5px; color: var(--up-text); }
 
   /* Phase 16 — Mystery Mover (client-hydrated by games/mystery-mover.js) */
   .mm-card { background: var(--card); border: 1px solid var(--card-border); border-radius: 16px; padding: 20px; animation: fadeIn 0.5s ease-out both; }
@@ -1607,6 +1723,8 @@ export function buildHTML(content, opts = {}) {
   <!-- Investor Profile Bar — rendered by /engagement.js from localStorage -->
   <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
 
+  ${weekInJuiceHTML}
+
   ${marketClosedHTML}
 
   <div class="section-header">
@@ -1700,6 +1818,8 @@ export function buildHTML(content, opts = {}) {
 
   ${predictionCardHTML}
 
+  ${weeklyHoldCardHTML}
+
   <div class="footer">
     <div class="rocket">🚀</div>
     <p style="margin-top: 6px;">Market Juice — Built for future investors</p>
@@ -1782,6 +1902,37 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
       }).catch(function () {
         host.querySelectorAll('.tc-btn').forEach(function (b) { b.disabled = false; });
         var fb = document.getElementById('tc-feedback');
+        if (fb) fb.textContent = "Hmm, that didn't save — try again.";
+      });
+    });
+  })();
+
+  // Phase 20a — Weekly Hold candidate tap handler (optimistic lock). The
+  // server validates the candidate set + the blind-pick window.
+  (function () {
+    var host = document.getElementById('wh-cands');
+    if (!host) return; // no pick UI on this render (locked/verdict/closed/none)
+    host.addEventListener('click', function (e) {
+      var btn = e.target.closest('.wh-cand');
+      if (!btn || btn.disabled) return;
+      var ticker = btn.getAttribute('data-ticker');
+      host.querySelectorAll('.wh-cand').forEach(function (b) { b.disabled = true; });
+      btn.classList.add('wh-cand-chosen');
+      var fb = document.getElementById('wh-feedback');
+      fetch('/api/weekly-hold', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify({ ticker: ticker }),
+      }).then(function (res) {
+        if (res.ok || res.status === 409) {
+          if (fb) fb.textContent = "You're holding " + (btn.querySelector('.wh-cand-name') ? btn.querySelector('.wh-cand-name').textContent : ticker) + " this week. Check back Saturday!";
+          return;
+        }
+        throw new Error('weekly-hold ' + res.status);
+      }).catch(function () {
+        host.querySelectorAll('.wh-cand').forEach(function (b) { b.disabled = false; });
+        btn.classList.remove('wh-cand-chosen');
         if (fb) fb.textContent = "Hmm, that didn't save — try again.";
       });
     });

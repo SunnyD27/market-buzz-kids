@@ -392,6 +392,24 @@ async function isDuplicate(client, userId, eventType, eventData, todayServer) {
     );
     return rows.length > 0;
   }
+  if (eventType === 'weekly-hold-pick' || eventType === 'weekly-hold-resolved') {
+    // Phase 20: keyed on targetDate (the week's last trading day) — the
+    // week key, mirroring the user_picks UNIQUE (user_id, kind,
+    // target_date). The DB constraint / atomic claim is the real gate;
+    // this backstops the event log (one pick + one payout per week).
+    const targetDate = eventData?.targetDate;
+    if (!targetDate) return false;
+    const { rows } = await client.query(
+      `SELECT 1 FROM engagement_events
+        WHERE user_id = $1
+          AND event_type = $2
+          AND event_data->>'targetDate' = $3
+          AND COALESCE((event_data->>'duplicate')::boolean, false) = false
+        LIMIT 1`,
+      [userId, eventType, targetDate],
+    );
+    return rows.length > 0;
+  }
   if (eventType === 'sunday-challenge-completed') {
     const { rows } = await client.query(
       `SELECT 1 FROM engagement_events
@@ -532,13 +550,19 @@ export async function recordEvent(userId, eventType, eventData = {}) {
       // Perfect Day, NO games_played — and it never counts as engagement
       // (see getDailyEngagementSummary). MC only.
       mcAwarded += eventData?.correct === true ? MC_AWARDS.predictionCorrect : 0;
+    } else if (eventType === 'weekly-hold-resolved') {
+      // Phase 20 — SERVER-initiated Saturday while the kid sleeps: +20 if
+      // the pick beat both others, +5 participation otherwise. Same rules
+      // as prediction-resolved: NO streak / Perfect Day / games_played, and
+      // never counts as engagement. MC only.
+      mcAwarded += eventData?.win === true ? MC_AWARDS.weeklyHold.win : MC_AWARDS.weeklyHold.participation;
     }
-    // parent-question (Phase 12) and prediction-made (Phase 17): no MC, no
-    // progression mutations. Just logged to engagement_events below —
-    // parent-question feeds the evening recap email; prediction-made marks
-    // the kid as engaged for the recap-vs-nudge fork (it deliberately does
-    // NOT extend the streak — only games + Mystery Mover do).
-    // Both fall through to the same persist + audit path as everything else.
+    // parent-question (Phase 12), prediction-made (Phase 17), and
+    // weekly-hold-pick (Phase 20): no MC, no progression mutations. Just
+    // logged below — parent-question feeds the evening recap; the two pick
+    // events mark the kid as engaged for the recap-vs-nudge fork but
+    // deliberately do NOT extend the streak (only games + Mystery Mover do).
+    // All fall through to the same persist + audit path.
 
     if (mcAwarded > 0) {
       after.market_coins = before.market_coins + mcAwarded;
@@ -1121,7 +1145,8 @@ export async function getDailyEngagementSummary(userId, digestDate) {
     e.type === 'word-learned' ||
     e.type === 'sunday-challenge-completed' ||
     e.type === 'mystery-mover-played' ||
-    e.type === 'prediction-made'
+    e.type === 'prediction-made' ||
+    e.type === 'weekly-hold-pick'        // Phase 20 — a deliberate weekly pick (engaged, not streak)
   );
   const engaged = meaningfulEvents.length > 0;
 
@@ -1135,6 +1160,81 @@ export async function getDailyEngagementSummary(userId, digestDate) {
     perfectDay,
     gamesPlayed: games.length,
     gamesCorrect,
+  };
+}
+
+/**
+ * Phase 20b — "Your Week in Juice" stats for one kid, for the Sunday
+ * weekly-wrap card. Built ENTIRELY from existing data (engagement_events +
+ * user_progress + user_picks + personal_records) — zero new collection.
+ * Windowed to the ISO week of `digestDate`. Safe for a kid who joined
+ * mid-week: every aggregate is 0/null, no division (predictionRecord is
+ * null at 0 picks — never "0 of 0").
+ */
+export async function getWeekStats(userId, digestDate) {
+  const isoWeek = isoWeekOf(digestDate);
+  const prog = await getProgress(userId);   // ensureProgress runs inside
+
+  const [evRes, prRes, recRes] = await Promise.all([
+    // MC + games this week. ISO-week label match (mirrors sumMCForBucket).
+    query(
+      `SELECT COALESCE(SUM((event_data->>'mcAwarded')::int), 0)::int AS mc,
+              COUNT(*) FILTER (WHERE event_type = 'game-completed'
+                AND COALESCE((event_data->>'duplicate')::boolean, false) = false)::int AS games,
+              COUNT(*) FILTER (WHERE event_type = 'game-completed'
+                AND (event_data->>'correct')::boolean = true
+                AND COALESCE((event_data->>'duplicate')::boolean, false) = false)::int AS games_won
+         FROM engagement_events
+        WHERE user_id = $1
+          AND to_char((created_at AT TIME ZONE 'America/New_York')::date, 'IYYY"-W"IW') = $2`,
+      [userId, isoWeek],
+    ),
+    // Tomorrow's Call record THIS week (resolved picks whose target is this week).
+    query(
+      `SELECT COUNT(*)::int AS total,
+              COUNT(*) FILTER (WHERE (outcome->>'correct')::boolean = true)::int AS correct
+         FROM user_picks
+        WHERE user_id = $1 AND kind = 'tomorrow-call' AND resolved_at IS NOT NULL
+          AND to_char(target_date, 'IYYY"-W"IW') = $2`,
+      [userId, isoWeek],
+    ),
+    // Personal records BROKEN this week (achieved_at stamped in this ISO week).
+    query(
+      `SELECT record_key, value FROM personal_records
+        WHERE user_id = $1 AND achieved_at IS NOT NULL
+          AND to_char(achieved_at, 'IYYY"-W"IW') = $2`,
+      [userId, isoWeek],
+    ),
+  ]);
+
+  const wk = evRes.rows[0];
+  const rec = prRes.rows[0];
+
+  // ONE highlighted broken record, by celebration priority.
+  const RECORD_PRIORITY = ['longest-streak', 'best-week-mc', 'best-day-mc', 'best-prediction-streak', 'best-perfect-week'];
+  const RECORD_LABEL = {
+    'longest-streak': 'Longest streak ever',
+    'best-week-mc': 'Best week ever',
+    'best-day-mc': 'Best day ever',
+    'best-prediction-streak': 'Best prediction streak ever',
+    'best-perfect-week': 'Best Perfect-Day week ever',
+  };
+  let brokenRecord = null;
+  for (const key of RECORD_PRIORITY) {
+    const r = recRes.rows.find(x => x.record_key === key);
+    if (r) { brokenRecord = { key, label: RECORD_LABEL[key], value: r.value }; break; }
+  }
+
+  return {
+    mcThisWeek: wk.mc,
+    gamesPlayed: wk.games,
+    gamesWon: wk.games_won,
+    predictionRecord: rec.total > 0 ? { correct: rec.correct, total: rec.total } : null,
+    currentStreak: prog.progress.currentStreak,
+    rank: prog.progress.rank,
+    nextRank: prog.nextRank,
+    marketCoins: prog.progress.marketCoins,
+    brokenRecord,
   };
 }
 

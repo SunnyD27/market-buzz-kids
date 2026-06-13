@@ -230,6 +230,83 @@ export function getNextTradingOpen(nowDate = new Date()) {
   return candidate;
 }
 
+// ── Phase 20 — Weekly Hold trading-week boundaries ────────────────────
+//
+// The "week" is the ISO week (Mon–Sun) of the given date. Weekly Hold
+// holds Monday-OPEN → Friday-CLOSE, so we need the FIRST and LAST trading
+// day of that week — both honoring the NYSE holiday calendar:
+//   holiday-Monday week → first trading day is Tuesday (baseline = Tue open)
+//   Good-Friday week    → last trading day is Thursday (close = Thu)
+// Accepts a Date OR a 'YYYY-MM-DD' string.
+
+/** The Monday (ISO week start) of the given date, as 'YYYY-MM-DD' (NY). */
+function isoWeekMonday(date) {
+  const startStr = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date
+    : toNYDateString(date);
+  const d = new Date(startStr + 'T12:00:00Z');
+  const dow = d.getUTCDay();                 // 0=Sun..6=Sat
+  const backToMon = (dow + 6) % 7;           // days since Monday
+  return new Date(d.getTime() - backToMon * 86400_000).toISOString().slice(0, 10);
+}
+
+/** Noon-UTC ms of the ISO-week Monday — a monotonic week index source
+ *  (src/weekly.js strides the candidate shuffle by floor(ms / 1 week)). */
+export function isoWeekMondayMs(date = now()) {
+  return new Date(isoWeekMonday(date) + 'T12:00:00Z').getTime();
+}
+
+/**
+ * The FIRST trading day of the ISO week containing `date` — the Weekly
+ * Hold open-price baseline. Walks forward from Monday past weekends +
+ * holidays (so a holiday-Monday week returns Tuesday). Null only if the
+ * whole Mon–Fri span is somehow closed (never, in practice).
+ */
+export function getFirstTradingDayOfWeek(date = now()) {
+  const monday = isoWeekMonday(date);
+  let cursor = new Date(monday + 'T12:00:00Z');
+  for (let i = 0; i < 5; i++) {              // Mon..Fri only
+    const cur = cursor.toISOString().slice(0, 10);
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6 && !isMarketHoliday(cur)) return cur;
+    cursor = new Date(cursor.getTime() + 86400_000);
+  }
+  return null;
+}
+
+/**
+ * The LAST trading day of the ISO week containing `date` — the Weekly
+ * Hold close + the pick's target_date. Walks BACKWARD from Friday past
+ * holidays (so a Good-Friday week returns Thursday).
+ */
+export function getLastTradingDayOfWeek(date = now()) {
+  const monday = isoWeekMonday(date);
+  const friday = new Date(new Date(monday + 'T12:00:00Z').getTime() + 4 * 86400_000);
+  let cursor = friday;
+  for (let i = 0; i < 5; i++) {              // Fri..Mon
+    const cur = cursor.toISOString().slice(0, 10);
+    const day = cursor.getUTCDay();
+    if (day !== 0 && day !== 6 && !isMarketHoliday(cur)) return cur;
+    cursor = new Date(cursor.getTime() - 86400_000);
+  }
+  return null;
+}
+
+/**
+ * The wall-clock blind-pick gate for Weekly Hold: true while the week's
+ * FIRST trading day open (9:30 ET) is still in the future at `nowDate`.
+ * Once that open passes, the Mon-open→Fri-close move is partly knowable,
+ * so picks lock. Mirrors getNextTradingOpen's timing rule.
+ */
+export function isWeeklyHoldOpen(nowDate = new Date()) {
+  const firstDay = getFirstTradingDayOfWeek(nowDate);
+  if (!firstDay) return false;
+  const nyToday = toNYDateString(nowDate);
+  if (nyToday < firstDay) return true;       // before the week's first trading day
+  if (nyToday > firstDay) return false;      // after it
+  return nyMinutesOfDay(nowDate) < MARKET_OPEN_MINUTES_ET; // same day, pre-open only
+}
+
 // ── The main export ───────────────────────────────────────────────────
 
 /**

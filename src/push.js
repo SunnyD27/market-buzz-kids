@@ -73,14 +73,14 @@ export function getVapidPublicKey() {
  * Copy notes:
  *  - week-ahead says "make your picks" (the roadmap-spec copy — unlocked by
  *    Phase 17's Tomorrow's Call; was interim "see what's coming" before).
- *  - weekly-wrap says "see how your week went" until Phase 20 ships the
- *    "Your Week in Juice" card. TODO lives in ROADMAP.md Phase 20.
+ *  - weekly-wrap says "Your Week in Juice is ready" (Phase 20 shipped the
+ *    Sunday stats card this copy references).
  */
 export function buildMorningPush(content) {
   const edition = content?.editionType || 'standard';
   let title;
   if (edition === 'weekly-wrap') {
-    title = '📋 Weekly Wrap is ready — see how your week went';
+    title = '📋 Your Week in Juice is ready — see your stats';
   } else if (edition === 'week-ahead') {
     title = "🔮 New week — make your picks";
   } else {
