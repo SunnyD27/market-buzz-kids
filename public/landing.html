@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<meta name="theme-color" content="#0d1117">
+<meta name="theme-color" content="#FFF8EF">
 <title>Market Juice — Your daily squeeze of market smarts</title>
 <meta name="description" content="Fresh market smarts, squeezed daily for kids ages 10-16. Real investing principles, taught through games. 100% free. 3 minutes a day.">
 
@@ -15,14 +15,13 @@
 <link rel="canonical" href="https://themarketjuice.com">
 
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
-<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@400;500;600;700&family=Space+Mono:wght@400;700&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fredoka:wght@500;600;700&family=Lexend:wght@400;500;600&family=Space+Grotesk:wght@500;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="/landing.css">
 <script src="/landing.js" defer></script>
 </head>
 <body>
-
-<!-- Subtle starfield, matches the digest -->
-<div class="stars" id="stars"></div>
 
 <div class="container">
 
@@ -279,22 +278,6 @@
 
 </div>
 
-<script>
-  // Tiny starfield (same vibe as the digest). Keep this inline so the
-  // landing page has zero blocking JS.
-  (function(){
-    var s=document.getElementById('stars');
-    for(var i=0;i<60;i++){
-      var d=document.createElement('div');
-      d.className='star';
-      d.style.left=(Math.random()*100)+'%';
-      d.style.top=(Math.random()*100)+'%';
-      d.style.animationDelay=(Math.random()*3)+'s';
-      d.style.width=d.style.height=(Math.random()*2+1)+'px';
-      s.appendChild(d);
-    }
-  })();
-</script>
 
 </body>
 </html>

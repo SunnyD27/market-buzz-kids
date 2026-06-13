@@ -4,19 +4,24 @@
  * feel like the same product (gradient brand wordmark, purple→blue→gold,
  * navy bg, Fredoka). Self-contained — does not depend on landing.css.
  */
+/* Phase 19 — Morning Juice light theme (mirrors the digest token swap). */
 :root {
-  --bg: #0d1117;
-  --card: #161b22;
-  --card-2: #1c222b;
-  --border: #21262d;
-  --text: #e6edf3;
-  --dim: #8b949e;
-  --bright: #ffffff;
-  --green: #3fb950;
-  --red: #f85149;
-  --blue: #58a6ff;
-  --purple: #bc8cff;
-  --yellow: #f0c040;
+  --bg: #FFF8EF;
+  --surface: #FFFFFF; --surface-border: #F0E4D3;
+  --ink: #2B2118; --ink-soft: #5E5349;
+  --citrus: #FF7A1A; --sun: #FFC233; --up: #1E9E5A; --down: #E5484D; --berry: #5B4FC7;
+  --card: var(--surface);
+  --card-2: #FFFDF8;
+  --border: var(--surface-border);
+  --text: var(--ink);
+  --dim: var(--ink-soft);
+  --bright: var(--ink);
+  --green: #0E7A3E;
+  --red: #C92A2F;
+  --blue: var(--berry);
+  --purple: var(--berry);
+  --yellow: var(--sun);
+  --orange: var(--citrus);
 }
 
 * { box-sizing: border-box; }
@@ -24,12 +29,13 @@ html, body { margin: 0; padding: 0; }
 body {
   background: var(--bg);
   color: var(--text);
-  font-family: 'Fredoka', sans-serif;
+  font-family: 'Lexend', sans-serif;
   line-height: 1.55;
   min-height: 100vh;
   display: flex; align-items: center; justify-content: center;
   padding: 24px 16px;
 }
+h1, h2, h3, .auth-logo { font-family: 'Fredoka', sans-serif; }
 
 .auth-wrap {
   width: 100%;
@@ -42,11 +48,11 @@ body {
   font-size: 22px; font-weight: 700;
 }
 .auth-logo .grad {
-  background: linear-gradient(135deg, var(--blue), var(--purple), var(--yellow));
+  background: linear-gradient(135deg, var(--citrus), var(--berry), var(--sun));
   -webkit-background-clip: text; background-clip: text; -webkit-text-fill-color: transparent;
   letter-spacing: -0.4px;
 }
-.auth-logo em { font-style: normal; color: var(--yellow); -webkit-text-fill-color: var(--yellow); }
+.auth-logo em { font-style: normal; color: var(--citrus); -webkit-text-fill-color: var(--citrus); }
 
 .auth-card {
   width: 100%;
@@ -89,7 +95,7 @@ body {
 }
 .form-row input:focus {
   border-color: var(--blue);
-  box-shadow: 0 0 0 3px rgba(88,166,255,0.15);
+  box-shadow: 0 0 0 3px rgba(91,79,199,0.15);
 }
 .form-row small {
   display: block;
@@ -117,7 +123,7 @@ body {
 }
 .btn-primary:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: 0 10px 26px rgba(188,140,255,0.35);
+  box-shadow: 0 10px 26px rgba(91,79,199,0.35);
 }
 .btn-primary:disabled {
   opacity: 0.6;
@@ -132,14 +138,14 @@ body {
   font-size: 14px;
 }
 .alert-error {
-  background: rgba(248,81,73,0.10);
-  border: 1px solid rgba(248,81,73,0.35);
-  color: #ffb3ae;
+  background: rgba(229,72,77,0.10);
+  border: 1px solid rgba(229,72,77,0.35);
+  color: var(--down);
 }
 .alert-success {
-  background: rgba(63,185,80,0.10);
-  border: 1px solid rgba(63,185,80,0.35);
-  color: #a8e2b1;
+  background: rgba(30,158,90,0.10);
+  border: 1px solid rgba(30,158,90,0.35);
+  color: var(--up);
 }
 
 .foot-link {

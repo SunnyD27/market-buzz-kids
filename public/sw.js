@@ -35,7 +35,12 @@
 //
 // Bumped to v6 for the Phase 16 follow-up — `games/mystery-mover.js` share
 // flow (Web Share API + ?src=mm-share channel tag).
-const VERSION = 'v6';
+//
+// Bumped to v7 for Phase 19 — the "Morning Juice" light-theme redesign
+// restyled `engagement.css` (light install banner, profile bar, retinted
+// accents), a precached shell asset. Without this bump, installed PWAs
+// would keep serving the old dark engagement.css over the new cream theme.
+const VERSION = 'v7';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
@@ -138,9 +143,9 @@ async function networkFirst(req, cacheName) {
     if (req.mode === 'navigate') {
       return new Response(
         '<!DOCTYPE html><html><head><meta charset="utf-8"><title>Market Juice — Offline</title>'
-        + '<style>body{background:#0d1117;color:#e6edf3;font-family:system-ui,sans-serif;'
+        + '<style>body{background:#FFF8EF;color:#2B2118;font-family:system-ui,sans-serif;'
         + 'display:flex;align-items:center;justify-content:center;min-height:100vh;text-align:center;padding:20px;}'
-        + 'h1{font-size:32px;margin-bottom:8px;} p{color:#8b949e;}</style></head>'
+        + 'h1{font-size:32px;margin-bottom:8px;} p{color:#5E5349;}</style></head>'
         + '<body><div><h1>📈 You\'re offline</h1>'
         + '<p>Connect to the internet to see today\'s digest.</p></div></body></html>',
         { headers: { 'Content-Type': 'text/html; charset=utf-8' } }

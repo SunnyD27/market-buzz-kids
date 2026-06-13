@@ -43,7 +43,7 @@
 | **16** ✅ | Mystery Mover + guest play on /sample + share grid — shipped 2026-06-12 | M | **Highest** | — |
 | **17** ✅ | Tomorrow's Call (daily prediction) — shipped 2026-06-12 | S–M | High | — |
 | **18** ✅ | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) — shipped 2026-06-13 | M | High (reliability) | — |
-| **19** | "Morning Juice" visual redesign | M | High | — |
+| **19** ✅ | "Morning Juice" visual redesign — shipped 2026-06-13 | M | High | — |
 | **20** | Weekly rhythm: Weekly Hold + "Your Week in Juice" | M | High | 17 (shares `user_picks`) |
 | **21** | Watchlist ("Your Companies") | M | Med-High | — |
 | **22** | Game lineup refresh (Panic or Patience, Bigger Fish, Headline or Hoax; retirements) | M | Med | — |
@@ -294,7 +294,20 @@ live generation produces a valid digest end-to-end.
 
 ---
 
-## Phase 19 — "Morning Juice" visual redesign
+## Phase 19 — "Morning Juice" visual redesign ✅ SHIPPED
+
+> **Status: built 2026-06-13.** Cream light theme via a `:root` token swap
+> (spec palette under new names, OLD names aliased on top — no `var()`
+> churn), dark theme preserved under `[data-theme="dark"]` for Phase 23,
+> vibe-tinted header + pill, Fredoka/Lexend/Space Grotesk type system,
+> inline-SVG section icons, starfield removed, applied across digest /
+> progress / auth / landing. Deviations in the HANDOFF entry — notably:
+> aliased (not renamed) tokens, kept the Google Fonts CDN, recolored the
+> wordmark citrus/berry/sun, kept the 14-day banner dismissal, and added
+> darker `-text` accent variants so green/red/sun/citrus clear WCAG AA as
+> text on cream (the bright brand hues fail as text). The "Got it" button
+> was already styled (spec was stale). WCAG verified live with the
+> inspector — all text ≥4.5:1.
 
 **Why.** The dark starfield is the default fintech/AI aesthetic and fights the
 morning-ritual brand. All CSS lives in `template.js` tokens, so this is contained.
