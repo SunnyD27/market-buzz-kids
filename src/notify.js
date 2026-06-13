@@ -80,10 +80,20 @@ export function buildFailureAlert({ date, edition, stage, error } = {}) {
     '',
     `Date: ${date || 'unknown'} (${edition || 'unknown'})`,
     `Stage: ${stage || 'generation'}`,
-    `Error: ${truncate(msg, 300)}`,
+    `Error: ${truncate(msg, 400)}`,
   ];
   if (pos != null) lines.push(`Parse position: ${pos}`);
   if (snippet) lines.push(`Near: …${truncate(snippet, 130)}…`);
+  // Phase 18b — zod validation failures carry the per-field error list
+  // (set by ai.js after the repair retry also fails). Cap the list so a
+  // pathological digest doesn't blow past Telegram's message limit.
+  try {
+    if (Array.isArray(error?.validationErrors) && error.validationErrors.length) {
+      lines.push('Validation errors:');
+      for (const v of error.validationErrors.slice(0, 8)) lines.push(`  - ${truncate(v, 120)}`);
+      if (error.validationErrors.length > 8) lines.push(`  …and ${error.validationErrors.length - 8} more`);
+    }
+  } catch { /* defensive — alert building must never throw */ }
   lines.push('', '⚠️ Teasers were NOT sent.');
   return lines.join('\n');
 }
@@ -92,10 +102,15 @@ export function buildFailureAlert({ date, edition, stage, error } = {}) {
  * ✅ Success ping. One line. Counts come from the sendDailyTeasers result
  * (sent / total parents / kids / failed). Defensive on missing numbers.
  */
-export function buildSuccessPing({ date, edition, sent, failed, total, kids } = {}) {
+export function buildSuccessPing({ date, edition, sent, failed, total, kids, attempt, maxAttempts } = {}) {
   const n = v => (Number.isFinite(v) ? v : 0);
   let line = `✅ Market Juice — ${date || 'unknown'} (${edition || 'unknown'}) generated · ${n(sent)}/${n(total)} teasers sent`;
   if (Number.isFinite(kids)) line += ` to ${kids} kids`;
   if (n(failed) > 0) line += ` · ${n(failed)} FAILED`;
+  // Phase 18c — note which retry-ladder attempt produced the digest.
+  // Quiet on a clean first try; loud when a retry saved the morning.
+  if (Number.isFinite(attempt) && attempt > 1) {
+    line += ` · ⚠️ needed attempt ${attempt}/${Number.isFinite(maxAttempts) ? maxAttempts : 3}`;
+  }
   return line;
 }

@@ -42,7 +42,7 @@
 | **15** ✅ | Push notifications (kid-facing trigger) — shipped 2026-06-12 | S–M | **Highest** | — |
 | **16** ✅ | Mystery Mover + guest play on /sample + share grid — shipped 2026-06-12 | M | **Highest** | — |
 | **17** ✅ | Tomorrow's Call (daily prediction) — shipped 2026-06-12 | S–M | High | — |
-| **18** | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) | M | High (reliability) | — |
+| **18** ✅ | Generation pipeline hardening (two-pass, validation, retries, sensitive-news rule) — shipped 2026-06-13 | M | High (reliability) | — |
 | **19** | "Morning Juice" visual redesign | M | High | — |
 | **20** | Weekly rhythm: Weekly Hold + "Your Week in Juice" | M | High | 17 (shares `user_picks`) |
 | **21** | Watchlist ("Your Companies") | M | Med-High | — |
@@ -236,7 +236,19 @@ double-pick rejected; MC awarded once; scrub covers user_picks.
 
 ---
 
-## Phase 18 — Generation pipeline hardening
+## Phase 18 — Generation pipeline hardening ✅ SHIPPED
+
+> **Status: built 2026-06-13.** Two-pass split (`runResearchPass` +
+> `runWritePass` with a forced emit_digest tool call), zod gate
+> (`src/digest-schema.js`) with one repair retry, the 7:00/7:10/7:25 retry
+> ladder (`src/morning-run.js` — single handler; three cron entries would
+> double-email the fan-out), SENSITIVE NEWS rule in all 3 builders + the
+> research prompt. Additions beyond this spec (HANDOFF entry has the full
+> list): a pass-1 sanity gate (hollow brief = failure), BOTH passes stream
+> (a silent multi-minute non-streaming call died to idle-connection
+> ETIMEDOUT in verification), Mystery Mover facts gathered in pass 1
+> (pass 2 has no search), and zod encodes the codebase's real shapes
+> (2–3 standard stories; wrap topMover has vibe/no principle).
 
 **Why.** Three distinct morning failures shared one root cause: a single API call doing
 research + writing + strict serialization simultaneously. Patches (brace-matcher,

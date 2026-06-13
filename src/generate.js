@@ -12,7 +12,7 @@ import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
 import { getRecent, record } from './content-history.js';
-import { pickMysteryCompany, finalizeMysteryMover } from './mystery.js';
+import { pickMysteryCompany } from './mystery.js';
 import { resolveTomorrowCalls } from './picks.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
 import { getEditionDate, getEditionType } from './calendar.js';
@@ -154,30 +154,19 @@ export async function generateDigest(opts = {}) {
   //   - hydrateDailyGames: today's 3-game daily challenge (new, Phase 6.5)
   // The games hydrator needs the generated quiz IF 'quiz' is in today's
   // rotation, so we await content first, then pass quiz into the games call.
+  // Phase 18: generateContent now owns the whole pipeline — research pass
+  // (web_search, sanity-gated brief), write pass (forced emit_digest tool
+  // call), scrub, glossary filter, the Phase 16 mystery finalize (name-leak
+  // gate + reserve fallback), and zod validation with one repair retry. It
+  // returns a fully validated digest or throws (→ the cron retry ladder).
   const content = await generateContent(marketData, news, movers, topMover, {
     recentWords,
     recentFacts,
     recentDigests,
     edition,
     mysteryCompany,
+    recentMystery,
   });
-
-  // Phase 16 — Mystery Mover hard gate. Validate Claude's clues (name-leak
-  // token check vs name/ticker/every acceptable answer, shape, lengths);
-  // on ANY failure swap in a deterministic reserve puzzle. Clue 5 (first
-  // letter + ticker length) is composed server-side either way. A leaky
-  // puzzle can never reach the immutable daily row.
-  {
-    const { puzzle, usedFallback, errors } = finalizeMysteryMover(
-      content.mysteryMover, mysteryCompany, today, recentMystery,
-    );
-    if (usedFallback) {
-      console.warn(`[Generate]   ⚠ Mystery Mover validation failed (${errors.join(' | ')}) — using reserve puzzle ${puzzle.name} (${puzzle.ticker})`);
-    } else {
-      console.log(`[Generate]   Mystery Mover clues validated clean (${puzzle.ticker})`);
-    }
-    content.mysteryMover = puzzle;
-  }
 
   const dailyChallenge = await hydrateDailyGames({
     fmpKey,
