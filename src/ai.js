@@ -2,6 +2,7 @@ import Anthropic from '@anthropic-ai/sdk';
 import { knownTermList, isKnownTerm } from './glossary.js';
 import { validateDigest } from './digest-schema.js';
 import { finalizeMysteryMover } from './mystery.js';
+import { weeklyHoldBlock } from './weekly.js';
 
 // Lazy client init. Constructing at module load runs before dotenv
 // finishes overriding stale env (real gotcha on macOS where launchd can
@@ -1029,7 +1030,7 @@ RULES ON OUTPUT:
  * Forward-looking preview instead of a recap; stories highlight upcoming
  * earnings/events; word-of-day picks a forward-looking term.
  */
-function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '') {
+function buildWeekAheadPrompt(marketData, _topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '', weeklyHoldCandidates = null) {
   // NOTE: `topMover` (Friday's biggest curated mover) is intentionally NOT
   // surfaced in this prompt — a forward-looking preview has no "today's
   // mover," and Friday's % move wearing a "today" label is the bug we're
@@ -1124,6 +1125,8 @@ PARENT EXPLAINER RULES (Phase 12):
 ${glossaryNominationBlock()}
 
 ${mysteryMoverBlock(mysteryCompany)}
+
+${weeklyHoldBlock(weeklyHoldCandidates)}
 
 (NO sundayChallenge field — that's Sunday-only.)
 
@@ -1225,7 +1228,8 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
     }
   },
 ${GLOSSARY_NOMINATION_SCHEMA},
-${MYSTERY_MOVER_SCHEMA}
+${MYSTERY_MOVER_SCHEMA},
+${weeklyHoldCandidates ? `  "weeklyHold": { "cases": { ${weeklyHoldCandidates.map(c => `"${c.ticker}": "one short kid-friendly case (<=20 words)"`).join(', ')} } }` : '  "weeklyHold": null'}
 }
 
 RULES ON OUTPUT:
@@ -1257,6 +1261,8 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   // Null = no mystery block in the prompt (the generate.js fallback still
   // ships a reserve puzzle, so the digest is never missing one).
   const mysteryCompany = opts.mysteryCompany || null;
+  // Phase 20 — the server-picked Weekly Hold candidates (week-ahead only).
+  const weeklyHoldCandidates = opts.weeklyHoldCandidates || null;
 
   // The dateStr is generated from real-now for production, or from the
   // edition's dateStr (which honors DATE_OVERRIDE) so tests show the
@@ -1313,7 +1319,7 @@ export async function generateContent(marketData, news, movers, topMover, opts =
       case 'weekly-wrap':
         return buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief);
       case 'week-ahead':
-        return buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief);
+        return buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief, weeklyHoldCandidates);
       default:
         return buildStandardPrompt(marketData, news, movers, topMover, recentWords, recentFacts, dateStr, tradingDayLabel, recentDigests, mysteryCompany, brief);
     }
@@ -1497,6 +1503,7 @@ const EMIT_DIGEST_TOOL = {
       wordOfDay: { type: 'object' },
       sundayChallenge: { type: 'object' },
       mysteryMover: { type: 'object' },
+      weeklyHold: { type: 'object' },
       glossaryNominations: { type: 'array', items: { type: 'object' } },
     },
     required: ['date', 'marketVibe', 'vibeSummary', 'bigPicture', 'scoreboard', 'stories', 'didYouKnow', 'quiz', 'wordOfDay', 'mysteryMover'],

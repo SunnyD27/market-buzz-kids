@@ -40,7 +40,8 @@ the door for future sponsored content with a 30-day parent notice).
 | **16** Mystery Mover — daily puzzle + guest play on /sample + share grid | ✅ | **Merged + deployed to production** via PR #39 (incl. the share follow-ups: ?src=mm-share tag + Web Share API). 78-assertion smoke test + full-suite regression green; post-deploy verification complete (logged-in MC award, mobile guest play, native share sheet — see the post-deploy addendum). See the Phase 16 session entries. |
 | **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | **Merged + deployed to production** via PR #40. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. Post-deploy spot-check pending: in-browser tap→locked-chip + explainer with a real kid account. See the Phase 17 session entry. |
 | **18** Generation pipeline hardening — two-pass + zod + retry ladder + sensitive-news rule | ✅ | **Merged + live in production** via PR #41 — running on the two-pass pipeline, all editions verified live. 49-assertion smoke test + full-suite regression green; repair retry and mystery reserve fallback both fired and recovered during verification. See the Phase 18 session entry. |
-| **19** "Morning Juice" visual redesign — cream light theme | ✅ | On `dev` awaiting next PR. 33-assertion theme smoke test + full-suite regression green; WCAG AA verified LIVE with the inspector on every surface (all text ≥4.5:1); before/after screenshots of all 5 header states + 7 surfaces. See the Phase 19 session entry. |
+| **19** "Morning Juice" visual redesign — cream light theme | ✅ | **Merged + live in production** via PR #42. 33-assertion theme smoke test + full-suite regression green; WCAG AA verified LIVE with the inspector on every surface (all text ≥4.5:1); before/after screenshots of all 5 header states + 7 surfaces. See the Phase 19 session entry. |
+| **20** Weekly rhythm — Weekly Hold + "Your Week in Juice" | ✅ | On `dev` awaiting next PR. 48-assertion smoke test + full-suite regression green; live FMP-OHLC round-trip verified (AMD +5.5% beat IBM/Oracle → +20 MC, verdict-card screenshot). See the Phase 20 session entry. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -1892,3 +1893,110 @@ and /progress. Findings + fixes:
   `parent-delete-data.html` (its starfield div is now an inert no-op).
 - Glossary `.tip` tooltip + the celebration popups stay dark by design — a
   future pass could light-theme them if desired.
+
+---
+
+## Session: Phase 20 — Weekly rhythm (Weekly Hold + "Your Week in Juice")
+
+Gives each closed-market day a job: Monday places the weekly bet, Saturday
+pays it out, Sunday celebrates the kid's own week. Reuses `user_picks`
+kind='weekly-hold' (Phase 17 built it forward — confirmed, NO migration).
+
+**20a — Weekly Hold**
+- **Candidates: server-picked** (approved deviation from the spec's
+  "Claude picks them"). `src/weekly.js#pickWeeklyHoldCandidates` is
+  STATELESS + deterministic: one fixed shuffle of the curated 75, strided
+  3-at-a-time by the absolute ISO-week index → a ~25-week non-repeating
+  cycle, no rotation-history table. Same reasoning as Mystery Mover —
+  enforces the curated-75 + immutability invariants; Claude writes only the
+  one-line CASE per company (`weeklyHoldBlock` in the week-ahead prompt),
+  and `finalizeWeeklyHold` merges them with a canned per-company fallback.
+- **One pick per week** via the existing UNIQUE `(user_id, kind,
+  target_date)` — target = the week's LAST trading day (the week key).
+- **Blind-pick gate** (`isWeeklyHoldOpen`, approved): locks at the week's
+  FIRST trading-day 9:30 ET open. Server recomputes at POST.
+- **Resolution** (`resolveWeeklyHolds` in picks.js): parallel to
+  `resolveTomorrowCalls`, called right after it in the SAME isolated
+  never-throws seam in generateDigest — runs on every fresh/replay path, a
+  failure can't block the digest. Each candidate's **first-trading-day-OPEN
+  → last-trading-day-CLOSE** return from FMP full OHLC (`/stable/
+  historical-price-eod/full`). **+20 if the held company beats BOTH others
+  (strict), else +5.** Atomic `resolved_at IS NULL` claim (with
+  `dateColToString` on the target — the exact seam the Phase-17 date-as-
+  object bug lived; verified clean live). outcome stores all 3 returns +
+  display names + the win flag → the verdict card renders entirely from the
+  row.
+- **Holiday weeks** (`getFirstTradingDayOfWeek`/`getLastTradingDayOfWeek`):
+  holiday-Monday → Tuesday baseline open; Good-Friday → Thursday close.
+  Both verified live and in the smoke test against the 2026/2027 NYSE
+  calendar.
+
+**20b — "Your Week in Juice"** (`getWeekStats`, Sunday weekly-wrap card)
+- Built ENTIRELY from existing data (engagement_events + user_progress +
+  user_picks + personal_records) — zero new collection. MC this week, games
+  won/played, prediction record (e.g. 4 of 5), current streak, rank +
+  remaining-to-next, ONE broken record (by celebration priority).
+- Threaded as `opts.weekStats` per-request, ONLY when the row's editionType
+  is weekly-wrap AND a user is present. The static disk file
+  (`buildHTML(existing.content)`, no opts) and `/sample` never receive it —
+  immutability stays clean, card skips gracefully logged-out.
+- **Mid-week / 0-of-0 guards** (required): a kid who joined mid-week gets
+  partial stats, no error; predictionRecord is null at 0 picks (never
+  "0 of 0"). Verified in the smoke test.
+
+**Engagement semantics (your lean, endorsed):** weekly-hold-pick = 0 MC,
+counts as engaged, does NOT extend the streak (like prediction-made).
+weekly-hold-resolved = +20/+5 MC, never engagement/streak/Perfect Day (kid
+asleep). Both dedup on targetDate (the week). New `MC_AWARDS.weeklyHold`
++ two EVENT_TYPES + client mirror.
+
+**Card placement:** Weekly Hold at the END (like the prediction card);
+"Your Week in Juice" near the TOP of Sunday's digest (after the profile
+bar). Both use Phase 19 tokens — Space Grotesk numerals, --up-text/
+--down-text for the green/red returns (WCAG-legible on cream).
+
+**Phase 19 / Phase 15 follow-through:** the weekly-wrap morning-push copy
+TODO (standing since Phase 15) is DONE — swapped to "📋 Your Week in Juice
+is ready — see your stats"; test-push assertion + ROADMAP TODO updated.
+
+**Files:** `src/weekly.js` (new), `src/calendar.js` (4 week-boundary
+helpers), `src/picks.js` (weekly pick/resolve/state + OHLC fetch),
+`src/ai.js` (week-ahead weeklyHold block + schema), `src/generate.js`
+(candidate pick + finalize + resolution call), `src/server.js`
+(POST /api/weekly-hold + opts.weeklyHold/opts.weekStats threading),
+`src/engagement.js` (2 event branches + dedup + getWeekStats + engaged
+filter), `src/progression.js` + `public/progression-config.js`,
+`src/template.js` (both cards + CSS + tap handler), `src/push.js` +
+`scripts/test-push.js` (copy swap), `scripts/test-weekly.js` (new).
+
+**Verified**
+- `scripts/test-weekly.js` → **48/48 green** vs live Neon: candidate
+  selection, finalize, week boundaries (holiday edges), pick dedup + gate,
+  resolution +20/+5 + all-3-returns + win + idempotent re-run, engagement
+  semantics, getWeeklyHoldState phases (incl. no-pick-kid → null), get
+  WeekStats (incl. mid-week / 0-of-0), scrub.
+- Full 12-script suite green.
+- **Live FMP-OHLC round-trip** (approved cost): generated a real week-ahead
+  digest for Mon 2026-06-08 → server baked candidates IBM/ORCL/AMD with
+  cases → throwaway kid picked AMD (Mon 7am pre-open) → resolved the week of
+  06-08..06-12 against REAL FMP full OHLC → **AMD +5.48% beat IBM −4.96% and
+  Oracle −15.44% → win=true, +20 MC**, all 3 returns + names + win stored.
+  Verdict card screenshot taken (cream theme, "🏆 Your pick AMD +5.5% — beat
+  both!", sorted returns, "your pick" chip, --up-text/--down-text). Test
+  digest row + content_history + throwaway user fully deleted; today's real
+  disk digest restored.
+- A zod note: weeklyHold is server-finalized in generate.js AFTER the
+  Phase-18 zod gate (which runs inside generateContent), so it needs no zod
+  rule (BaseDigest is .loose()); finalize's canned fallback is its
+  validation.
+
+**Code-review-only (not exercised live):** the in-browser candidate tap →
+optimistic lock and the Sunday "Your Week in Juice" card on a logged-in
+weekly-wrap render (the card builder + getWeekStats are covered by the
+smoke test + the verdict screenshot path). Spot-check post-deploy like prior
+phases.
+
+**Open / future:**
+- Phase 21 (Watchlist) is next; it does NOT depend on Phase 20.
+- The 2026-06-08 round-trip left 3 glossary nominations in pending_glossary
+  (admin-gated real terms — Phase 16 precedent, harmless).

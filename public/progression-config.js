@@ -39,6 +39,8 @@
     },
     // Phase 17 — Tomorrow's Call: +5 on a correct prediction, 0 incorrect.
     predictionCorrect: 5,
+    // Phase 20 — Weekly Hold: +20 if it beats both others, +5 participation.
+    weeklyHold: { win: 20, participation: 5 },
     streakBonus: function (streakDays) {
       return Math.min(Math.max(0, streakDays) * 2, 30);
     },

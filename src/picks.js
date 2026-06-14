@@ -39,11 +39,16 @@
 // kid's running record advances either way.
 
 import { query } from './db.js';
-import { getNextTradingOpen, getLastTradingDay } from './calendar.js';
+import {
+  getNextTradingOpen, getLastTradingDay,
+  getFirstTradingDayOfWeek, getLastTradingDayOfWeek, isWeeklyHoldOpen,
+} from './calendar.js';
 import { fetchQuotes } from './data.js';
+import { lookupCompany } from './companies.js';
 import { recordEvent } from './engagement.js';
 
 const KIND = 'tomorrow-call';
+const KIND_WH = 'weekly-hold';
 
 /**
  * pg returns DATE columns as JS Date objects (UTC-midnight) — naive
@@ -332,6 +337,239 @@ export async function resolveTomorrowCalls(todayStr) {
     console.error('[picks] resolution sweep failed (digest generation unaffected):', err.message);
     return { ok: false, error: err.message };
   }
+}
+
+// ============================================================
+// Phase 20a — Weekly Hold (kind 'weekly-hold')
+// ============================================================
+// Pick one of 3 server-picked curated companies Monday; hold it the week.
+// target_date = the week's LAST trading day (the pick's week key — the
+// UNIQUE (user_id, kind, target_date) constraint is the one-per-week
+// dedup). Resolution: each candidate's first-trading-day-OPEN →
+// last-trading-day-CLOSE return; the pick wins (+20) only if it beats BOTH
+// others (strict), else +5. Same isolation as Tomorrow's Call.
+
+/**
+ * Insert a Weekly Hold pick. Gated by isWeeklyHoldOpen(now) — the blind-
+ * pick rule: locks at the week's first trading day open. `ticker` must be
+ * one of `candidates` (the digest's server-baked 3). Returns
+ * { inserted, targetDate, open } — open=false means the picking window
+ * already closed (no insert attempted).
+ */
+export async function createWeeklyHoldPick(userId, digestDate, ticker, candidates, now = new Date()) {
+  const open = isWeeklyHoldOpen(now);
+  if (!open) return { inserted: false, open: false, targetDate: getLastTradingDayOfWeek(digestDate) };
+  const tickers = (candidates || []).map(c => c.ticker);
+  if (!tickers.includes(ticker)) {
+    return { inserted: false, open: true, invalid: true, targetDate: getLastTradingDayOfWeek(digestDate) };
+  }
+  const targetDate = getLastTradingDayOfWeek(digestDate);
+  if (!targetDate) throw new Error(`No trading day in the week of ${digestDate}?!`);
+  const { rows } = await query(
+    `INSERT INTO user_picks (user_id, kind, digest_date, target_date, pick)
+     VALUES ($1, $2, $3::date, $4::date, $5::jsonb)
+     ON CONFLICT (user_id, kind, target_date) DO NOTHING
+     RETURNING id`,
+    [userId, KIND_WH, digestDate, targetDate, JSON.stringify({ chosen: ticker, candidates: tickers })],
+  );
+  return { inserted: rows.length > 0, open: true, targetDate };
+}
+
+/**
+ * The Weekly Hold card model for one kid, given the digest's content
+ * (candidates live on week-ahead rows) and edition. Phases:
+ *   'verdict' — the week resolved; show all 3 returns + win flag.
+ *   'locked'  — kid picked, week not yet resolved.
+ *   'pick'    — week-ahead, candidates present, window still open.
+ *   'closed'  — week-ahead, candidates present, window passed (no pick).
+ *   null      — nothing to show (incl. a kid who never picked → no error).
+ */
+export async function getWeeklyHoldState(userId, digestDate, content = {}, now = new Date()) {
+  const targetDate = getLastTradingDayOfWeek(digestDate);
+  if (!targetDate) return null;
+
+  const { rows } = await query(
+    `SELECT pick, outcome, resolved_at IS NOT NULL AS resolved
+       FROM user_picks
+      WHERE user_id = $1 AND kind = $2 AND target_date = $3::date`,
+    [userId, KIND_WH, targetDate],
+  );
+  const row = rows[0];
+  const editionType = content.editionType;
+  const candidates = content.weeklyHold?.candidates || null;
+
+  if (row && row.resolved && row.outcome) {
+    const o = row.outcome;
+    return {
+      phase: 'verdict',
+      chosen: o.chosen,
+      verdict: {
+        chosen: o.chosen,
+        chosenName: o.chosenName,
+        win: o.win === true,
+        returns: Array.isArray(o.returns) ? o.returns : [],
+      },
+    };
+  }
+  if (row) {
+    // Picked, awaiting the week's close.
+    return {
+      phase: 'locked',
+      chosen: row.pick?.chosen || null,
+      candidates: candidates || (row.pick?.candidates || []).map(t => ({ ticker: t, name: t })),
+    };
+  }
+  if (editionType === 'week-ahead' && candidates) {
+    return { phase: isWeeklyHoldOpen(now) ? 'pick' : 'closed', chosen: null, candidates };
+  }
+  return null;
+}
+
+/**
+ * Resolve a batch of unresolved weekly-hold rows for one `targetDate`
+ * (the week's last trading day) against `returnsByTicker` (pct per
+ * candidate). Exported so the smoke test can inject returns — no FMP.
+ * Win = chosen's return strictly beats BOTH others. Returns
+ * { resolved, won, mcAwarded }.
+ */
+export async function resolveWeeklyHoldsForTarget(targetDate, returnsByTicker, todayStr) {
+  const { rows } = await query(
+    `SELECT id, user_id, pick FROM user_picks
+      WHERE kind = $1 AND target_date = $2::date AND resolved_at IS NULL`,
+    [KIND_WH, targetDate],
+  );
+  let resolved = 0, won = 0, mcAwarded = 0;
+  for (const row of rows) {
+    try {
+      const chosen = row.pick?.chosen;
+      const cands = row.pick?.candidates || [];
+      // All three returns, in candidate order, with display names.
+      const returns = cands.map(t => ({ ticker: t, pct: round2(returnsByTicker[t]) }));
+      const chosenPct = returnsByTicker[chosen];
+      const others = cands.filter(t => t !== chosen).map(t => returnsByTicker[t]);
+      const win = typeof chosenPct === 'number'
+        && others.every(p => typeof p === 'number' && chosenPct > p);
+      const outcome = {
+        chosen,
+        chosenName: cands.length ? undefined : undefined, // filled below from lookup
+        chosenPct: round2(chosenPct),
+        returns,
+        win,
+      };
+      // Attach display names from the curated list.
+      outcome.returns = returns.map(r => ({ ...r, name: nameFor(r.ticker) }));
+      outcome.chosenName = nameFor(chosen);
+
+      const claim = await query(
+        `UPDATE user_picks SET resolved_at = NOW(), outcome = $2::jsonb
+          WHERE id = $1 AND resolved_at IS NULL RETURNING id`,
+        [row.id, JSON.stringify(outcome)],
+      );
+      if (claim.rows.length === 0) continue;
+
+      resolved++;
+      if (win) won++;
+      const result = await recordEvent(row.user_id, 'weekly-hold-resolved', {
+        digestDate: todayStr,
+        targetDate,
+        chosen,
+        win,
+        chosenPct: outcome.chosenPct,
+      });
+      mcAwarded += result?.mcAwarded || 0;
+    } catch (err) {
+      console.error(`[weekly-hold] resolution failed for pick ${row.id} (user ${row.user_id}):`, err.message);
+    }
+  }
+  return { resolved, won, mcAwarded };
+}
+
+/**
+ * The Saturday sweep. Self-contained, NEVER throws (a failure can never
+ * block the digest), runs on every generation path. Finds unresolved
+ * weekly-hold rows whose week has closed (target_date ≤ the last trading
+ * day available), fetches each candidate's first-open→last-close return
+ * from FMP OHLC, and resolves. Mirrors resolveTomorrowCalls's isolation.
+ */
+export async function resolveWeeklyHolds(todayStr) {
+  try {
+    const lastTrading = getLastTradingDay(new Date(todayStr + 'T12:00:00Z'));
+    if (!lastTrading) return { ok: false, error: 'no last trading day?' };
+
+    const { rows: pending } = await query(
+      `SELECT DISTINCT target_date FROM user_picks
+        WHERE kind = $1 AND resolved_at IS NULL AND target_date <= $2::date`,
+      [KIND_WH, lastTrading],
+    );
+    if (pending.length === 0) return { ok: true, resolved: 0 };
+
+    const apiKey = process.env.FMP_API_KEY;
+    if (!apiKey) return { ok: false, error: 'FMP_API_KEY not set' };
+
+    let totalResolved = 0, totalWon = 0;
+    for (const p of pending) {
+      const target = dateColToString(p.target_date);
+      const firstDay = getFirstTradingDayOfWeek(new Date(target + 'T12:00:00Z'));
+      if (!firstDay) continue;
+      try {
+        // The 3 candidate tickers for the rows targeting this week.
+        const { rows: tickerRows } = await query(
+          `SELECT DISTINCT jsonb_array_elements_text(pick->'candidates') AS ticker
+             FROM user_picks
+            WHERE kind = $1 AND target_date = $2::date AND resolved_at IS NULL`,
+          [KIND_WH, target],
+        );
+        const tickers = tickerRows.map(r => r.ticker);
+        const returnsByTicker = {};
+        for (const t of tickers) {
+          returnsByTicker[t] = await fetchWeeklyOHLCReturn(t, firstDay, target, apiKey);
+        }
+        // Only resolve when we have all candidate returns — a missing
+        // quote leaves the week pending for the next generation retry.
+        if (tickers.some(t => typeof returnsByTicker[t] !== 'number')) {
+          console.warn(`[weekly-hold] incomplete OHLC for week ${target} (${JSON.stringify(returnsByTicker)}) — left pending`);
+          continue;
+        }
+        const r = await resolveWeeklyHoldsForTarget(target, returnsByTicker, todayStr);
+        totalResolved += r.resolved;
+        totalWon += r.won;
+      } catch (err) {
+        console.warn(`[weekly-hold] resolution for week ${target} failed (left pending):`, err.message);
+      }
+    }
+    if (totalResolved > 0) {
+      console.log(`[weekly-hold] resolved ${totalResolved} pick(s) — ${totalWon} won`);
+    }
+    return { ok: true, resolved: totalResolved, won: totalWon };
+  } catch (err) {
+    console.error('[weekly-hold] resolution sweep failed (digest generation unaffected):', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+const round2 = (n) => (typeof n === 'number' ? Number(n.toFixed(2)) : n);
+
+/** Display name from the curated list (fallback to the ticker). */
+function nameFor(ticker) {
+  return lookupCompany(ticker)?.name || ticker;
+}
+
+/**
+ * One ticker's first-trading-day-OPEN → last-trading-day-CLOSE % return
+ * for the week, via FMP /stable full OHLC EOD. Returns a number or null.
+ */
+async function fetchWeeklyOHLCReturn(ticker, firstDay, lastDay, apiKey) {
+  const url = `https://financialmodelingprep.com/stable/historical-price-eod/full?symbol=${encodeURIComponent(ticker)}&from=${firstDay}&to=${lastDay}&apikey=${apiKey}`;
+  const res = await fetch(url);
+  if (!res.ok) throw new Error(`OHLC HTTP ${res.status} for ${ticker}`);
+  const data = await res.json();
+  const arr = Array.isArray(data) ? data : (Array.isArray(data?.historical) ? data.historical : null);
+  if (!arr || !arr.length) return null;
+  const byDate = Object.fromEntries(arr.map(d => [d.date, d]));
+  const first = byDate[firstDay], last = byDate[lastDay];
+  const open = first?.open, close = last?.close;
+  if (typeof open !== 'number' || typeof close !== 'number' || open === 0) return null;
+  return ((close - open) / open) * 100;
 }
 
 /** ^GSPC close-over-close % for a specific past date, via FMP /stable EOD. */

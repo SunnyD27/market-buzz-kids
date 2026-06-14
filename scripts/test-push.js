@@ -103,7 +103,7 @@ async function main() {
   eq('mixed day title (vibe not in roadmap spec — added)', mixed.title, "🟡 Mixed day — today's Juice is ready");
 
   const wrap = buildMorningPush({ editionType: 'weekly-wrap', marketVibe: 'green' });
-  eq('weekly-wrap title (interim copy until Phase 20)', wrap.title, '📋 Weekly Wrap is ready — see how your week went');
+  eq('weekly-wrap title (spec copy — Phase 20 shipped Your Week in Juice)', wrap.title, '📋 Your Week in Juice is ready — see your stats');
 
   const ahead = buildMorningPush({ editionType: 'week-ahead' });
   eq('week-ahead title (spec copy — Phase 17 shipped Tomorrow\'s Call)', ahead.title, '🔮 New week — make your picks');
