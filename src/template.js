@@ -1388,7 +1388,7 @@ export function buildHTML(content, opts = {}) {
     margin-bottom: 12px;
   }
   .sc-headline {
-    background: rgba(13,17,23,0.55);
+    background: var(--surface);
     border-radius: 12px;
     padding: 14px 16px;
     margin-bottom: 14px;
@@ -1418,8 +1418,8 @@ export function buildHTML(content, opts = {}) {
     margin-bottom: 12px;
   }
   .sc-stock {
-    background: rgba(26,34,53,0.85);
-    border: 1px solid rgba(43,33,24,0.09);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
     border-radius: 12px;
     padding: 12px;
     text-align: left;
@@ -1451,8 +1451,8 @@ export function buildHTML(content, opts = {}) {
     margin-bottom: 12px;
   }
   .sc-option {
-    background: rgba(26,34,53,0.85);
-    border: 1px solid rgba(43,33,24,0.10);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
     border-radius: 12px;
     padding: 12px 14px;
     text-align: left;
@@ -1476,8 +1476,8 @@ export function buildHTML(content, opts = {}) {
     font-weight: 700;
   }
   .sc-option-text { flex: 1; }
-  .sc-option.sc-correct { border-color: rgba(72,187,120,0.7); background: rgba(72,187,120,0.10); }
-  .sc-option.sc-wrong   { border-color: rgba(245,101,101,0.7); background: rgba(245,101,101,0.10); }
+  .sc-option.sc-correct { border-color: var(--up); background: var(--green-glow); }
+  .sc-option.sc-wrong   { border-color: var(--down); background: var(--red-glow); }
   .sc-option.sc-selected { border-color: var(--blue); background: rgba(91,79,199,0.10); }
   .sc-result-area { margin-top: 14px; }
   .sc-result-head {
@@ -1487,14 +1487,14 @@ export function buildHTML(content, opts = {}) {
     margin-bottom: 10px;
     color: var(--sun-text);
   }
-  .sc-result-head.win  { color: #6bd687; }
-  .sc-result-head.miss { color: #f0808a; }
+  .sc-result-head.win  { color: var(--up-text); }
+  .sc-result-head.miss { color: var(--down-text); }
   .sc-result-body, .sc-result-lesson, .sc-bottom-line {
     font-size: 14px; line-height: 1.6;
     color: var(--text); margin-bottom: 10px;
   }
   .sc-result-summary {
-    background: rgba(13,17,23,0.55);
+    background: var(--surface);
     border-radius: 10px;
     padding: 10px 12px;
     margin: 10px 0;
@@ -1519,10 +1519,10 @@ export function buildHTML(content, opts = {}) {
     height: 100%; border-radius: 4px;
     transition: width 0.4s ease-out;
   }
-  .sc-result-bar-fill.up   { background: linear-gradient(90deg, #4ade80, #6bd687); }
-  .sc-result-bar-fill.down { background: linear-gradient(90deg, #f56565, #fc8181); }
-  .sc-result-bar-pct.up   { color: #6bd687; text-align: right; }
-  .sc-result-bar-pct.down { color: #f0808a; text-align: right; }
+  .sc-result-bar-fill.up   { background: var(--up); }
+  .sc-result-bar-fill.down { background: var(--down); }
+  .sc-result-bar-pct.up   { color: var(--up-text); text-align: right; }
+  .sc-result-bar-pct.down { color: var(--down-text); text-align: right; }
   .sc-next-btn, .sc-reveal-btn {
     background: linear-gradient(135deg, var(--yellow), #b08a4a);
     border: none; border-radius: 10px;
@@ -1555,7 +1555,7 @@ export function buildHTML(content, opts = {}) {
   }
   .sc-timer-fill {
     height: 100%; width: 100%;
-    background: linear-gradient(90deg, var(--yellow), #f56565);
+    background: linear-gradient(90deg, var(--yellow), var(--down));
     border-radius: 3px;
   }
   .sc-vs-grid {
@@ -1567,8 +1567,8 @@ export function buildHTML(content, opts = {}) {
     .sc-vs-grid { grid-template-columns: 1fr 1fr; }
   }
   .sc-analysis-card {
-    background: rgba(13,17,23,0.55);
-    border: 1px solid rgba(43,33,24,0.08);
+    background: var(--surface);
+    border: 1px solid var(--surface-border);
     border-radius: 12px;
     padding: 14px;
   }
