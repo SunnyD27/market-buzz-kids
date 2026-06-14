@@ -2000,3 +2000,54 @@ phases.
 - Phase 21 (Watchlist) is next; it does NOT depend on Phase 20.
 - The 2026-06-08 round-trip left 3 glossary nominations in pending_glossary
   (admin-gated real terms — Phase 16 precedent, harmless).
+
+## Session: Phase 19 follow-up — Sunday Challenge card theme bug
+
+Visual regression caught on a real device: the Sunday Challenge ("CEO for a
+Day") cards never picked up the Phase 19 cream theme. Root cause — the
+`.sc-*` card styles use **literal** dark hex/rgba, so the Phase 19
+alias-the-old-token-names trick (which only re-skins `var()` references)
+couldn't reach them. The `.sc-*` block is **duplicated** in two places and
+both were fixed identically:
+- `src/template.js` (server-rendered digest — the `/` and `/sample` routes)
+- `public/index.html` (the network-first PWA snapshot served at `/index.html`)
+
+**Literals → Phase 19 tokens (same edits in both files):**
+- Scenario box `.sc-headline`, `.sc-result-summary`, `.sc-analysis-card`,
+  and the option/stock cards `.sc-option`/`.sc-stock`: `rgba(13,17,23,.55)` /
+  `rgba(26,34,53,.85)` → `var(--surface)`; their literal borders →
+  `var(--surface-border)`.
+- Correct/wrong option states: hardcoded green/red rgba →
+  `var(--up)`+`var(--green-glow)` / `var(--down)`+`var(--red-glow)`.
+- Green/red **TEXT** (`.sc-result-head.win/.miss`, `.sc-result-bar-pct`):
+  light `#6bd687`/`#f0808a` → `var(--up-text)`/`var(--down-text)` (the WCAG
+  `-text` variants, not the bright fills — per the Phase 19 AA fix).
+- Green/red **fills** (`.sc-result-bar-fill`, `.sc-timer-fill`) →
+  `var(--up)`/`var(--down)`.
+
+The remaining `rgba(43,33,24,…)` micro-tints (progress-bar tracks, the
+inactive dot, metric dividers) were left — they're already ink-on-light
+values from the Phase 19 pass, not part of the regression. The fixed
+text-on-gold button color `#2B2118` was also left (intentional dark-on-gold,
+same pattern as `.mover-badge`).
+
+**SW shell version NOT bumped** — `games/styles.css` (the one precached
+`.sc-*`-adjacent shell asset) was already fully tokenized and needed no
+change; `template.js` is server-rendered and `/index.html` is network-first,
+so neither is a cache-first shell asset. No bump required.
+
+**Other game cards checked (per the ask):** clean. `public/games/styles.css`
+(all `mj-*`/`dc-*` classes) and every other game JS use `var()` tokens
+throughout — the only literal is `color:#0d1117` on a bright gradient pill,
+the same intentional dark-on-accent pattern. There is no "Panic or Patience"
+game (only digest content mentions "panic"). The hardcoded-dark mistake
+existed **only** in the Sunday Challenge `.sc-*` block.
+
+**Verified:** built a throwaway harness rendering the exact `renderCEO()`
+markup against the live (fixed) CSS + a faithful "before" repro; measured
+WCAG AA on the real rendered elements with a compositing contrast checker —
+all ≥4.5:1 (scenario & option text 15.75:1; win head 5.15:1; correct/wrong
+option text on the washes 13.11/12.85:1; lowest = option-letter badge
+4.76:1). Before/after screenshots captured. `node scripts/test-theme.js` —
+all assertions pass (incl. the "no stray dark navy hex in any light :root"
+half-migration guard). Harness deleted.
