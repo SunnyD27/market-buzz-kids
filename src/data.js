@@ -129,66 +129,68 @@ export async function fetchMovers(apiKey) {
 }
 
 /**
- * Fetch batch quotes for the curated company list and pick the single stock
- * with the largest absolute % move today. This is "Today's Mover" — the
- * gold-highlighted card in the scoreboard.
- *
- * Strategy:
- *   - Batch quote endpoint supports comma-separated symbols, so this is one
- *     HTTP call regardless of curated-list size.
- *   - We return the raw quote for the winner + the curated company metadata
- *     (display name, sector) so the template and AI prompt can use both.
- *   - If the API fails or returns no usable data, return null and let the
- *     caller decide how to degrade.
+ * Fan out one /quote per curated ticker and return the normalized valid
+ * quotes. FMP's free tier has no working multi-ticker batch (multi-ticker
+ * `/stable/quote?symbol=A,B,C` returns []; `/stable/batch-quote` is paid-only
+ * — see fetchQuotes), so this is a per-ticker fan-out. It's the bulk of our
+ * daily FMP spend (~80 calls, well under the 250/day cap) and feeds BOTH the
+ * Phase 21 `daily_prices` snapshot (every day) AND Today's Mover.
+ * Returns [{ symbol, price, change, changesPercentage, previousClose, name, … }].
  */
-export async function fetchTopMover(apiKey) {
+export async function fetchPriceSnapshot(apiKey) {
   try {
-    // FMP killed multi-ticker `/stable/quote?symbol=A,B,C` on the free tier
-    // (returns []), and `/stable/batch-quote` is paid-only. So we fan out
-    // one /quote call per curated ticker, in parallel. With ~75 tickers
-    // and FMP's 250/day free limit, this single fan-out is the bulk of
-    // our daily spend — still well under the cap.
     const results = await Promise.all(CURATED_TICKERS.map(t =>
       fmpFetch(`/quote?symbol=${encodeURIComponent(t)}&apikey=${apiKey}`, `quote(${t})`)
         .then(data => Array.isArray(data) ? data[0] : data)
-        .catch(err => { console.error(`[Data] Top-mover fetch(${t}) failed:`, err.message); return null; })
+        .catch(err => { console.error(`[Data] quote(${t}) failed:`, err.message); return null; })
     ));
     // FMP renamed `changesPercentage` → `changePercentage` on /stable.
-    // Normalize so the rest of the function (and downstream consumers)
-    // can keep using the historical name.
-    const valid = results
+    // Normalize so downstream consumers can keep using the historical name.
+    return results
       .filter(q => q && typeof q.price === 'number' &&
         typeof (q.changePercentage ?? q.changesPercentage) === 'number')
       .map(q => ({ ...q, changesPercentage: q.changePercentage ?? q.changesPercentage }));
-    if (valid.length === 0) {
-      console.error('[Data] Top mover: no valid quotes returned from per-ticker fan-out');
-      return null;
-    }
-    // Sort by absolute % change, descending.
-    valid.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
-    const winner = valid[0];
-    const company = lookupCompany(winner.symbol);
-    return {
-      ticker: winner.symbol,
-      displayName: company?.name || winner.name || winner.symbol,
-      sector: company?.sector || null,
-      price: winner.price,
-      change: winner.change,
-      changesPercentage: winner.changesPercentage,
-      previousClose: winner.previousClose,
-      // Include the top 5 candidates so the AI prompt can see alternatives if
-      // it wants context on whether today's pick is dramatic or muted.
-      runnersUp: valid.slice(1, 5).map(q => ({
-        ticker: q.symbol,
-        name: lookupCompany(q.symbol)?.name || q.name || q.symbol,
-        changesPercentage: q.changesPercentage,
-        price: q.price,
-      })),
-    };
   } catch (err) {
-    console.error('[Data] Failed to fetch top mover:', err.message);
+    console.error('[Data] Price-snapshot fan-out failed:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Pick "Today's Mover" — the curated stock with the largest absolute % move —
+ * from a price snapshot. Pure (no I/O); returns null on an empty snapshot.
+ * Includes the top-5 runners-up so the AI prompt can gauge how dramatic the
+ * day's pick is.
+ */
+export function pickTopMover(snapshot) {
+  const valid = Array.isArray(snapshot) ? snapshot.slice() : [];
+  if (valid.length === 0) {
+    console.error('[Data] Top mover: empty price snapshot');
     return null;
   }
+  valid.sort((a, b) => Math.abs(b.changesPercentage) - Math.abs(a.changesPercentage));
+  const winner = valid[0];
+  const company = lookupCompany(winner.symbol);
+  return {
+    ticker: winner.symbol,
+    displayName: company?.name || winner.name || winner.symbol,
+    sector: company?.sector || null,
+    price: winner.price,
+    change: winner.change,
+    changesPercentage: winner.changesPercentage,
+    previousClose: winner.previousClose,
+    runnersUp: valid.slice(1, 5).map(q => ({
+      ticker: q.symbol,
+      name: lookupCompany(q.symbol)?.name || q.name || q.symbol,
+      changesPercentage: q.changesPercentage,
+      price: q.price,
+    })),
+  };
+}
+
+/** Back-compat: fetch the snapshot + pick the mover in one call. */
+export async function fetchTopMover(apiKey) {
+  return pickTopMover(await fetchPriceSnapshot(apiKey));
 }
 
 /**
@@ -234,15 +236,17 @@ export async function fetchQuotes(tickers, apiKey) {
 }
 
 export async function fetchAllData(apiKey, opts = {}) {
-  // `opts.skipTopMover` lets the week-ahead path skip the Today's Mover
-  // fetch — that edition is forward-looking, so Friday's % mover is stale
-  // and would only show up as a mislabeled card. Saves the per-ticker
-  // fan-out across 75 curated names on Monday/post-holiday runs.
-  const [marketData, news, movers, topMover] = await Promise.all([
+  // The curated fan-out now runs EVERY day (incl. week-ahead Monday) so the
+  // Phase 21 watchlist always has a same-day price snapshot. `opts.skipTopMover`
+  // only suppresses the forward-looking edition's MOVER card (Friday's % move
+  // is stale + would mislabel) — it NO LONGER skips the fan-out, because the
+  // snapshot needs it. One fan-out feeds both the snapshot and the mover.
+  const [marketData, news, movers, priceSnapshot] = await Promise.all([
     fetchMarketData(apiKey),
     fetchNews(apiKey),
     fetchMovers(apiKey),
-    opts.skipTopMover ? Promise.resolve(null) : fetchTopMover(apiKey),
+    fetchPriceSnapshot(apiKey),
   ]);
-  return { marketData, news, movers, topMover };
+  const topMover = opts.skipTopMover ? null : pickTopMover(priceSnapshot);
+  return { marketData, news, movers, topMover, priceSnapshot };
 }

@@ -8,6 +8,8 @@ import { writeFileSync, mkdirSync } from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { fetchAllData } from './data.js';
+import { CURATED_TICKERS } from './companies.js';
+import { persistDailyPrices } from './watchlist.js';
 import { generateContent } from './ai.js';
 import { hydrateDailyGames } from './games.js';
 import { buildHTML } from './template.js';
@@ -113,11 +115,27 @@ export async function generateDigest(opts = {}) {
   // the prompt builder ignores topMover for week-ahead and Claude picks a
   // catalyst-driven `oneToWatch` from upcoming events instead.
   const skipTopMover = edition.editionType === 'week-ahead';
-  const { marketData, news, movers, topMover } = await fetchAllData(fmpKey, { skipTopMover });
+  const { marketData, news, movers, topMover, priceSnapshot } = await fetchAllData(fmpKey, { skipTopMover });
   console.log(`[Generate]   Indices: ${Object.keys(marketData).length} symbols`);
   console.log(`[Generate]   News: ${news.length} articles`);
   console.log(`[Generate]   Movers: ${movers.topGainers.length} gainers, ${movers.topLosers.length} losers`);
   console.log(`[Generate]   Today's Mover: ${skipTopMover ? 'skipped (week-ahead — uses oneToWatch instead)' : (topMover ? `${topMover.ticker} (${topMover.displayName}) ${topMover.changesPercentage?.toFixed?.(2)}%` : 'unavailable')}`);
+
+  // Phase 21 — persist the curated price snapshot (same fan-out, ZERO extra
+  // FMP calls) so the watchlist's "since you started following" number renders
+  // per-request. Idempotent upsert keyed on (price_date, ticker); fail-soft —
+  // a snapshot miss must never block digest generation. Cost-guard: the daily
+  // fan-out IS the curated list, so warn if it grows toward the 250/day cap
+  // (the cue to move to FMP batch-quote / a paid plan, per the deferred tier).
+  try {
+    const n = await persistDailyPrices(priceSnapshot, today);
+    console.log(`[Generate]   Price snapshot: stored ${n} ticker(s) into daily_prices for ${today}`);
+    if (CURATED_TICKERS.length >= 200) {
+      console.warn(`[Generate]   ⚠️ COST GUARD: daily FMP fan-out is ${CURATED_TICKERS.length} tickers — approaching the 250/day free cap. Time to consider FMP batch-quote / a paid plan (see the deferred premium-universe note).`);
+    }
+  } catch (err) {
+    console.error('[Generate]   Price snapshot persist failed (watchlist since-% will degrade):', err.message);
+  }
 
   if (Object.keys(marketData).length === 0) {
     throw new Error('No market data returned from FMP — check API key');
