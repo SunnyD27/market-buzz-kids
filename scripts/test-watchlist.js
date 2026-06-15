@@ -19,7 +19,7 @@ import {
 } from '../src/companies.js';
 import {
   matchInNews, relativeFollowLabel, persistDailyPrices, addWatchlist,
-  removeWatchlist, recordMilestone, recordOffer, getWatchlistState,
+  removeWatchlist, recordMilestone, recordOffer, getWatchlistState, saveWatchlist,
   AMBIGUOUS_TICKERS, MAX_FOLLOWS,
 } from '../src/watchlist.js';
 import { storage } from '../src/storage.js';
@@ -198,6 +198,37 @@ async function main() {
   await addWatchlist(u6, 'DIS', `${FIX}09-02`); // DIS price from Section 4 fixture (06-01) as latest ≤ 09-02
   const m3 = await getWatchlistState(u6, `${FIX}09-02`, {});
   ok('3 held → 0 ghost slots', m3.held.length === 3 && m3.ghostSlots === 0);
+
+  // -------- Section 11: draft→Save diff (live, PR #48 fix) -----------------
+  console.log('\nSection 11 — Save diff: add/drop batching + cooldown-on-drop');
+  await persistDailyPrices(
+    [{ symbol: 'NKE', price: 100 }, { symbol: 'RBLX', price: 50 }, { symbol: 'DIS', price: 90 },
+     { symbol: 'SPCX', price: 200 }], `${FIX}11-01`);
+  // (a) add-only Save; followed_since stamped at SAVE time (not before).
+  const s1 = await createTestUser('s1');
+  const r1 = await saveWatchlist(s1, ['NKE', 'RBLX'], [], `${FIX}11-02`);
+  ok('add-only Save follows both', r1.added.length === 2 && r1.blocked.length === 0 && r1.dropped.length === 0);
+  const fs = (await query(`SELECT followed_since::text AS d FROM user_watchlist WHERE user_id=$1 AND ticker='NKE'`, [s1])).rows[0]?.d;
+  eq('followed_since set at Save time', fs, `${FIX}11-02`);
+  // (b) add + drop where the drop is PAST cooldown → both apply.
+  const s2 = await createTestUser('s2');
+  await addWatchlist(s2, 'NKE', `${FIX}11-01`);                       // followed 11-01
+  const r2 = await saveWatchlist(s2, ['DIS'], ['NKE'], `${FIX}11-10`); // 9 days later
+  ok('past-cooldown drop + add both apply', r2.dropped.includes('NKE') && r2.added.includes('DIS') && r2.blocked.length === 0);
+  // (c) drop WITHIN cooldown → that ticker blocked w/ daysRemaining, the add still applies, blocked stays committed.
+  const s3 = await createTestUser('s3');
+  await addWatchlist(s3, 'NKE', `${FIX}11-10`);                        // followed 11-10
+  const r3 = await saveWatchlist(s3, ['DIS'], ['NKE'], `${FIX}11-12`); // 2 days later
+  ok('cooling drop blocked w/ daysRemaining', r3.blocked.length === 1 && r3.blocked[0].ticker === 'NKE' && r3.blocked[0].daysRemaining === 5);
+  ok('blocked drop carries display name', r3.blocked[0].name === 'Nike');
+  ok('the allowed add still applied', r3.added.includes('DIS'));
+  const heldS3 = (await query(`SELECT ticker FROM user_watchlist WHERE user_id=$1 ORDER BY ticker`, [s3])).rows.map(r => r.ticker);
+  ok('blocked company stays committed (NKE + DIS held)', heldS3.join(',') === 'DIS,NKE');
+  // (d) cap-3 re-enforced server-side even via Save.
+  const s4 = await createTestUser('s4');
+  const r4 = await saveWatchlist(s4, ['NKE', 'RBLX', 'DIS', 'SPCX'], [], `${FIX}11-02`);
+  ok('cap-3 enforced on Save (3 added, 4th rejected)',
+    r4.added.length === 3 && r4.errors.some(e => e.code === 'cap-reached'));
 
   // -------- Section 10: COPPA scrub (live) ---------------------------------
   console.log('\nSection 10 — deletion scrub covers user_watchlist + prefs');

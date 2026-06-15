@@ -102,14 +102,20 @@ export function watchlistCard(watchlist, esc, principles = {}) {
   </div>`;
 }
 
-/** The hidden categorized tap-to-select picker (no free text; typeahead filters only). */
+/**
+ * The categorized tap-to-select picker (no free text; typeahead filters only).
+ * Draft → Save model: tiles toggle a client-side draft (selection is reversible
+ * + uncommitted); an explicit Save commits the diff; the X / Cancel discard.
+ * Tiles render unselected — the controller seeds the selected state from the
+ * card's currently-saved companies on open.
+ */
 export function watchlistPicker(esc) {
   const groups = followableByCategory().map(g => `
       <div class="wlp-group" data-cat="${g.key}">
         <div class="wlp-group-head">${g.emoji} ${esc(g.label)}</div>
         <div class="wlp-tiles">
           ${g.companies.map(c => `
-            <button type="button" class="wlp-tile" data-ticker="${esc(c.ticker)}" data-name="${esc(c.name).toLowerCase()}">
+            <button type="button" class="wlp-tile" data-ticker="${esc(c.ticker)}" data-name="${esc(c.name).toLowerCase()}" aria-pressed="false">
               <span class="wlp-tile-name">${esc(c.name)}</span>
               <span class="wlp-tile-ticker">${esc(c.ticker)}</span>
             </button>`).join('')}
@@ -120,11 +126,16 @@ export function watchlistPicker(esc) {
     <div class="wlp-panel" role="dialog" aria-label="Pick companies to follow">
       <div class="wlp-top">
         <div class="wlp-title">Follow up to 3 companies</div>
-        <button type="button" class="wlp-close" id="wlp-close" aria-label="Close">✕</button>
+        <button type="button" class="wlp-close" id="wlp-close" aria-label="Close without saving">✕</button>
       </div>
       <input type="text" class="wlp-filter" id="wlp-filter" placeholder="Filter (e.g. ro → Roblox)…" autocomplete="off" inputmode="search" />
+      <div class="wlp-cap-hint" id="wlp-cap-hint" hidden>You can follow 3 — tap a selected one to drop it and free a slot.</div>
       <div class="wlp-empty" id="wlp-empty" hidden>No matches — try a different word.</div>
       <div class="wlp-groups">${groups}</div>
+      <div class="wlp-footer">
+        <button type="button" class="wlp-cancel" id="wlp-cancel">Cancel</button>
+        <button type="button" class="wlp-save" id="wlp-save" disabled>Save</button>
+      </div>
     </div>
   </div>`;
 }
@@ -165,7 +176,12 @@ export const WATCHLIST_CSS = `
   .wl-offer-pick { font-family: 'Fredoka', sans-serif; font-weight: 600; font-size: 13px; background: linear-gradient(135deg, var(--citrus), var(--berry)); color: #fff; border: none; border-radius: 999px; padding: 8px 16px; cursor: pointer; }
   .wl-offer-skip, .wl-offer-decline { font-family: 'Fredoka', sans-serif; font-size: 13px; color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 8px 6px; }
   .wl-offer-skip:hover, .wl-offer-decline:hover { color: var(--text); }
-  .wl-picker { position: fixed; inset: 0; z-index: 50; background: rgba(13,17,23,0.45); display: flex; align-items: flex-end; justify-content: center; animation: fadeIn 0.2s ease-out; }
+  /* IMPORTANT: layout props only on the base rule — the actual display lives in
+     :not([hidden]) so the [hidden] attribute genuinely hides the picker. (A
+     base display:flex here would override [hidden]'s display:none, so the X
+     close would do nothing. That was the PR #48 bug.) */
+  .wl-picker { position: fixed; inset: 0; z-index: 50; background: rgba(13,17,23,0.45); align-items: flex-end; justify-content: center; }
+  .wl-picker:not([hidden]) { display: flex; animation: fadeIn 0.2s ease-out; }
   @media (min-width: 600px) { .wl-picker { align-items: center; } }
   .wlp-panel { background: var(--bg); width: 100%; max-width: 560px; max-height: 82vh; border-radius: 20px 20px 0 0; padding: 16px 16px 24px; overflow-y: auto; border: 1px solid var(--surface-border); }
   @media (min-width: 600px) { .wlp-panel { border-radius: 20px; max-height: 80vh; } }
@@ -183,6 +199,20 @@ export const WATCHLIST_CSS = `
   .wlp-tile:active { transform: scale(0.98); }
   .wlp-tile-name { font-size: 14px; font-weight: 700; color: var(--text-bright); }
   .wlp-tile-ticker { font-family: 'Space Grotesk', sans-serif; font-size: 10px; letter-spacing: 1px; color: var(--text-dim); }
+  /* Draft selection — clearly highlighted, with a ✓ corner badge. */
+  .wlp-tile.wlp-tile-selected { border-color: var(--berry); background: rgba(91,79,199,0.14); box-shadow: inset 0 0 0 1.5px var(--berry); position: relative; }
+  .wlp-tile.wlp-tile-selected::after { content: '✓'; position: absolute; top: 6px; right: 8px; font-size: 12px; font-weight: 700; color: var(--berry); }
+  /* Cap reached → unselected tiles dim + show a not-allowed cursor. */
+  .wlp-tile.wlp-tile-full { opacity: 0.38; cursor: default; }
+  .wlp-tile.wlp-tile-full:hover { border-color: var(--surface-border); background: var(--surface); }
+  .wlp-cap-hint { font-size: 12px; color: var(--sun-text); background: rgba(255,194,51,0.12); border: 1px solid rgba(255,194,51,0.28); border-radius: 10px; padding: 7px 10px; margin-bottom: 10px; }
+  .wlp-footer { position: sticky; bottom: -24px; display: flex; gap: 10px; justify-content: flex-end; align-items: center; padding: 12px 0 0; margin-top: 4px; background: var(--bg); border-top: 1px solid var(--surface-border); }
+  .wlp-cancel { font-family: 'Fredoka', sans-serif; font-size: 14px; color: var(--text-dim); background: none; border: none; cursor: pointer; padding: 10px 14px; }
+  .wlp-cancel:hover { color: var(--text); }
+  .wlp-save { font-family: 'Fredoka', sans-serif; font-size: 14px; font-weight: 700; color: #fff; background: linear-gradient(135deg, var(--citrus), var(--berry)); border: none; border-radius: 999px; padding: 10px 22px; cursor: pointer; }
+  .wlp-save[disabled] { opacity: 0.4; cursor: default; }
+  /* Post-save flash (e.g. a cooldown-blocked drop) — survives the reload. */
+  .wl-flash { background: var(--red-glow); border: 1px solid rgba(229,72,77,0.30); color: var(--down-text); border-radius: 12px; padding: 9px 12px; margin-bottom: 12px; font-size: 13px; line-height: 1.5; }
 `;
 
 /** The card + picker controller JS (no <script> tags). Inert when #watchlist-card absent. */
@@ -195,17 +225,95 @@ export const WATCHLIST_CONTROLLER = `
     return fetch(url, { method: method, headers: { 'Content-Type': 'application/json' }, body: body ? JSON.stringify(body) : undefined })
       .then(function (r) { return r.json().catch(function () { return {}; }).then(function (j) { return { status: r.status, body: j }; }); });
   }
+  var MAX = 3;
+  // Post-save flash (e.g. a cooldown-blocked drop) — stashed before the reload.
+  try {
+    var flash = sessionStorage.getItem('wl-flash');
+    if (flash) {
+      sessionStorage.removeItem('wl-flash');
+      var msgs = JSON.parse(flash);
+      if (msgs && msgs.length) {
+        var fb = document.createElement('div'); fb.className = 'wl-flash';
+        msgs.forEach(function (m, i) { if (i) fb.appendChild(document.createElement('br')); fb.appendChild(document.createTextNode(m)); });
+        var head = card.querySelector('.wl-head'); card.insertBefore(fb, head ? head.nextSibling : card.firstChild);
+      }
+    }
+  } catch (e) {}
+
+  // The currently-SAVED set comes from the card's committed companies.
+  var saved = {};
+  card.querySelectorAll('.wl-drop[data-ticker]').forEach(function (b) { saved[b.getAttribute('data-ticker')] = true; });
+  var draft = {};
+  function seedDraft() { draft = {}; Object.keys(saved).forEach(function (t) { draft[t] = true; }); }
+  function draftCount() { return Object.keys(draft).length; }
+  function dirty() {
+    var dk = Object.keys(draft), sk = Object.keys(saved);
+    if (dk.length !== sk.length) return true;
+    for (var i = 0; i < dk.length; i++) if (!saved[dk[i]]) return true;
+    return false;
+  }
+
   var picker = document.getElementById('wl-picker');
+  var tiles = [].slice.call(document.querySelectorAll('.wlp-tile'));
+  function renderTiles() {
+    var atCap = draftCount() >= MAX;
+    tiles.forEach(function (t) {
+      var tk = t.getAttribute('data-ticker'); var sel = !!draft[tk];
+      t.classList.toggle('wlp-tile-selected', sel);
+      t.classList.toggle('wlp-tile-full', atCap && !sel);
+      t.setAttribute('aria-pressed', sel ? 'true' : 'false');
+    });
+    var hint = document.getElementById('wlp-cap-hint'); if (hint) hint.hidden = !atCap;
+    var save = document.getElementById('wlp-save'); if (save) save.disabled = !dirty();
+  }
+  function toggleTile(tk) {
+    if (draft[tk]) { delete draft[tk]; }
+    else { if (draftCount() >= MAX) return; draft[tk] = true; }
+    renderTiles();
+  }
+
   function openPicker() {
     if (!picker) return;
+    seedDraft(); renderTiles();
     picker.hidden = false; picker.setAttribute('aria-hidden', 'false');
     var f = document.getElementById('wlp-filter'); if (f) { f.value = ''; runFilter(); setTimeout(function () { f.focus(); }, 50); }
   }
-  function closePicker() { if (picker) { picker.hidden = true; picker.setAttribute('aria-hidden', 'true'); } }
+  // Close WITHOUT saving — discard the draft, revert tiles to the saved state.
+  function discardClose() {
+    seedDraft(); renderTiles();
+    if (picker) { picker.hidden = true; picker.setAttribute('aria-hidden', 'true'); }
+  }
   document.querySelectorAll('[data-wl-open]').forEach(function (b) { b.addEventListener('click', openPicker); });
-  var closeBtn = document.getElementById('wlp-close'); if (closeBtn) closeBtn.addEventListener('click', closePicker);
-  if (picker) picker.addEventListener('click', function (e) { if (e.target === picker) closePicker(); });
-  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && picker && !picker.hidden) closePicker(); });
+  var closeBtn = document.getElementById('wlp-close'); if (closeBtn) closeBtn.addEventListener('click', discardClose);
+  var cancelBtn = document.getElementById('wlp-cancel'); if (cancelBtn) cancelBtn.addEventListener('click', discardClose);
+  if (picker) picker.addEventListener('click', function (e) { if (e.target === picker) discardClose(); });
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && picker && !picker.hidden) discardClose(); });
+
+  tiles.forEach(function (t) { t.addEventListener('click', function () { toggleTile(t.getAttribute('data-ticker')); }); });
+
+  // Save — commit the draft↔saved diff. Removes first (frees a slot so a swap
+  // at cap-3 can add), then adds. Per-ticker cooldown blocks are surfaced via a
+  // post-reload flash; the blocked company stays committed.
+  var saveBtn = document.getElementById('wlp-save');
+  if (saveBtn) saveBtn.addEventListener('click', function () {
+    var add = Object.keys(draft).filter(function (t) { return !saved[t]; });
+    var remove = Object.keys(saved).filter(function (t) { return !draft[t]; });
+    if (!add.length && !remove.length) { discardClose(); return; }
+    saveBtn.disabled = true;
+    api('POST', '/api/watchlist/save', { add: add, remove: remove }).then(function (res) {
+      var b = res.body || {};
+      var blocked = b.blocked || [];
+      if (blocked.length) {
+        var lines = blocked.map(function (x) {
+          var d = x.daysRemaining;
+          return 'You can change ' + x.name + ' in ' + d + ' more day' + (d === 1 ? '' : 's') + '.';
+        });
+        try { sessionStorage.setItem('wl-flash', JSON.stringify(lines)); } catch (e) {}
+      }
+      window.location.reload();
+    }).catch(function () { saveBtn.disabled = false; });
+  });
+
   function runFilter() {
     var f = document.getElementById('wlp-filter'); if (!f) return;
     var q = f.value.trim().toLowerCase(); var anyShown = false;
@@ -220,15 +328,9 @@ export const WATCHLIST_CONTROLLER = `
     var empty = document.getElementById('wlp-empty'); if (empty) empty.hidden = anyShown;
   }
   var filterEl = document.getElementById('wlp-filter'); if (filterEl) filterEl.addEventListener('input', runFilter);
-  document.querySelectorAll('.wlp-tile').forEach(function (tile) {
-    tile.addEventListener('click', function () {
-      if (tile.disabled) return; tile.disabled = true;
-      api('POST', '/api/watchlist', { ticker: tile.getAttribute('data-ticker') }).then(function (res) {
-        if (res.status === 200 && res.body.success) { window.location.reload(); return; }
-        tile.disabled = false; alert(res.body.error || 'Could not follow that company.');
-      }).catch(function () { tile.disabled = false; });
-    });
-  });
+
+  // Quick single-drop from a card chip (immediate; cooldown-gated). The picker
+  // is the multi-edit surface; this is the one-tap shortcut.
   card.querySelectorAll('.wl-drop').forEach(function (btn) {
     btn.addEventListener('click', function () {
       var name = btn.getAttribute('data-name') || 'this one';

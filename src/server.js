@@ -29,7 +29,7 @@ import { runMorningPipeline } from './morning-run.js';
 import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush, shouldSendStreakRiskPush } from './push.js';
 import { isCorrectGuess } from './mystery.js';
 import { createPick, getPickState, targetLabelFor, createWeeklyHoldPick, getWeeklyHoldState } from './picks.js';
-import { getWatchlistState, addWatchlist, removeWatchlist, recordMilestone, recordOffer } from './watchlist.js';
+import { getWatchlistState, addWatchlist, removeWatchlist, recordMilestone, recordOffer, saveWatchlist } from './watchlist.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -622,6 +622,21 @@ app.post('/api/watchlist', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[watchlist] add failed:', err.message);
     return res.status(500).json({ error: 'Could not update your companies.' });
+  }
+});
+
+// Batch Save — commit the picker's draft↔saved diff. {add:[...], remove:[...]}.
+// Server is the source of truth for the cooldown; returns per-ticker results so
+// a cooldown-blocked drop blocks only itself. cap-3 is re-enforced per add.
+app.post('/api/watchlist/save', requireAuth, async (req, res) => {
+  const add = Array.isArray(req.body?.add) ? req.body.add.slice(0, 20) : [];
+  const remove = Array.isArray(req.body?.remove) ? req.body.remove.slice(0, 20) : [];
+  try {
+    const r = await saveWatchlist(req.user.id, add, remove, todayNY());
+    return res.json({ success: true, ...r });
+  } catch (err) {
+    console.error('[watchlist] save failed:', err.message);
+    return res.status(500).json({ error: 'Could not save your companies.' });
   }
 });
 
