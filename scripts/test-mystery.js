@@ -182,13 +182,13 @@ async function main() {
   ok('wrong guess rejected', !isCorrectGuess('Burger King', mcdPuzzle));
   ok('empty guess rejected', !isCorrectGuess('   ', mcdPuzzle));
 
-  // -------- Section 6.5: share text (client module source) -------------------
+  // -------- Section 6.5: share text (client module source + execution) -------
   // buildShareText lives inside the client IIFE (not importable in node), so
-  // assert against the module source: the share URL carries the ?src=mm-share
-  // channel tag (identical for all users — a channel, not an identifier), and
-  // the share payload is built ONLY from date/solved/cluesUsed — no name,
-  // username, streak, or MC can reach it.
-  console.log('\nSection 6.5 — share text (module source)');
+  // assert against the module source AND lift the pure builder out to execute
+  // it. The share payload is built ONLY from date/solved/cluesUsed — no name,
+  // username, streak, or MC can reach it — and the ?src=mm-share tag is a
+  // channel (identical for all users), not an identifier.
+  console.log('\nSection 6.5 — share text (source + executed tiers)');
   const mmSource = readFileSync(path.join(__dirname, '..', 'public', 'games', 'mystery-mover.js'), 'utf8');
   ok('share URL carries the ?src=mm-share channel tag',
     mmSource.includes("SHARE_URL = 'themarketjuice.com/sample?src=mm-share'"));
@@ -197,6 +197,37 @@ async function main() {
   const builderMatch = mmSource.match(/function buildShareText\(([^)]*)\)/);
   eq('share builder inputs are identifier-free (label, solved, cluesUsed only)',
     builderMatch && builderMatch[1].trim(), 'label, solved, cluesUsed');
+
+  // Lift the three contiguous, pure, identifier-free definitions out of the
+  // client IIFE and execute the REAL builder — proves tier selection, the
+  // {N} interpolation, the grid, and PII-safety on rendered output.
+  const buildShareText = new Function(
+    mmSource.match(/var SHARE_URL = '[^']*';/)[0] + '\n' +
+    mmSource.match(/function shareBrag\([\s\S]*?\n  \}/)[0] + '\n' +
+    mmSource.match(/function buildShareText\([\s\S]*?\n  \}/)[0] + '\n' +
+    'return buildShareText;',
+  )();
+  const D = 'June 15';
+  const tiers = [
+    { name: 'solved in 1',  args: [D, true, 1],  grid: '🟩',          brag: (l) => l === "First clue. Didn't even need the rest 😎" },
+    { name: 'solved in 2',  args: [D, true, 2],  grid: '🟧🟩',        brag: (l) => l === 'Got it in 2!! Beat that 😏' },
+    { name: 'solved in 3',  args: [D, true, 3],  grid: '🟧🟧🟩',      brag: (l) => l === 'Got it in 3!! Beat that 😏' },
+    { name: 'solved in 4',  args: [D, true, 4],  grid: '🟧🟧🟧🟩',    brag: (l) => l.startsWith('Got it') && l.includes('took me 4') && l.includes("think you're faster?") },
+    { name: 'solved in 5',  args: [D, true, 5],  grid: '🟧🟧🟧🟧🟩',  brag: (l) => l.startsWith('Got it') && l.includes('took me 5') && l.includes("think you're faster?") },
+    { name: 'unsolved',     args: [D, false, 0], grid: '🟥🟥🟥🟥🟥',  brag: (l) => l === "Today's one STUMPED me — bet you can't get it either" },
+  ];
+  const PII = /\b(name|username|streak|coins?|MC)\b/i;
+  for (const t of tiers) {
+    const text = buildShareText(...t.args);
+    console.log(`\n  [${t.name}]\n` + text.split('\n').map((x) => '    ' + x).join('\n'));
+    const lines = text.split('\n');
+    eq(`tier "${t.name}": 4 lines (title · grid · brag · link)`, lines.length, 4);
+    eq(`tier "${t.name}": line 1 = title + date`, lines[0], 'Market Juice Mystery Mover — June 15');
+    eq(`tier "${t.name}": grid on its own line`, lines[1], t.grid);
+    ok(`tier "${t.name}": brag line matches the chosen tier`, t.brag(lines[2]));
+    eq(`tier "${t.name}": link keeps ?src=mm-share`, lines[3], 'themarketjuice.com/sample?src=mm-share');
+    ok(`tier "${t.name}": no PII leak (name/username/streak/MC)`, !PII.test(text));
+  }
 
   // -------- Section 7: content_history (Postgres) ----------------------------
   console.log('\nSection 7 — content_history round-trip + 30-day window (live Neon)');

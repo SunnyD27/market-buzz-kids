@@ -18,8 +18,11 @@
  *
  * Share grid (zero identifiers — no username, name, streak, or MC):
  *   Market Juice Mystery Mover — June 15
- *   🟧🟧🟩 (got it in 3 clues!)
- *   themarketjuice.com/sample
+ *   🟧🟧🟩
+ *   Got it in 3!! Beat that 😏
+ *   themarketjuice.com/sample?src=mm-share
+ * The brag line is a FIXED, pre-written set picked by clues-used (NOT a
+ * free-text box) so the share artifact stays a closed, reviewed set (COPPA).
  */
 (function () {
   'use strict';
@@ -65,18 +68,26 @@
     } catch (_) { return yyyymmdd; }
   }
 
+  // Voice-y, kid-tone brag line — a FIXED, pre-written set keyed off
+  // clues-used (NOT free text → a closed, reviewed share artifact for COPPA
+  // safety). Identifier-free: no name, username, streak, or MC.
+  function shareBrag(solved, cluesUsed) {
+    if (!solved) return "Today's one STUMPED me — bet you can't get it either";
+    if (cluesUsed === 1) return "First clue. Didn't even need the rest 😎";
+    if (cluesUsed <= 3) return 'Got it in ' + cluesUsed + '!! Beat that 😏';
+    return 'Got it 😮‍💨 took me ' + cluesUsed + " — think you're faster?";
+  }
+
   // 🟧 per clue used before the solving one, 🟩 on the solve; 🟥×5 if unsolved.
+  // Lines: title+date · grid · brag · ?src=mm-share link — all four tiers.
   function buildShareText(label, solved, cluesUsed) {
-    var grid;
-    var note;
-    if (solved) {
-      grid = new Array(Math.max(0, cluesUsed - 1) + 1).join('🟧') + '🟩';
-      note = '(got it in ' + cluesUsed + ' clue' + (cluesUsed === 1 ? '' : 's') + '!)';
-    } else {
-      grid = '🟥🟥🟥🟥🟥';
-      note = '(stumped today!)';
-    }
-    return 'Market Juice Mystery Mover — ' + label + '\n' + grid + ' ' + note + '\n' + SHARE_URL;
+    var grid = solved
+      ? new Array(Math.max(0, cluesUsed - 1) + 1).join('🟧') + '🟩'
+      : '🟥🟥🟥🟥🟥';
+    return 'Market Juice Mystery Mover — ' + label + '\n'
+      + grid + '\n'
+      + shareBrag(solved, cluesUsed) + '\n'
+      + SHARE_URL;
   }
 
   function copyShare(btn) {
