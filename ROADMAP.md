@@ -417,21 +417,34 @@ unaffected; scrub covers user_picks (done in 17).
 
 ---
 
-## Phase 21 — Watchlist ("Your Companies")
+## Phase 21 — Watchlist ("Your Companies") ✅ SHIPPED
 
-- New table `user_watchlist (user_id, ticker, added_at, PRIMARY KEY (user_id, ticker))`,
-  cap 3 tickers, **restricted to the curated 75** (so quotes are already fetched by the
-  `fetchTopMover` fan-out — zero extra FMP cost). Add to deletion scrub.
-- Picker UI: first visit after ship (and from /progress): "Pick up to 3 companies you
-  care about." Grid of the 75 with logos/names. `POST /api/watchlist`.
-- Digest renders a "Your Companies" row under the scoreboard (per-user render path,
-  same as kidName). Each chip: name + day change. Tap → that company's glossary-style
-  drawer if a story mentions it, else just the quote.
-- Generation note: thread the day's watchlist-popular tickers NOWHERE — content stays
-  identical for everyone (immutability). Personalization is render-time only.
+Follow up to 3 companies and watch them OVER TIME — built for the learning, not
+a price ticker. Three tables (`daily_prices` market snapshot + `user_watchlist` +
+`user_watchlist_prefs`), the snapshot written from the existing fan-out (zero extra
+FMP calls), follow mechanics with a per-company 7-day cooldown, three learning
+layers (in-the-news / since-following + milestones / personalized principle), an
+always-on empty-state with ghost slots, a first-run + one-re-nudge offer machine,
+and a **categorized tap-to-select picker** (no free-text box). Render-time only —
+never baked into `daily_digests`; `/sample` + logged-out skip. No engagement
+coupling. See the Phase 21 session entry in HANDOFF.md.
 
-**Acceptance:** pick/persist/render round-trip; cap enforced; non-curated ticker
-rejected; scrub verified; /sample unaffected.
+- **Core expanded ~75 → 81** (added Mattel, Hasbro, Hershey, Crocs, Palantir, SpaceX
+  [SPCX, verified clean on FMP]); each company gained a kid-legible `category`. The
+  followable universe == the core, so adds also flow into mover/Mystery/Weekly-Hold —
+  intended, all recognizable.
+- Snapshot now runs on week-ahead Monday too (decoupled from the topMover skip) so a
+  Monday follow gets a same-day baseline.
+
+**Deferred to a future PAID tier (NOT built — funded by the subscription fee):** the
+~150–250 expanded universe via the exclusion-curation pass; on-demand / distinct-ticker
+price fetching (or FMP batch-quote / a paid plan once the daily fan-out nears the
+250/day cap — there's a cost-guard log warning at ≥200 tickers); and a possible higher
+follow cap. **The categorized picker built here is the free-tier version — the premium
+tier swaps in the bigger universe behind the SAME picker pattern** (entries flagged
+`core: false`; `followableCompanies()`/`isFollowable()` are the seam, editorial stays
+core-only). Why deferred: FMP's free tier has no working multi-ticker batch, so a ~200
+daily snapshot would breach the 250/day cap under the retry ladder (see CHECKPOINT 0).
 
 ---
 

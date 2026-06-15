@@ -381,3 +381,47 @@ CREATE UNIQUE INDEX IF NOT EXISTS pending_glossary_term_lower_uniq
 -- Review-queue ordering: by status, most-seen first.
 CREATE INDEX IF NOT EXISTS pending_glossary_status_idx
   ON pending_glossary (status, times_seen DESC);
+
+-- ============================================================
+-- Phase 21 — Watchlist ("Your Companies")
+-- ============================================================
+-- daily_prices: a market-data snapshot of every curated ticker, written at
+-- generation from the existing fetchTopMover fan-out (ZERO extra FMP calls).
+-- Powers the watchlist's "since you started following" number per-request.
+-- COPPA: market data, NOT user PII — intentionally OUT of the deletion scrub.
+CREATE TABLE IF NOT EXISTS daily_prices (
+  price_date     DATE     NOT NULL,
+  ticker         TEXT     NOT NULL,
+  price          NUMERIC,
+  change_pct     NUMERIC,
+  previous_close NUMERIC,
+  PRIMARY KEY (price_date, ticker)
+);
+
+-- user_watchlist: a kid follows up to 3 companies (cap enforced in app code).
+-- followed_since drives the per-company 7-day cooldown AND the since-follow
+-- return; price_at_follow is the baseline; milestone_hit (0/10/25/50) makes
+-- the +10/+25/+50% celebration once-ever + spoof-proof (server re-checks).
+-- COPPA: per-user — deleted in storage.recordDeletionRequest()'s scrub.
+CREATE TABLE IF NOT EXISTS user_watchlist (
+  user_id         UUID     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  ticker          TEXT     NOT NULL,
+  followed_since  DATE     NOT NULL,
+  price_at_follow NUMERIC  NOT NULL,
+  milestone_hit   SMALLINT NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, ticker)
+);
+
+-- user_watchlist_prefs: the offer state machine. Per-user (must exist when the
+-- watchlist is empty — exactly when a re-nudge is decided), so it can't live
+-- on user_watchlist. offers_made caps auto-prompts at 2; status distinguishes
+-- a kid who actively declined (never re-nudge) from one who just skipped;
+-- first_offer_active_day gates the single re-nudge (current activeDays >= it+3).
+-- COPPA: per-user — deleted in storage.recordDeletionRequest()'s scrub.
+CREATE TABLE IF NOT EXISTS user_watchlist_prefs (
+  user_id                UUID     PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+  offers_made            SMALLINT NOT NULL DEFAULT 0,
+  status                 TEXT     NOT NULL DEFAULT 'none'
+                                  CHECK (status IN ('none', 'skipped', 'declined', 'active')),
+  first_offer_active_day SMALLINT
+);

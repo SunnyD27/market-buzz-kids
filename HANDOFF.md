@@ -41,7 +41,9 @@ the door for future sponsored content with a 30-day parent notice).
 | **17** Tomorrow's Call — daily S&P prediction (blind-pick, one bet per close) | ✅ | **Merged + deployed to production** via PR #40. 46-assertion smoke test + full-suite regression green (incl. the updated Phase 15 push-gate tests); live two-day DATE_OVERRIDE pick→resolve→verdict round-trip verified. Post-deploy spot-check pending: in-browser tap→locked-chip + explainer with a real kid account. See the Phase 17 session entry. |
 | **18** Generation pipeline hardening — two-pass + zod + retry ladder + sensitive-news rule | ✅ | **Merged + live in production** via PR #41 — running on the two-pass pipeline, all editions verified live. 49-assertion smoke test + full-suite regression green; repair retry and mystery reserve fallback both fired and recovered during verification. See the Phase 18 session entry. |
 | **19** "Morning Juice" visual redesign — cream light theme | ✅ | **Merged + live in production** via PR #42. 33-assertion theme smoke test + full-suite regression green; WCAG AA verified LIVE with the inspector on every surface (all text ≥4.5:1); before/after screenshots of all 5 header states + 7 surfaces. See the Phase 19 session entry. |
-| **20** Weekly rhythm — Weekly Hold + "Your Week in Juice" | ✅ | **Merged + deployed to production** via PR #43. 48-assertion smoke test + full-suite regression green; live FMP-OHLC round-trip verified (AMD +5.5% beat IBM/Oracle → +20 MC, verdict-card screenshot). See the Phase 20 session entry. |
+| **20** Weekly rhythm — Weekly Hold + "Your Week in Juice" | ✅ | **Merged + deployed** via PR #43; **Sunday-window amendment** merged via PR #45 (65-assertion smoke test now). Live FMP-OHLC round-trip verified. See the Phase 20 session entry + amendment entry. |
+| **21** Watchlist ("Your Companies") | ✅ | Part A + categorized picker + small core expansion (~75→81). Full suite green incl. the new ~60-assertion `test-watchlist.js`. Premium expanded-universe deferred (see Phase 21 session entry). PR open `dev`→`main`. |
+| **Follow-ups** (post-Phase-20) | ✅ | PR #44 Sunday Challenge card theme fix · PR #46 `test-evening-email` week-ahead crash fix · PR #47 voice-y Mystery Mover share text. All merged. |
 | **6.4** Daily Challenge wired into digest template | ✅ | |
 | **6.5** Per-game daily content generation (reframers + hydration) | ✅ | |
 | **6.6** Real-data verification | ✅ | |
@@ -2117,3 +2119,85 @@ without safe-nav, but the week-ahead edition has no `topMover` by design.
 Independent of this change (no shared code path); flagged for a separate fix.
 The first `test-weekly` batch run hit a transient Neon DNS `ENOTFOUND` during
 cleanup; a re-run was fully clean.
+
+## Session: Phase 21 — Watchlist ("Your Companies")
+
+Follow up to 3 curated companies and watch them OVER TIME — built for the
+learning, not a price ticker. Render-time only (never in `daily_digests`);
+`/sample` + logged-out skip. No engagement coupling (no MC/streak/Perfect
+Day/EVENT_TYPES — a standing preference).
+
+**CHECKPOINT 0 (cost) — the gating finding.** The spec assumed FMP's fan-out
+was a batch/comma-separated call (so 75→200 ≈ free). It is NOT: `data.js` does
+a **per-ticker fan-out** (FMP free tier killed multi-ticker `/stable/quote`;
+`batch-quote` is paid-only — confirmed in code + CONTEXT). A ~200-name daily
+snapshot ≈217 calls/day and would breach the 250/day cap under the retry
+ladder (`morning-run.js` re-runs `generateDigest` → re-fans-out per attempt).
+Surfaced + stopped; Sunny chose **Option 3 (+tweaks): keep the universe on the
+free core snapshot.**
+
+**What shipped (Part A + picker + small core expansion):**
+- **Core ~75 → 81**: added Mattel (MAT), Hasbro (HAS), Hershey (HSY), Crocs
+  (CROX), Palantir (PLTR), SpaceX (**SPCX** — IPO'd 2026-06-12; **live FMP
+  quote verified clean** at $192.5 before including). Every company gained a
+  kid-legible `category`. Followable universe == core, so the 6 also flow into
+  mover/Mystery/Weekly-Hold (intended, all recognizable).
+- **3 tables** (`daily_prices` market snapshot + `user_watchlist` +
+  `user_watchlist_prefs`), schema.sql + `src/migrations/add-watchlist.sql` +
+  idempotent `runBootMigrations()` block (applied live). `user_watchlist` +
+  `user_watchlist_prefs` added to the COPPA scrub; `daily_prices` is market
+  data (not scrubbed).
+- **Zero-cost snapshot**: `fetchTopMover` refactored → `fetchPriceSnapshot`
+  (returns the full valid quotes) + pure `pickTopMover`; `fetchAllData` fans
+  out ONCE, returns both. `generate.js` upserts the snapshot into
+  `daily_prices` — and now runs the fan-out on **week-ahead Monday too**
+  (decoupled from the topMover prompt-skip) so a Monday follow gets a same-day
+  baseline. Cost-guard logs a warning if the fan-out ever reaches ≥200 tickers.
+- **Follow mechanics** (`/api/watchlist` POST/DELETE): free/instant add;
+  remove/replace = client speed-bump confirm + **server 7-day per-company
+  cooldown** keyed off each row's `followed_since` (409 + `daysRemaining`;
+  swapping one never freezes others).
+- **3 learning layers** (`getWatchlistState`): (1) in-the-news 📌 jump-link —
+  exact mover-ticker OR full-NAME word-boundary scan, with an
+  `AMBIGUOUS_TICKERS` denylist (Block/Snap/Unity/Reddit/Target/Visa/… never
+  match free text; bare tickers never match) — **false positives are worse
+  than misses**; (2) since-following % primary number (`--up-text`/`--down-text`)
+  + today's move secondary + first-crossing +10/+25/+50 milestones (spoof-proof:
+  `/api/watchlist/milestone` re-checks the % server-side, advances
+  `milestone_hit`); (3) one personalized principle tie-in per digest (mover
+  preferred). Variety by day = the "pet" feel.
+- **Always-on empty state** with faded ghost slots ("complete me") + the
+  invitation copy; **first-run + one re-nudge** offer machine
+  (`/api/watchlist/offer`): reuses Phase-15 `activeDays`, re-nudge at
+  first_offer_active_day+3, hard cap 2, **declined ≠ skipped** (declined never
+  re-nudged). State in `user_watchlist_prefs` (durable, scrubbed).
+- **Categorized tap-to-select picker** (8 kid-legible buckets; NO free-text box;
+  optional typeahead FILTERS the curated tiles only) — shared by the digest and
+  `/progress` via `src/watchlist-ui.js` (card + picker + CSS + controller).
+- **Placement**: card near the top (under the profile bar, above the
+  scoreboard); jump-link anchors added (`#mover-card`, `#big-picture`,
+  `#story-N`).
+- **SW: no bump** — the controller is inline in the server-rendered templates;
+  no precached shell asset changed.
+
+**Deferred to a future PAID tier (NOT built):** the ~150–250 expanded universe
++ exclusion-curation pass; on-demand / distinct-ticker fetch (or FMP
+batch-quote / paid plan once the fan-out nears the cap); possible higher follow
+cap. **The categorized picker built here is the free-tier version — the premium
+tier swaps in the bigger universe behind the SAME picker** (entries flagged
+`core: false`; `followableCompanies()`/`isFollowable()` are the seam; editorial
+stays core-only). Documented in ROADMAP §21 + CONTEXT.
+
+**Verified:** new `scripts/test-watchlist.js` (~60 assertions: matcher battery,
+cap-3, cooldown + independence, since-%/milestone/spoof, offer machine,
+empty/1/2/3 models, COPPA scrub) — all pass. **Full suite green** (14 files).
+Offline render checks: digest + /progress render the card, all 3 layers, ghost
+slots, picker tiles (incl. SPCX), empty state, first-run offer; `/sample` omits
+the card + picker. A pg DATE-as-Date bug (the "String(Date) trap") in the
+cooldown read was caught by the smoke test and fixed (`::text` casts).
+**Code-review-only (not exercised in a live browser):** the in-page picker tap
+→ follow → reload flow and the cooldown/offer client paths (logic is covered by
+the smoke test + offline render). Spot-check post-deploy with a real kid account.
+
+**While here — reconciled the HANDOFF status-table drift** (PRs #44–47 now
+reflected in the table).

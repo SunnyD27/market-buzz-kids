@@ -497,6 +497,11 @@ async function recordDeletionRequest(input) {
       // Phase 17: prediction picks (Tomorrow's Call / Weekly Hold).
       await client.query(`DELETE FROM user_picks        WHERE user_id = $1`, [matched.id]);
 
+      // Phase 21: Watchlist follows + offer-state prefs. (daily_prices is
+      // market data, not per-user — intentionally left alone.)
+      await client.query(`DELETE FROM user_watchlist       WHERE user_id = $1`, [matched.id]);
+      await client.query(`DELETE FROM user_watchlist_prefs WHERE user_id = $1`, [matched.id]);
+
       // Remove any outstanding verification/consent/reset tokens for this
       // user — they're useless once the row is scrubbed and would otherwise
       // linger forever (ON DELETE CASCADE never fires under soft-delete).

@@ -17,9 +17,15 @@
 // the page renders coherently even before /engagement.css loads.
 
 import { RANKS, BADGE_FAMILIES, PERSONAL_RECORDS, SHIELD_CONFIG, shieldsUnlocked } from './progression.js';
+import { watchlistCard, watchlistPicker, WATCHLIST_CSS, WATCHLIST_CONTROLLER } from './watchlist-ui.js';
 
 export function buildProgressHTML(state, opts = {}) {
   const kidName = opts.kidName || 'Investor';
+  // Phase 21 — the same "Your Companies" editor as the digest (no Layer-1/3
+  // here: /progress has no digest content, so news/principle are absent).
+  const watchlist = opts.watchlist || null;
+  const watchlistCardHTML = watchlistCard(watchlist, escapeHTML, {});
+  const watchlistPickerHTML = watchlist ? watchlistPicker(escapeHTML) : '';
   const p = state.progress;
   const badges = state.badges || {};
   const records = state.records || {};
@@ -54,6 +60,8 @@ export function buildProgressHTML(state, opts = {}) {
     --citrus: #FF7A1A; --citrus-text: #B0500B; --sun: #FFC233; --sun-text: #8A5E12; --up: #1E9E5A; --down: #E5484D; --berry: #5B4FC7;
     --card: var(--surface); --card-border: var(--surface-border);
     --green: #0E7A3E; --red: #C92A2F; --blue: var(--berry);
+    --up-text: #0E7A3E; --down-text: #C92A2F;
+    --red-glow: rgba(229,72,77,0.12);
     --purple: var(--berry); --yellow: var(--sun); --orange: var(--citrus);
     --text: var(--ink); --text-bright: var(--ink); --text-dim: var(--ink-soft);
   }
@@ -359,6 +367,7 @@ export function buildProgressHTML(state, opts = {}) {
       grid-template-columns: 1fr;
     }
   }
+  ${WATCHLIST_CSS}
 </style>
 </head>
 <body>
@@ -389,6 +398,8 @@ export function buildProgressHTML(state, opts = {}) {
         : `Max rank reached 🏆 — Wall Street Legend status`}
     </div>
   </div>
+
+  ${watchlistCardHTML}
 
   <!-- How Market Coins Work -->
   <div class="pg-section">
@@ -459,6 +470,10 @@ export function buildProgressHTML(state, opts = {}) {
   </div>
 
 </div>
+
+${watchlistPickerHTML}
+
+<script>${watchlist ? WATCHLIST_CONTROLLER : ''}</script>
 </body>
 </html>`;
 }

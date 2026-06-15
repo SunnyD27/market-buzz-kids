@@ -4,6 +4,7 @@
 // later phases.
 
 import { getActiveGlossary } from './glossary-runtime.js';
+import { watchlistCard, watchlistPicker, WATCHLIST_CSS, WATCHLIST_CONTROLLER } from './watchlist-ui.js';
 
 // Short principle labels for the glossary tooltip's "Ties to:" tie-in line.
 // Server-side mirror of public/games/shared.js PRINCIPLES, trimmed to fit the
@@ -449,7 +450,7 @@ export function buildHTML(content, opts = {}) {
   const badgeEmojis = { hot: '🔥', new: '🆕', money: '💰', world: '🌍', brain: '🧠' };
 
   const storiesHTML = stories.map((story, i) => `
-    <div class="story-card" style="animation-delay: ${0.15 + i * 0.1}s">
+    <div class="story-card" id="story-${i}" style="animation-delay: ${0.15 + i * 0.1}s">
       <span class="badge ${badgeClasses[story.badge] || 'new'}">${badgeEmojis[story.badge] || '📰'} ${escapeHTML(story.badgeLabel)}</span>
       <h3>${lk.stories[i]?.title ?? escapeHTML(story.title)}</h3>
       ${lk.stories[i]?.body ?? `<p>${escapeHTML(story.body)}</p>`}
@@ -656,6 +657,14 @@ export function buildHTML(content, opts = {}) {
   </div>`;
   })();
 
+  // ── Phase 21 — Watchlist "Your Companies" (per-user; opts.watchlist) ──
+  // Shared UI builders (src/watchlist-ui.js) so the digest + /progress render
+  // the same card + picker + controller. Absent on /sample + logged-out
+  // (opts.watchlist null → empty strings).
+  const watchlist = opts.watchlist || null;
+  const watchlistCardHTML = watchlistCard(watchlist, escapeHTML, GLOSS_PRINCIPLES);
+  const watchlistPickerHTML = watchlist ? watchlistPicker(escapeHTML) : '';
+
   const greetingHTML = kidName
     ? `<div class="kid-greeting">
          <span class="kid-greeting-name">Hey, ${escapeHTML(kidName)}! 👋</span>
@@ -814,7 +823,7 @@ export function buildHTML(content, opts = {}) {
     // on the standard edition).
     if (_moverSpec.kind === 'forward') {
       return `
-      <div class="score-card up mover mover-forward">
+      <div class="score-card up mover mover-forward" id="mover-card">
         <div class="mover-badge">${_moverSpec.label}</div>
         <div class="mover-name">${escapeHTML(_moverSpec.name)}</div>
         ${_moverSpec.ticker ? `<div class="mover-ticker">${escapeHTML(_moverSpec.ticker)}</div>` : ''}
@@ -825,7 +834,7 @@ export function buildHTML(content, opts = {}) {
     const dir = _moverSpec.direction === 'up' ? 'up' : 'down';
     const arrow = _moverSpec.direction === 'up' ? 'arrow-up' : 'arrow-down';
     return `
-      <div class="score-card ${dir} mover">
+      <div class="score-card ${dir} mover" id="mover-card">
         <div class="mover-badge">${_moverSpec.label}</div>
         <div class="mover-name">${escapeHTML(_moverSpec.name)}</div>
         <div class="mover-ticker">${escapeHTML(_moverSpec.ticker)}</div>
@@ -1705,6 +1714,8 @@ export function buildHTML(content, opts = {}) {
     .logo { font-size: 32px; }
     .container { padding: 16px 12px 40px; }
   }
+
+  ${WATCHLIST_CSS}
 </style>
 </head>
 <body>
@@ -1725,6 +1736,8 @@ export function buildHTML(content, opts = {}) {
 
   <!-- Investor Profile Bar — rendered by /engagement.js from localStorage -->
   <div id="investor-profile" class="investor-profile" aria-live="polite"></div>
+
+  ${watchlistCardHTML}
 
   ${weekInJuiceHTML}
 
@@ -1751,7 +1764,7 @@ export function buildHTML(content, opts = {}) {
     ${topMoverWhyHTML}
   </div>
 
-  <div class="big-picture">
+  <div class="big-picture" id="big-picture">
     <div class="bp-header">
       ${sectionIcon('globe')}
       <h3>The Big Picture</h3>
@@ -1824,6 +1837,8 @@ export function buildHTML(content, opts = {}) {
   ${predictionCardHTML}
 
   ${editionType === 'weekly-wrap' ? '' : weeklyHoldCardHTML}
+
+  ${watchlistPickerHTML}
 
   <div class="footer">
     <div class="rocket">🚀</div>
@@ -2111,6 +2126,13 @@ ${hasSundayChallenge ? `<script src="/games/sunday-challenge.js"></script>` : ''
     window.MJGames.sundayChallenge.render(host, __SC_DATA, {});
   })();
   ` : ''}
+</script>
+
+<!-- Phase 21 — Watchlist controller (inline; inert on /sample where the card
+     is absent). Mutations reload so the server re-renders the authoritative
+     state (since-%, ghost slots, news flags). -->
+<script>
+${WATCHLIST_CONTROLLER}
 </script>
 
 </body>

@@ -29,6 +29,7 @@ import { runMorningPipeline } from './morning-run.js';
 import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush, shouldSendStreakRiskPush } from './push.js';
 import { isCorrectGuess } from './mystery.js';
 import { createPick, getPickState, targetLabelFor, createWeeklyHoldPick, getWeeklyHoldState } from './picks.js';
+import { getWatchlistState, addWatchlist, removeWatchlist, recordMilestone, recordOffer } from './watchlist.js';
 import {
   renderConsentEmail,
   renderVerifyEmail,
@@ -226,7 +227,16 @@ app.get('/digest', requireAuth, async (req, res) => {
         }
       }
 
-      const html = buildHTML(content, { kidName, digestDate, prediction, weeklyHold, weekStats });
+      // Phase 21 — per-user Watchlist ("Your Companies"): held companies +
+      // the 3 learning layers + ghost-slot/offer state, all render-time only.
+      let watchlist = null;
+      try {
+        watchlist = await getWatchlistState(req.user.id, digestDate, content);
+      } catch (err) {
+        console.error('[digest] watchlist state failed (card skipped):', err.message);
+      }
+
+      const html = buildHTML(content, { kidName, digestDate, prediction, weeklyHold, weekStats, watchlist });
       return res.status(200).type('html').send(html);
     }
   } catch (err) {
@@ -253,7 +263,13 @@ app.get('/digest', requireAuth, async (req, res) => {
 app.get('/progress', requireAuth, async (req, res) => {
   try {
     const state = await getProgress(req.user.id);
-    const html = buildProgressHTML(state, { kidName: req.user.kid_first_name });
+    let watchlist = null;
+    try {
+      watchlist = await getWatchlistState(req.user.id, todayNY(), {});
+    } catch (err) {
+      console.error('[progress] watchlist state failed (section skipped):', err.message);
+    }
+    const html = buildProgressHTML(state, { kidName: req.user.kid_first_name, watchlist });
     return res.status(200).type('html').send(html);
   } catch (err) {
     console.error('[progress] render failed:', err.message);
@@ -577,6 +593,85 @@ app.post('/api/weekly-hold', requireAuth, async (req, res) => {
   } catch (err) {
     console.error('[weekly-hold] create failed:', err.message);
     return res.status(500).json({ error: 'Could not save your pick.' });
+  }
+});
+
+// ============================================================
+// API — Watchlist "Your Companies" (Phase 21) — session auth
+// ============================================================
+// No engagement coupling — following is a standing preference, not a daily
+// action (no MC / streak / Perfect Day / EVENT_TYPES).
+
+// Follow a company (free + instant; cap-3 + curated-membership enforced).
+app.post('/api/watchlist', requireAuth, async (req, res) => {
+  const ticker = req.body?.ticker;
+  if (typeof ticker !== 'string' || !ticker.trim()) {
+    return res.status(400).json({ error: 'ticker is required.' });
+  }
+  try {
+    const r = await addWatchlist(req.user.id, ticker, todayNY());
+    if (r.ok) return res.json({ success: true, ticker: r.ticker });
+    const map = {
+      'not-followable': [400, 'That company can’t be followed.'],
+      'already-following': [409, 'You already follow that one.'],
+      'cap-reached': [409, 'You can follow up to 3 — drop one first.'],
+      'no-price': [503, 'No price for that company yet — try again later.'],
+    };
+    const [code, message] = map[r.code] || [400, 'Could not follow that company.'];
+    return res.status(code).json({ error: message, code: r.code });
+  } catch (err) {
+    console.error('[watchlist] add failed:', err.message);
+    return res.status(500).json({ error: 'Could not update your companies.' });
+  }
+});
+
+// Unfollow (server-enforced per-company 7-day cooldown → 409 + daysRemaining).
+app.delete('/api/watchlist/:ticker', requireAuth, async (req, res) => {
+  try {
+    const r = await removeWatchlist(req.user.id, req.params.ticker, todayNY());
+    if (r.ok) return res.json({ success: true, ticker: r.ticker });
+    if (r.code === 'cooldown') {
+      return res.status(409).json({ code: 'cooldown', daysRemaining: r.daysRemaining,
+        message: `Real investors hold through the dips — you can change this in ${r.daysRemaining} day${r.daysRemaining === 1 ? '' : 's'}.` });
+    }
+    if (r.code === 'not-following') return res.status(404).json({ error: 'You don’t follow that one.' });
+    return res.status(400).json({ error: 'Could not update your companies.' });
+  } catch (err) {
+    console.error('[watchlist] remove failed:', err.message);
+    return res.status(500).json({ error: 'Could not update your companies.' });
+  }
+});
+
+// Record a since-following milestone (server re-checks the % → spoof-proof).
+app.post('/api/watchlist/milestone', requireAuth, async (req, res) => {
+  const { ticker, level } = req.body || {};
+  if (typeof ticker !== 'string' || !ticker.trim() || level == null) {
+    return res.status(400).json({ error: 'ticker and level are required.' });
+  }
+  try {
+    const r = await recordMilestone(req.user.id, ticker, level, todayNY());
+    if (r.ok) return res.json({ success: true, milestoneHit: r.milestoneHit, noop: !!r.noop });
+    return res.status(r.code === 'not-following' ? 404 : 409).json({ code: r.code });
+  } catch (err) {
+    console.error('[watchlist] milestone failed:', err.message);
+    return res.status(500).json({ error: 'Could not record milestone.' });
+  }
+});
+
+// Offer state machine — the client fires this when it shows/dismisses the
+// gentle first-run / re-nudge picker prompt. { event: shown|skipped|declined,
+// kind?: first-run|re-nudge }.
+app.post('/api/watchlist/offer', requireAuth, async (req, res) => {
+  const { event, kind } = req.body || {};
+  if (!['shown', 'skipped', 'declined'].includes(event)) {
+    return res.status(400).json({ error: 'bad event.' });
+  }
+  try {
+    const r = await recordOffer(req.user.id, event, kind);
+    return res.status(r.ok ? 200 : 400).json(r);
+  } catch (err) {
+    console.error('[watchlist] offer failed:', err.message);
+    return res.status(500).json({ error: 'Could not save preference.' });
   }
 });
 
@@ -2197,6 +2292,50 @@ async function runBootMigrations() {
     }
   } catch (err) {
     console.error('[migrations] user_picks migration failed (Tomorrow\'s Call will error until fixed):', err.message);
+  }
+
+  // Phase 21 — Watchlist ("Your Companies"): daily_prices (market-data
+  // snapshot from the existing fan-out — NOT scrubbed), user_watchlist
+  // (follows, cap-3 in app), user_watchlist_prefs (offer state machine).
+  // Standalone DDL also in src/schema.sql + src/migrations/add-watchlist.sql.
+  // Detect via user_watchlist's presence (idempotent; all three ship together).
+  try {
+    const { rows } = await dbQuery(
+      "SELECT table_name FROM information_schema.tables WHERE table_name = 'user_watchlist'",
+    );
+    if (rows.length === 0) {
+      console.log('[migrations] Creating Phase 21 watchlist tables (daily_prices + user_watchlist + user_watchlist_prefs)…');
+      await dbQuery(`
+        CREATE TABLE IF NOT EXISTS daily_prices (
+          price_date     DATE     NOT NULL,
+          ticker         TEXT     NOT NULL,
+          price          NUMERIC,
+          change_pct     NUMERIC,
+          previous_close NUMERIC,
+          PRIMARY KEY (price_date, ticker)
+        );
+
+        CREATE TABLE IF NOT EXISTS user_watchlist (
+          user_id         UUID     NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+          ticker          TEXT     NOT NULL,
+          followed_since  DATE     NOT NULL,
+          price_at_follow NUMERIC  NOT NULL,
+          milestone_hit   SMALLINT NOT NULL DEFAULT 0,
+          PRIMARY KEY (user_id, ticker)
+        );
+
+        CREATE TABLE IF NOT EXISTS user_watchlist_prefs (
+          user_id                UUID     PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+          offers_made            SMALLINT NOT NULL DEFAULT 0,
+          status                 TEXT     NOT NULL DEFAULT 'none'
+                                          CHECK (status IN ('none', 'skipped', 'declined', 'active')),
+          first_offer_active_day SMALLINT
+        );
+      `);
+      console.log('[migrations] ✅ Phase 21 watchlist tables created.');
+    }
+  } catch (err) {
+    console.error('[migrations] watchlist migration failed (Your Companies will error until fixed):', err.message);
   }
 }
 
