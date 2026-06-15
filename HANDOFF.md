@@ -2201,3 +2201,45 @@ the smoke test + offline render). Spot-check post-deploy with a real kid account
 
 **While here — reconciled the HANDOFF status-table drift** (PRs #44–47 now
 reflected in the table).
+
+## Session: Phase 21 fix — watchlist picker (draft→Save, visual state, working X)
+
+Three live-prod bugs in the PR #48 picker (all client/interaction, backend
+untouched): (1) no visual feedback on select, (2) no way to drop inside the
+picker, (3) the X didn't close.
+
+**Root cause of #3:** `.wl-picker { display: flex }` on the base rule overrode
+the `[hidden]` attribute's `display:none`, so toggling `hidden` did nothing →
+moved the display to `.wl-picker:not([hidden]) { display:flex }`.
+
+**New interaction model — draft → Save** (replaces commit-on-tap), all in the
+shared `src/watchlist-ui.js`:
+- Tapping a tile toggles a **client-side draft** (instant highlight via
+  `.wlp-tile-selected` + ✓ badge; fully reversible; **nothing committed**).
+  Draft seeds from the card's saved companies. Cap-3 dims unselected tiles
+  (`.wlp-tile-full`) + shows a hint when the draft hits 3.
+- **Save** commits the draft↔saved diff via a new `POST /api/watchlist/save`
+  (`saveWatchlist` in `watchlist.js`): **removes-first-then-adds** (so a swap
+  at cap-3 works), per-ticker results. `followed_since`/the 7-day cooldown
+  **start at Save**. A cooldown-blocked drop returns `{daysRemaining}` and
+  **blocks only itself** — every allowed change still applies; the blocked
+  company stays committed; the message surfaces as a post-reload `.wl-flash`
+  (sessionStorage). Save is disabled when the draft is clean.
+- **X / Cancel / Esc / backdrop discard** — revert tiles to the saved state and
+  close. (The single endpoints `POST`/`DELETE /api/watchlist` stay for the
+  card's quick-drop chip + back-compat.)
+
+**Verified in a real browser** (standalone harness, stubbed fetch/reload):
+picker hidden on load → "+ Add" opens (display flex) → tap highlights + enables
+Save → tap again un-highlights + disables Save → select 3 → cap hint + 4th tile
+dimmed/blocked → **X closes (display none, hidden set)** + draft reverts on
+reopen → Save POSTs `{add:[…],remove:[…]}` to `/api/watchlist/save`. Screenshot
+of the open picker with a selected tile + Save captured. `test-watchlist.js`
++Section 11 (Save-diff: add-only, past-cooldown drop+add, within-cooldown drop
+blocked-only-itself + others applied, `followed_since` at Save, cap-3 on Save) —
+62 assertions, all pass. **Full suite green.**
+
+**Live-vs-code-review split:** the toggle/cap/close/Save-payload UI is
+browser-verified (harness); the post-Save **page reload + `.wl-flash` banner**
+and the real authenticated `/api/watchlist/save` round-trip are code-review-only
+(server diff covered by the smoke test) — spot-check on prod with a real kid.

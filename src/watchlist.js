@@ -194,6 +194,33 @@ export async function removeWatchlist(userId, ticker, todayStr) {
 }
 
 /**
+ * Commit a draft↔saved diff in one call (the picker's Save). Processes removes
+ * FIRST (frees a slot so a swap at cap-3 can add), then adds. Per-ticker
+ * results so a cooldown-blocked drop blocks only itself — every allowed change
+ * still applies. `followed_since` for adds is set NOW (cooldown starts at Save).
+ * Returns { added, dropped, blocked:[{ticker,name,daysRemaining}], errors }.
+ */
+export async function saveWatchlist(userId, add, remove, todayStr) {
+  const addList = Array.isArray(add) ? add.map(t => String(t || '').toUpperCase()) : [];
+  const removeList = Array.isArray(remove) ? remove.map(t => String(t || '').toUpperCase()) : [];
+  const added = [], dropped = [], blocked = [], errors = [];
+
+  for (const t of removeList) {
+    const r = await removeWatchlist(userId, t, todayStr);
+    if (r.ok) dropped.push(t);
+    else if (r.code === 'cooldown') {
+      blocked.push({ ticker: t, name: lookupCompany(t)?.name || t, daysRemaining: r.daysRemaining });
+    } else errors.push({ ticker: t, code: r.code });
+  }
+  for (const t of addList) {
+    const r = await addWatchlist(userId, t, todayStr);
+    if (r.ok) added.push(t);
+    else errors.push({ ticker: t, code: r.code });
+  }
+  return { added, dropped, blocked, errors };
+}
+
+/**
  * Record a since-following milestone (+10/+25/+50%). Spoof-proof: re-computes
  * the % server-side from the stored baseline + the live snapshot, and only
  * advances milestone_hit upward for a genuinely-crossed level. Idempotent.
