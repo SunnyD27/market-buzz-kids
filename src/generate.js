@@ -16,7 +16,7 @@ import { pickMysteryCompany } from './mystery.js';
 import { pickWeeklyHoldCandidates, finalizeWeeklyHold } from './weekly.js';
 import { resolveTomorrowCalls, resolveWeeklyHolds } from './picks.js';
 import { getDigestForDate, saveDigest, getRecentStories } from './digest-store.js';
-import { getEditionDate, getEditionType } from './calendar.js';
+import { getEditionDate, getEditionType, weeklyHoldBasis } from './calendar.js';
 import { storage } from './storage.js';
 import { refreshActiveGlossary } from './glossary-runtime.js';
 
@@ -139,12 +139,16 @@ export async function generateDigest(opts = {}) {
   const mysteryCompany = pickMysteryCompany(today, recentMystery);
   console.log(`[Generate]   Mystery Mover: ${mysteryCompany.name} (${mysteryCompany.ticker}) — excluding ${recentMystery.length} recent answer(s)`);
 
-  // Phase 20 — Weekly Hold: on week-ahead editions, the SERVER picks 3
-  // curated candidates (stateless, deterministic by ISO week) and Claude
-  // writes only the one-line case for each. Same for all kids → immutable.
-  const weeklyHoldCandidates = edition.editionType === 'week-ahead'
-    ? pickWeeklyHoldCandidates(today)
-    : null;
+  // Phase 20 — Weekly Hold: on week-ahead AND Sunday weekly-wrap editions,
+  // the SERVER picks 3 curated candidates (stateless, deterministic by ISO
+  // week) and Claude writes only the one-line case for each. Same for all
+  // kids → immutable. weeklyHoldBasis() shifts Sunday forward to the
+  // upcoming Monday so Sunday and Monday key off the SAME ISO week → the
+  // identical 3 candidates surface on both editions.
+  const weeklyHoldCandidates =
+    (edition.editionType === 'week-ahead' || edition.editionType === 'weekly-wrap')
+      ? pickWeeklyHoldCandidates(weeklyHoldBasis(today))
+      : null;
   if (weeklyHoldCandidates) {
     console.log(`[Generate]   Weekly Hold candidates: ${weeklyHoldCandidates.map(c => c.ticker).join(', ')}`);
   }
@@ -184,7 +188,8 @@ export async function generateDigest(opts = {}) {
 
   // Phase 20 — finalize Weekly Hold: merge the server's 3 candidates with
   // Claude's cases (canned fallback per company if missing), so the field
-  // is always complete + curated-75-guaranteed. Week-ahead only.
+  // is always complete + curated-75-guaranteed. Runs on week-ahead AND
+  // Sunday weekly-wrap (whichever editions baked candidates above).
   if (weeklyHoldCandidates) {
     content.weeklyHold = finalizeWeeklyHold(content.weeklyHold, weeklyHoldCandidates);
     console.log(`[Generate]   Weekly Hold finalized (${content.weeklyHold.candidates.length} cases)`);

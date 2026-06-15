@@ -575,10 +575,13 @@ export function buildHTML(content, opts = {}) {
   })();
 
   // Phase 20a — Weekly Hold card (per-user; opts.weeklyHold from the /digest
-  // render path). Pick UI on Monday's week-ahead; locked chip mid-week;
-  // verdict (all 3 returns + win) on the resolution weekend. Absent on
-  // /sample + logged-out → not rendered. Uses Phase 19 tokens + --up-text/
-  // --down-text for the green/red returns (WCAG-legible on cream).
+  // render path). Pick UI on Sunday's weekly-wrap AND Monday's week-ahead
+  // (the widened window); locked chip mid-week; verdict (all 3 returns +
+  // win) on the resolution weekend. Absent on /sample + logged-out → not
+  // rendered. Uses Phase 19 tokens + --up-text/--down-text for the green/red
+  // returns (WCAG-legible on cream). PLACEMENT is edition-aware in the body:
+  // on Sunday it renders directly under "Your Week in Juice" (reflect→pick
+  // adjacency); on every other edition it sits by the Tomorrow's Call card.
   const weeklyHold = opts.weeklyHold || null;
   const weeklyHoldCardHTML = (() => {
     if (!weeklyHold || !weeklyHold.phase) return '';
@@ -1725,6 +1728,8 @@ export function buildHTML(content, opts = {}) {
 
   ${weekInJuiceHTML}
 
+  ${editionType === 'weekly-wrap' ? weeklyHoldCardHTML : ''}
+
   ${marketClosedHTML}
 
   <div class="section-header">
@@ -1818,7 +1823,7 @@ export function buildHTML(content, opts = {}) {
 
   ${predictionCardHTML}
 
-  ${weeklyHoldCardHTML}
+  ${editionType === 'weekly-wrap' ? '' : weeklyHoldCardHTML}
 
   <div class="footer">
     <div class="rocket">🚀</div>

@@ -293,13 +293,37 @@ export function getLastTradingDayOfWeek(date = now()) {
 }
 
 /**
+ * The Weekly Hold's ACTIVE week, expressed as a basis date whose ISO week
+ * is the one a pick belongs to. Every day already sits in its own active
+ * week EXCEPT Sunday: ISO weeks run Mon–Sun, so Sunday belongs to the week
+ * that just ended — but the Sunday weekly-wrap surfaces the UPCOMING week's
+ * hold (relaxed Sunday→Monday-pre-open window), so Sunday maps forward to
+ * the next calendar day (Monday). Routed through candidate selection,
+ * target_date, and the open gate so all three agree. Returns 'YYYY-MM-DD'
+ * (NY); accepts a Date or 'YYYY-MM-DD' string.
+ */
+export function weeklyHoldBasis(date = now()) {
+  const dateStr = typeof date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(date)
+    ? date
+    : toNYDateString(date);
+  const d = new Date(dateStr + 'T12:00:00Z');
+  if (d.getUTCDay() === 0) {                   // Sunday → the upcoming Monday
+    return new Date(d.getTime() + 86400_000).toISOString().slice(0, 10);
+  }
+  return dateStr;
+}
+
+/**
  * The wall-clock blind-pick gate for Weekly Hold: true while the week's
  * FIRST trading day open (9:30 ET) is still in the future at `nowDate`.
  * Once that open passes, the Mon-open→Fri-close move is partly knowable,
- * so picks lock. Mirrors getNextTradingOpen's timing rule.
+ * so picks lock. Mirrors getNextTradingOpen's timing rule. `basisDate`
+ * selects WHICH week's first-trading-day open is the gate (defaults to the
+ * week containing `nowDate`); Sunday callers pass weeklyHoldBasis(...) so
+ * the gate is the UPCOMING Monday's open, not the just-passed one.
  */
-export function isWeeklyHoldOpen(nowDate = new Date()) {
-  const firstDay = getFirstTradingDayOfWeek(nowDate);
+export function isWeeklyHoldOpen(nowDate = new Date(), basisDate = nowDate) {
+  const firstDay = getFirstTradingDayOfWeek(basisDate);
   if (!firstDay) return false;
   const nyToday = toNYDateString(nowDate);
   if (nyToday < firstDay) return true;       // before the week's first trading day

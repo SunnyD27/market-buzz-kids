@@ -382,9 +382,16 @@ kid, Monday places the bets. Fixes Sunday's low-novelty problem with the one thi
 that's brand new every week — the kid's own stats.
 
 **20a — Weekly Hold (uses `user_picks`, kind `weekly-hold`):**
-- Monday's week-ahead digest presents 3 companies from the curated 75 (Claude picks
-  them in the week-ahead prompt with one-line cases for each; same name-leak hygiene
-  not needed — names are shown). Kid picks one to "hold" for the week.
+- **Sunday's weekly-wrap AND Monday's week-ahead** digests both present the SAME 3
+  companies from the curated 75 (server-picked, deterministic by ISO week; Claude
+  writes one-line cases for each; no name-leak hygiene needed — names are shown).
+  Kid picks one to "hold" for the week. The relaxed pick window runs Sunday all day
+  through Monday-pre-open; the blind-pick lock STAYS at the week's first trading-day
+  open (Monday 9:30 ET, or Tuesday in a holiday-Monday week). `weeklyHoldBasis()`
+  (calendar.js) shifts a Sunday date forward to the upcoming Monday so both editions
+  key off one ISO week → identical candidates, identical `target_date`, and one pick
+  per week via the existing `UNIQUE(user_id,kind,target_date)` (a Sunday pick then a
+  Monday pick cannot double-pick). *(Amended 2026-06-15 — originally Monday-only.)*
 - Resolution: Saturday's digest (Friday close vs Monday open, from FMP) shows all
   three results: "Your pick Nike +2.1% 🏆 — beat Netflix (+0.4%) and McDonald's
   (−1.2%)."
