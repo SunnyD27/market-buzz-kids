@@ -265,12 +265,37 @@ async function main() {
 
   contains('nudge subject is streak-at-risk',     nudge.subject, "streak is at risk");
   contains('nudge mentions kid name',             nudge.text,    'Sky');
-  contains('nudge mentions topMover',             nudge.text,    digestContent.scoreboard.topMover.name);
+  // topMover is absent by design on week-ahead / post-holiday editions, so
+  // the assertion is conditional — the real builder (renderNudge) safe-navs
+  // and omits the mover line when it's missing (see the no-topMover
+  // regression below). Without this guard the test crashed every Monday.
+  const liveMover = digestContent.scoreboard?.topMover;
+  if (liveMover) {
+    contains('nudge mentions topMover',           nudge.text,    liveMover.name);
+  } else {
+    ok('no-topMover edition: nudge still builds (mover line omitted)',
+      typeof nudge.text === 'string' && nudge.text.length > 0);
+  }
   contains('nudge mentions wordOfDay',            nudge.text,    digestContent.wordOfDay.word);
   contains('nudge mentions 5-day streak',         nudge.text,    '5-day streak');
   contains('nudge has digest link',               nudge.text,    '/digest');
   notContains('nudge does NOT mention games played', nudge.text, 'Played 3 games');
   notContains('nudge does NOT have "Talk about"', nudge.text.toUpperCase(), 'TALK ABOUT IT TONIGHT');
+
+  // No-topMover regression — week-ahead / post-holiday editions carry no
+  // scoreboard.topMover (oneToWatch is the forward slot). Simulate it with a
+  // clone so this path is exercised EVERY run regardless of today's edition.
+  // Guards the real builder's safe-nav: the nudge must build cleanly and
+  // simply omit the mover line (no crash, no "undefined").
+  const noMoverContent = JSON.parse(JSON.stringify(digestContent));
+  if (noMoverContent.scoreboard) delete noMoverContent.scoreboard.topMover;
+  const noMoverNudge = renderEveningRecap({
+    kidName: 'Sky', engagement: summary2, digestContent: noMoverContent,
+    progress: progress2, parentQuestions: [], digestDate, variant: 'nudge',
+  });
+  ok('no-topMover nudge builds without throwing', typeof noMoverNudge.text === 'string' && noMoverNudge.text.length > 0);
+  notContains('no-topMover nudge prints no "undefined"', noMoverNudge.text, 'undefined');
+  contains('no-topMover nudge still mentions wordOfDay', noMoverNudge.text, noMoverContent.wordOfDay.word);
 
   // ====================================================================
   // SCENARIO C — streak < 3, no engagement → server cron should SKIP
