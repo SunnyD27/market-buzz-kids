@@ -40,7 +40,12 @@
 // restyled `engagement.css` (light install banner, profile bar, retinted
 // accents), a precached shell asset. Without this bump, installed PWAs
 // would keep serving the old dark engagement.css over the new cream theme.
-const VERSION = 'v7';
+//
+// Bumped to v8 for the Phase 16 follow-up — `games/mystery-mover.js` share
+// text gained voice-y, kid-tone tiers keyed off clues-used (replacing the
+// single "got it in N clues!" string). Without this bump, installed PWAs
+// would keep serving the old share copy from the precached shell.
+const VERSION = 'v8';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 
