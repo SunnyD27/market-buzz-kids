@@ -14,6 +14,13 @@
 // no-pick-kid graceful null, getWeekStats incl. the mid-week / 0-of-0
 // guard, and the COPPA scrub (user_picks already covered, re-verified).
 //
+// Section 10 (Phase 20 amendment — Sunday window): weeklyHoldBasis shifts
+// Sunday forward to the upcoming Monday so Sunday's weekly-wrap and the
+// Monday week-ahead surface IDENTICAL candidates + the same target_date;
+// the lock stays at Monday's open; and a Sunday-pick-then-Monday-pick
+// CANNOT double-pick (the load-bearing dedup assertion). Holiday-Monday
+// week covered.
+//
 // Usage: node scripts/test-weekly.js
 
 import dotenv from 'dotenv';
@@ -22,6 +29,7 @@ dotenv.config({ override: true });
 import { query } from '../src/db.js';
 import {
   getFirstTradingDayOfWeek, getLastTradingDayOfWeek, isWeeklyHoldOpen,
+  weeklyHoldBasis,
 } from '../src/calendar.js';
 import { pickWeeklyHoldCandidates, finalizeWeeklyHold } from '../src/weekly.js';
 import {
@@ -161,6 +169,65 @@ async function main() {
   eq('week-ahead + open → pick phase', pickState?.phase, 'pick');
   const closedState = await getWeeklyHoldState(u5, '2026-06-15', content, at('2026-06-15T13:31:00Z'));
   eq('week-ahead + past open → closed phase', closedState?.phase, 'closed');
+
+  // -------- Section 10: Sunday window (Phase 20 amendment) -----------------
+  // Sunday's weekly-wrap now surfaces the SAME week's hold as the upcoming
+  // Monday, with a relaxed Sunday→Monday-pre-open pick window. The pairing
+  // under test: Sunday 2026-06-21 (weekly-wrap) + Monday 2026-06-22
+  // (week-ahead) — both belong to the ISO week starting Mon 2026-06-22.
+  console.log('\nSection 10 — Sunday window: weeklyHoldBasis shift + Sun/Mon dedup');
+  const SUN = '2026-06-21', MON22 = '2026-06-22';
+
+  // weeklyHoldBasis: Sunday shifts forward to the upcoming Monday; every
+  // other day is its own basis.
+  eq('basis: Sunday → upcoming Monday', weeklyHoldBasis(SUN), MON22);
+  eq('basis: Monday → itself', weeklyHoldBasis(MON22), MON22);
+  eq('basis: weekday → itself', weeklyHoldBasis('2026-06-17'), '2026-06-17');
+
+  // Identical candidates + identical target_date across the two editions.
+  const sunCands = pickWeeklyHoldCandidates(weeklyHoldBasis(SUN));
+  const monCands = pickWeeklyHoldCandidates(weeklyHoldBasis(MON22));
+  ok('Sunday + Monday surface IDENTICAL candidates',
+    JSON.stringify(sunCands.map(c => c.ticker)) === JSON.stringify(monCands.map(c => c.ticker)));
+  eq('Sunday + Monday compute the SAME target_date',
+    getLastTradingDayOfWeek(weeklyHoldBasis(SUN)), getLastTradingDayOfWeek(weeklyHoldBasis(MON22)));
+
+  // Lock STAYS at Monday's open: open Sunday, open Monday pre-open, closed
+  // once Monday 9:30 ET passes — evaluated against the basis (upcoming) week.
+  ok('window open Sunday afternoon', isWeeklyHoldOpen(at('2026-06-21T20:00:00Z'), weeklyHoldBasis(SUN)));
+  ok('window open Monday pre-open (8am ET)', isWeeklyHoldOpen(at('2026-06-22T12:00:00Z'), weeklyHoldBasis(MON22)));
+  ok('window CLOSED Monday 10am ET (past the open)', !isWeeklyHoldOpen(at('2026-06-22T14:00:00Z'), weeklyHoldBasis(MON22)));
+
+  // getWeeklyHoldState shows the pick card on Sunday's weekly-wrap.
+  const u7 = await createTestUser('u7');
+  const sunContent = { editionType: 'weekly-wrap', weeklyHold: { candidates: sunCands } };
+  const sunPickState = await getWeeklyHoldState(u7, SUN, sunContent, at('2026-06-21T20:00:00Z'));
+  eq('weekly-wrap + open → pick phase (Sunday card)', sunPickState?.phase, 'pick');
+
+  // THE load-bearing assertion: a kid who picks Sunday then tries again
+  // Monday cannot double-pick — both editions key to the same target_date,
+  // so the Monday insert is a UNIQUE no-op. Proves the basis shift lives
+  // inside createWeeklyHoldPick, not just the view.
+  const u8 = await createTestUser('u8');
+  const sunPick = await createWeeklyHoldPick(u8, SUN, sunCands[0].ticker, sunCands, at('2026-06-21T20:00:00Z'));
+  eq('Sunday pick inserted, target = upcoming week Friday', sunPick.inserted && sunPick.targetDate, '2026-06-26');
+  const monPick = await createWeeklyHoldPick(u8, MON22, monCands[1].ticker, monCands, at('2026-06-22T12:00:00Z'));
+  eq('Monday re-pick → SAME target_date', monPick.targetDate, '2026-06-26');
+  eq('Monday re-pick after Sunday pick → duplicate (no double-pick)', monPick.inserted, false);
+  const whRows = (await query(
+    `SELECT COUNT(*)::int AS n FROM user_picks WHERE user_id = $1 AND kind = 'weekly-hold'`, [u8])).rows[0].n;
+  eq('exactly ONE weekly-hold row across Sun+Mon picks', whRows, 1);
+
+  // Holiday-Monday week: Sunday 2026-05-24 → Memorial-Day Monday 2026-05-25
+  // (ISO week start, even though the market is closed); first trading day is
+  // Tuesday, so the Sunday window is open and the candidates match the week.
+  eq('holiday week: Sunday basis → the (holiday) Monday', weeklyHoldBasis('2026-05-24'), '2026-05-25');
+  ok('holiday week: Sunday candidates match the week-ahead set',
+    JSON.stringify(pickWeeklyHoldCandidates(weeklyHoldBasis('2026-05-24')).map(c => c.ticker))
+    === JSON.stringify(pickWeeklyHoldCandidates('2026-05-26').map(c => c.ticker)));
+  eq('holiday week: Sunday target = Friday', getLastTradingDayOfWeek(weeklyHoldBasis('2026-05-24')), '2026-05-29');
+  ok('holiday week: window open Sunday (locks at Tuesday open)',
+    isWeeklyHoldOpen(at('2026-05-24T20:00:00Z'), weeklyHoldBasis('2026-05-24')));
 
   // -------- Section 8: getWeekStats (mid-week / 0-of-0 guard) --------------
   console.log('\nSection 8 — getWeekStats');

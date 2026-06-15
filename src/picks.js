@@ -42,6 +42,7 @@ import { query } from './db.js';
 import {
   getNextTradingOpen, getLastTradingDay,
   getFirstTradingDayOfWeek, getLastTradingDayOfWeek, isWeeklyHoldOpen,
+  weeklyHoldBasis,
 } from './calendar.js';
 import { fetchQuotes } from './data.js';
 import { lookupCompany } from './companies.js';
@@ -357,13 +358,20 @@ export async function resolveTomorrowCalls(todayStr) {
  * already closed (no insert attempted).
  */
 export async function createWeeklyHoldPick(userId, digestDate, ticker, candidates, now = new Date()) {
-  const open = isWeeklyHoldOpen(now);
-  if (!open) return { inserted: false, open: false, targetDate: getLastTradingDayOfWeek(digestDate) };
+  // The active-week basis: shifts a Sunday digest forward to the upcoming
+  // Monday so the target_date (the one-per-week dedup key) and the open
+  // gate both key off the SAME week the candidates belong to. Critically
+  // this lives HERE, not just in the view — a Sunday pick and a Monday pick
+  // compute the identical target_date, so UNIQUE(user_id,kind,target_date)
+  // makes the second a no-op (no double-pick across the two editions).
+  const basis = weeklyHoldBasis(digestDate);
+  const open = isWeeklyHoldOpen(now, basis);
+  if (!open) return { inserted: false, open: false, targetDate: getLastTradingDayOfWeek(basis) };
   const tickers = (candidates || []).map(c => c.ticker);
   if (!tickers.includes(ticker)) {
-    return { inserted: false, open: true, invalid: true, targetDate: getLastTradingDayOfWeek(digestDate) };
+    return { inserted: false, open: true, invalid: true, targetDate: getLastTradingDayOfWeek(basis) };
   }
-  const targetDate = getLastTradingDayOfWeek(digestDate);
+  const targetDate = getLastTradingDayOfWeek(basis);
   if (!targetDate) throw new Error(`No trading day in the week of ${digestDate}?!`);
   const { rows } = await query(
     `INSERT INTO user_picks (user_id, kind, digest_date, target_date, pick)
@@ -377,15 +385,22 @@ export async function createWeeklyHoldPick(userId, digestDate, ticker, candidate
 
 /**
  * The Weekly Hold card model for one kid, given the digest's content
- * (candidates live on week-ahead rows) and edition. Phases:
+ * (candidates live on week-ahead AND Sunday weekly-wrap rows) and edition.
+ * Phases:
  *   'verdict' — the week resolved; show all 3 returns + win flag.
  *   'locked'  — kid picked, week not yet resolved.
- *   'pick'    — week-ahead, candidates present, window still open.
- *   'closed'  — week-ahead, candidates present, window passed (no pick).
+ *   'pick'    — week-ahead OR Sunday weekly-wrap, candidates present, window open.
+ *   'closed'  — same editions, candidates present, window passed (no pick).
  *   null      — nothing to show (incl. a kid who never picked → no error).
  */
 export async function getWeeklyHoldState(userId, digestDate, content = {}, now = new Date()) {
-  const targetDate = getLastTradingDayOfWeek(digestDate);
+  // Active-week basis (Sunday → upcoming Monday) so Sunday's weekly-wrap
+  // looks up the SAME week a Sunday/Monday pick writes to. Consequence:
+  // Sunday no longer surfaces the just-resolved week's verdict — that shows
+  // Saturday (results), and Sunday's "Your Week in Juice" recap covers the
+  // MC. Saturday = results, Sunday = reflect + pick ahead.
+  const basis = weeklyHoldBasis(digestDate);
+  const targetDate = getLastTradingDayOfWeek(basis);
   if (!targetDate) return null;
 
   const { rows } = await query(
@@ -419,8 +434,8 @@ export async function getWeeklyHoldState(userId, digestDate, content = {}, now =
       candidates: candidates || (row.pick?.candidates || []).map(t => ({ ticker: t, name: t })),
     };
   }
-  if (editionType === 'week-ahead' && candidates) {
-    return { phase: isWeeklyHoldOpen(now) ? 'pick' : 'closed', chosen: null, candidates };
+  if ((editionType === 'week-ahead' || editionType === 'weekly-wrap') && candidates) {
+    return { phase: isWeeklyHoldOpen(now, basis) ? 'pick' : 'closed', chosen: null, candidates };
   }
   return null;
 }

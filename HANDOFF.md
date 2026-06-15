@@ -2051,3 +2051,69 @@ option text on the washes 13.11/12.85:1; lowest = option-letter badge
 4.76:1). Before/after screenshots captured. `node scripts/test-theme.js` —
 all assertions pass (incl. the "no stray dark navy hex in any light :root"
 half-migration guard). Harness deleted.
+
+## Session: Phase 20 amendment — widen the Weekly Hold pick window to Sunday
+
+The Weekly Hold candidates only appeared on Monday's week-ahead digest,
+locking at Monday's 9:30 open — a ~2.5-hour pre-school window kids routinely
+miss. Now the SAME week's candidates also surface on Sunday's weekly-wrap, so
+the pick window runs Sunday-all-day → Monday-pre-open. **The lock did NOT
+move** — it stays at the week's first trading-day open (blind-pick
+integrity).
+
+**The one correctness mechanism — `weeklyHoldBasis()` (src/calendar.js).**
+ISO weeks run Mon–Sun, so `isoWeekMonday(Sunday)` walks BACK to the prior
+Monday — a Sunday date naively keys to the just-ENDED week. `weeklyHoldBasis`
+shifts a Sunday date forward to the upcoming Monday (every other day is its
+own basis), so Sunday and Monday resolve to the SAME ISO week. Routed through
+all three week-relative computations so they agree:
+- **Candidate selection** (`generate.js`): now runs on `week-ahead` AND
+  `weekly-wrap`, calling `pickWeeklyHoldCandidates(weeklyHoldBasis(today))`.
+  Deterministic + stateless over the static curated-75 → Sunday and Monday
+  bake the IDENTICAL 3 tickers. (Case *wording* differs — two independent
+  Claude calls — which is fine and intended.)
+- **`target_date` + open gate** (`picks.js`): `createWeeklyHoldPick` and
+  `getWeeklyHoldState` compute `getLastTradingDayOfWeek(weeklyHoldBasis(
+  digestDate))` and gate on `isWeeklyHoldOpen(now, basis)`. The basis lives
+  INSIDE `createWeeklyHoldPick` (not just the view) — that's what makes a
+  Sunday pick and a Monday pick compute the same `target_date`, so the
+  existing `UNIQUE(user_id,kind,target_date)` + `ON CONFLICT DO NOTHING`
+  makes the Monday insert a no-op. **No double-pick.**
+- **Lock** (`isWeeklyHoldOpen(now, basisDate = now)`): generalized to take an
+  explicit week basis (defaults to `now` → all existing callers unchanged).
+  Sunday callers pass the upcoming-Monday basis, so the gate is the upcoming
+  Monday's open: open Sunday + Monday-pre-open, locked at/after 9:30 ET.
+
+**Other changes:**
+- `ai.js`: `buildWeeklyWrapPrompt` now takes `weeklyHoldCandidates`, injects
+  `weeklyHoldBlock` + the `"weeklyHold"` schema line (mirrors week-ahead);
+  the dispatch passes the candidates. No `digest-schema.js` change needed —
+  `finalizeWeeklyHold`'s canned per-company fallback (run after the zod gate)
+  still guarantees a complete field.
+- `template.js`: **edition-aware placement** — on Sunday the Weekly Hold card
+  renders directly under "Your Week in Juice" (reflect → pick adjacency); on
+  every other edition it stays by the Tomorrow's Call card. (Approved.)
+- **Sunday verdict dropped** (approved): with the basis shift, Sunday looks at
+  the upcoming week, so the just-resolved verdict shows Saturday only —
+  Sunday's "Your Week in Juice" recap already covers the MC. Saturday =
+  results, Sunday = reflect + pick ahead.
+
+**Files:** `src/calendar.js`, `src/generate.js`, `src/ai.js`, `src/picks.js`,
+`src/template.js`, `scripts/test-weekly.js`. No migration.
+
+**Spec/doc reconciliation:** ROADMAP §20a ("Monday's week-ahead presents 3
+companies" → Sunday + Monday) and the CONTEXT phase-table / `calendar.js` /
+`weekly.js` / `test-weekly.js` entries updated to match.
+
+**Verified:** `scripts/test-weekly.js` — 65/65 pass, incl. the new Section 10
+(basis shift; Sun≡Mon candidates + target_date; lock open Sun & Mon-pre-open,
+closed Mon 10am; pick phase on weekly-wrap; **the explicit Sun-pick-then-Mon-
+pick dedup → exactly one row**; holiday-Monday week). Full suite otherwise
+green (company-models, digest-schema, engagement, glossary, multi-kid ×2,
+mystery, picks, push, theme; test-games is an inspection script).
+⚠️ **Pre-existing, unrelated:** `scripts/test-evening-email.js` throws on a
+Monday/post-holiday run — line 268 dereferences `scoreboard.topMover.name`
+without safe-nav, but the week-ahead edition has no `topMover` by design.
+Independent of this change (no shared code path); flagged for a separate fix.
+The first `test-weekly` batch run hit a transient Neon DNS `ENOTFOUND` during
+cleanup; a re-run was fully clean.

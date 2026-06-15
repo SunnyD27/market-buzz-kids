@@ -518,7 +518,7 @@ RULES ON OUTPUT:
  * public/games/sunday-challenge.js — it reads `sundayChallenge.type` and
  * dispatches to the right sub-renderer.
  */
-function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '') {
+function buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests = [], mysteryCompany = null, researchBrief = '', weeklyHoldCandidates = null) {
   const topMoverBlock = topMover
     ? JSON.stringify(topMover, null, 2)
     : 'null  // no curated mover available — identify the week\'s biggest mover from a kid-recognizable name using the research brief.';
@@ -692,6 +692,8 @@ PARENT EXPLAINER RULES (Phase 12):
 ${glossaryNominationBlock()}
 
 ${mysteryMoverBlock(mysteryCompany)}
+
+${weeklyHoldBlock(weeklyHoldCandidates)}
 
 SUNDAY CHALLENGE — THE WEEKLY GAME
 
@@ -1010,7 +1012,8 @@ Return ONLY a JSON object with this exact structure (no markdown, no backticks, 
   },
   ${sundayChallengeSchemaSnippet},
 ${GLOSSARY_NOMINATION_SCHEMA},
-${MYSTERY_MOVER_SCHEMA}
+${MYSTERY_MOVER_SCHEMA},
+${weeklyHoldCandidates ? `  "weeklyHold": { "cases": { ${weeklyHoldCandidates.map(c => `"${c.ticker}": "one short kid-friendly case (<=20 words)"`).join(', ')} } }` : '  "weeklyHold": null'}
 }
 
 RULES ON OUTPUT:
@@ -1317,7 +1320,7 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   const buildPrompt = () => {
     switch (edition.editionType) {
       case 'weekly-wrap':
-        return buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief);
+        return buildWeeklyWrapPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief, weeklyHoldCandidates);
       case 'week-ahead':
         return buildWeekAheadPrompt(marketData, topMover, recentWords, recentFacts, edition, dateStr, recentDigests, mysteryCompany, brief, weeklyHoldCandidates);
       default:
