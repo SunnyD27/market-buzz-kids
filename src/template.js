@@ -149,7 +149,12 @@ export function makeGlossaryLinker(view, { enabled = true } = {}) {
   }
 
   function link(rawText, opts = {}) {
-    const s = String(rawText == null ? '' : rawText);
+    // Decode any escaped/real newlines and flatten them to spaces: link() is
+    // the SINGLE-line path (titles, vibe summary, word definition), so a stray
+    // `\\n` here is a soft break, never a paragraph. paragraphizeText already
+    // collapsed lone newlines before calling us, so this is a no-op for prose
+    // paragraphs — it only guards the fields that bypass the splitter.
+    const s = decodeNewlines(rawText).replace(/\s*\n\s*/g, ' ');
     if (!enabled || !re) return escapeHTML(s);
     const skipLower = opts.skipTerm ? String(opts.skipTerm).toLowerCase() : null;
     // Single pass over the raw prose: matched terms become gloss spans, every
@@ -229,15 +234,39 @@ function splitSentences(text) {
   return out.filter(Boolean);
 }
 
+// Normalize line breaks BEFORE paragraph splitting. The model emits paragraph
+// breaks two different ways inside the JSON string values it returns: as REAL
+// newline control chars (`\n`), or — intermittently — as the LITERAL two-char
+// sequence backslash-n (the four characters `\`,`n`,`\`,`n` for a blank line).
+// The literal form is not a newline, so the splitter never matched it and the
+// raw characters survived escapeHTML() and rendered as visible "\n\n" text in
+// the digest (the prod bug). This converts every escaped form — `\\n`, `\\r\\n`,
+// stray `\\r` — and real CR/CRLF into a single canonical real `\n`, so ONE
+// splitter handles both authoring styles identically and no backslash-n can
+// reach the output. Pure + word-preserving (only line-break chars change).
+export function decodeNewlines(rawText) {
+  return String(rawText == null ? '' : rawText)
+    .replace(/\\r\\n/g, '\n') // literal "\r\n"
+    .replace(/\\n/g, '\n')    // literal "\n"
+    .replace(/\\r/g, '\n')    // literal "\r"
+    .replace(/\r\n?/g, '\n'); // real CRLF / CR → LF
+}
+
 // Turn a body field into an array of paragraph strings. Honors model-authored
-// \n\n breaks exactly; otherwise falls back to grouping whole sentences into
-// ~2–3-sentence paragraphs (≤3 sentences → left as one paragraph). Pure +
-// word-preserving — see splitSentences.
-function paragraphizeText(rawText) {
-  const t = String(rawText == null ? '' : rawText);
-  const byBreaks = t.split(/\n\s*\n/).map(p => p.trim()).filter(Boolean);
+// blank-line breaks exactly — whether written as real `\n\n` or as the literal
+// escaped `\\n\\n` (both normalized to real newlines by decodeNewlines first).
+// Otherwise falls back to grouping whole sentences into ~2–3-sentence
+// paragraphs (≤3 sentences → left as one paragraph). Pure + word-preserving —
+// see splitSentences. A SINGLE newline left inside a paragraph is a soft wrap →
+// collapsed to a space (safest for prose; guarantees no lone break survives).
+export function paragraphizeText(rawText) {
+  const t = decodeNewlines(rawText);
+  const byBreaks = t
+    .split(/\n\s*\n/) // paragraph delimiter = a run of 2+ newlines
+    .map(p => p.replace(/\s*\n\s*/g, ' ').trim())
+    .filter(Boolean);
   if (byBreaks.length > 1) return byBreaks;
-  const body = t.trim();
+  const body = byBreaks.length ? byBreaks[0] : '';
   if (!body) return [];
   const sents = splitSentences(body);
   if (sents.length <= 3) return [body];

@@ -2243,3 +2243,56 @@ blocked-only-itself + others applied, `followed_since` at Save, cap-3 on Save) �
 browser-verified (harness); the post-Save **page reload + `.wl-flash` banner**
 and the real authenticated `/api/watchlist/save` round-trip are code-review-only
 (server diff covered by the smoke test) — spot-check on prod with a real kid.
+
+## Session: Fix — literal `\n\n` leaking into rendered body text
+
+**Bug (live on prod):** some paragraph breaks in The Big Picture (and any body
+field on the shared splitter path) rendered as the four VISIBLE characters
+`\`,`n`,`\`,`n` instead of a paragraph gap.
+
+**Diagnosed from the DB (not assumed):** inspected the stored `content` for the
+three most recent affected rows (Jun 16 / Jun 15 / Jun 14). Every leaked break
+was the **literal/escaped form** — `bigPicture` showed `literalBackslashN=4`
+(two `\\n\\n` pairs), `realNewline=0`. So the model, inside the JSON string
+values it returns from the forced `emit_digest` tool call, sometimes writes the
+two characters backslash+n rather than a real newline control char. The OLD
+`paragraphizeText` split on the real-newline regex `/\n\s*\n/`, which can't
+match literal backslash-n, so the chars survived `escapeHTML()` and printed.
+(The correct paragraph gaps that DID appear came from the sentence-grouping
+fallback — with `realNewline=0`, no field was actually using real `\n\n`.)
+
+**Fix (render-layer only — content + generation prompt untouched):** in
+`src/template.js`:
+- New `decodeNewlines()` (exported): converts `\\r\\n`, `\\n`, stray `\\r`, and
+  real CR/CRLF all to a single canonical real `\n` BEFORE any split.
+- `paragraphizeText()` (now exported) decodes first, splits on a run of 2+
+  newlines, and collapses any lone newline left inside a paragraph to a space —
+  so neither a literal nor a real break can survive as text.
+- `link()` (the single-line path: titles, vibe summary, word def) also decodes
+  + flattens newlines to spaces, so fields that bypass the splitter can't leak
+  either. No-op for prose paragraphs (already collapsed upstream).
+- All body fields already funnel through these (bigPicture, story body/why-it-
+  matters, did-you-know fact/lesson via `linkProse`; the rest via `link`), so
+  the one chokepoint covers every field.
+
+**Files:** `src/template.js` (normalization + split + single-newline handling),
+`scripts/test-template-newlines.js` (new — 24 assertions: real `\n\n`, literal
+`\\n\\n`, mixed-in-one-string, single `\\n`, `\r\n`; correct `<p>` counts; and
+the load-bearing GUARD that rendered output contains ZERO literal backslash-n).
+
+**Verified:**
+- **Repro on the real stored prod row (Jun 16):** old splitter → 1 paragraph
+  with literal backslash-n surviving; fixed splitter → 3 clean paragraphs, zero
+  backslash-n in output HTML.
+- `node --check src/template.js` clean.
+- Pure/offline suite green: `test-template-newlines` (new),
+  `test-glossary`, `test-theme`, `test-company-models` — glossary
+  underline / first-occurrence linking / paragraph spacing all unchanged.
+
+**Live-vs-code-review split:** the splitter behavior, the before/after on the
+actual stored prod `bigPicture`, and the full-render guard are all verified
+offline against real data. NOT exercised: the authenticated `/digest` HTTP
+render and the live email teaser (same `buildHTML` path, no behavior change
+beyond the normalization). The DB-backed engine tests (mystery/push/picks/
+weekly/watchlist) were not run — unrelated paths, need live Neon + a same-day
+digest row.
