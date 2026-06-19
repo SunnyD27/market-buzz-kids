@@ -188,7 +188,16 @@ export function validateDigest(content, edition = { editionType: 'standard' }) {
         errors.push(`sundayChallenge: required on weekly-wrap (${sc.error.issues[0]?.message || 'missing'})`);
       }
     }
-    if (editionType !== 'standard' && content.marketClosed !== true) {
+    // marketClosed is edition-derived (see postProcess in src/ai.js): true on
+    // weekend/closed-day editions, false on standard. Enforce BOTH directions
+    // — a stray true on a standard edition renders the false "Markets were
+    // closed yesterday" note (e.g. a digest published on a holiday like
+    // Juneteenth that still covers the prior, open trading day).
+    if (editionType === 'standard') {
+      if (content.marketClosed === true) {
+        errors.push("marketClosed: must be false/absent on a standard edition (it covers the previous trading day's real close)");
+      }
+    } else if (content.marketClosed !== true) {
       errors.push(`marketClosed: must be true on ${editionType} (weekend/closed-day note above the scoreboard)`);
     }
   }

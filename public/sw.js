@@ -45,7 +45,13 @@
 // text gained voice-y, kid-tone tiers keyed off clues-used (replacing the
 // single "got it in N clues!" string). Without this bump, installed PWAs
 // would keep serving the old share copy from the precached shell.
-const VERSION = 'v8';
+//
+// Bumped to v9 — `games/mystery-mover.js` share link switched from the bare
+// apex (themarketjuice.com/sample) to the www host
+// (https://www.themarketjuice.com/sample), since the apex drops the path on
+// deep links and 404s. Without this bump, installed PWAs would keep serving
+// the old 404-ing share link from the precached shell.
+const VERSION = 'v9';
 const SHELL_CACHE = 'mj-shell-' + VERSION;
 const RUNTIME_CACHE = 'mj-runtime-' + VERSION;
 

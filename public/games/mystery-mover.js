@@ -20,7 +20,7 @@
  *   Market Juice Mystery Mover — June 15
  *   🟧🟧🟩
  *   Got it in 3!! Beat that 😏
- *   themarketjuice.com/sample?src=mm-share
+ *   https://www.themarketjuice.com/sample?src=mm-share
  * The brag line is a FIXED, pre-written set picked by clues-used (NOT a
  * free-text box) so the share artifact stays a closed, reviewed set (COPPA).
  */
@@ -30,7 +30,12 @@
   var MAX_GUESSES = 5;
   // ?src=mm-share is a channel tag (identical for every user — NOT an
   // identifier) so share-grid arrivals are distinguishable in logs/analytics.
-  var SHARE_URL = 'themarketjuice.com/sample?src=mm-share';
+  // Must use the www host: the apex domain (themarketjuice.com) only
+  // redirects "/" to www and drops the path on deep links, so a bare
+  // themarketjuice.com/sample 404s. Same apex-routing fix we applied to
+  // email links. No client-side base-URL constant exists (APP_BASE_URL is
+  // server-only, in src/emails.js), so this stays an explicit www literal.
+  var SHARE_URL = 'https://www.themarketjuice.com/sample?src=mm-share';
 
   var section = null;
   var host = null;
