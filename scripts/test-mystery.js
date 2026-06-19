@@ -190,8 +190,8 @@ async function main() {
   // channel (identical for all users), not an identifier.
   console.log('\nSection 6.5 — share text (source + executed tiers)');
   const mmSource = readFileSync(path.join(__dirname, '..', 'public', 'games', 'mystery-mover.js'), 'utf8');
-  ok('share URL carries the ?src=mm-share channel tag',
-    mmSource.includes("SHARE_URL = 'themarketjuice.com/sample?src=mm-share'"));
+  ok('share URL uses the www host + ?src=mm-share channel tag (apex 404s on deep links)',
+    mmSource.includes("SHARE_URL = 'https://www.themarketjuice.com/sample?src=mm-share'"));
   ok('Web Share API used when available (clipboard fallback kept)',
     mmSource.includes('navigator.share') && mmSource.includes('clipboardShare'));
   const builderMatch = mmSource.match(/function buildShareText\(([^)]*)\)/);
@@ -225,7 +225,7 @@ async function main() {
     eq(`tier "${t.name}": line 1 = title + date`, lines[0], 'Market Juice Mystery Mover — June 15');
     eq(`tier "${t.name}": grid on its own line`, lines[1], t.grid);
     ok(`tier "${t.name}": brag line matches the chosen tier`, t.brag(lines[2]));
-    eq(`tier "${t.name}": link keeps ?src=mm-share`, lines[3], 'themarketjuice.com/sample?src=mm-share');
+    eq(`tier "${t.name}": link is the full www URL + ?src=mm-share`, lines[3], 'https://www.themarketjuice.com/sample?src=mm-share');
     ok(`tier "${t.name}": no PII leak (name/username/streak/MC)`, !PII.test(text));
   }
 

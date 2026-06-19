@@ -149,6 +149,12 @@ async function main() {
   const wrapOpen = makeValidDigest('weekly-wrap');
   wrapOpen.marketClosed = false;
   ok('weekly-wrap without marketClosed rejected', !validateDigest(wrapOpen, editionOf('weekly-wrap')).ok);
+  // Regression (Juneteenth bug): a standard edition published on a holiday must
+  // NOT carry marketClosed=true — it covers the prior, open trading day.
+  const stdClosed = makeValidDigest('standard');
+  stdClosed.marketClosed = true;
+  ok('standard WITH marketClosed=true rejected (covers prior open trading day)',
+    !validateDigest(stdClosed, editionOf('standard')).ok);
   const wrongEdition = makeValidDigest('standard');
   wrongEdition.editionType = 'weekly-wrap';
   ok('editionType mismatch vs calendar rejected', !validateDigest(wrongEdition, editionOf('standard')).ok);

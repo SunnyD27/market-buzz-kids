@@ -1338,6 +1338,16 @@ export async function generateContent(marketData, news, movers, topMover, opts =
   const recentMystery = Array.isArray(opts.recentMystery) ? opts.recentMystery : [];
   const postProcess = (raw) => {
     const content = scrubProfanity(stripCiteTagsDeep(raw));
+    // marketClosed is a DETERMINISTIC, edition-derived flag — never the
+    // model's to decide. It is true ONLY when the scoreboard shows frozen
+    // numbers from a non-trading span (weekly-wrap = weekend, week-ahead =
+    // Monday / post-holiday). A STANDARD edition always covers the previous
+    // trading day's REAL close, so it MUST be false — even when the edition
+    // date itself is a market holiday (a digest published on Juneteenth still
+    // reports the prior open day). Without this override the model sometimes
+    // infers "market closed" from today's date being a holiday and renders
+    // the false "Markets were closed yesterday" note above the scoreboard.
+    content.marketClosed = (edition.editionType || 'standard') !== 'standard';
     content.glossaryNominations = filterGlossaryNominations(content.glossaryNominations);
     if (content.glossaryNominations.length) {
       console.log(`[AI] glossaryNominations after filter: ${content.glossaryNominations.map(n => n.term).join(', ')}`);
