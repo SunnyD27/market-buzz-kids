@@ -91,11 +91,11 @@ for (const bot of ['GPTBot', 'OAI-SearchBot', 'ChatGPT-User', 'ClaudeBot', 'Clau
   ok(`explicit group for ${bot}`, rb.includes(`User-agent: ${bot}\nAllow: /\n`));
 }
 ok('wildcard group present', rb.includes('User-agent: *\nAllow: /\n'));
-for (const d of ['/api/', '/admin', '/digest', '/progress', '/generate', '/parent/', '/reset-password', '/forgot-password', '/login']) {
+for (const d of ['/api/', '/admin', '/generate']) {
   ok(`Disallow ${d}`, ROBOTS_DISALLOW.includes(d) && rb.includes(`Disallow: ${d}\n`));
 }
 eq('every group repeats the full Disallow list',
-  (rb.match(/^Disallow: \/digest$/gm) || []).length, ALLOWED_BOTS.length + 1);
+  (rb.match(/^Disallow: \/api\/$/gm) || []).length, ALLOWED_BOTS.length + 1);
 ok('Sitemap line points at SITE_ORIGIN', rb.includes(`Sitemap: ${SITE_ORIGIN}/sitemap.xml`));
 ok('does not disallow public pages', !/^Disallow: \/(sample|privacy|llms\.txt)?$/m.test(rb));
 

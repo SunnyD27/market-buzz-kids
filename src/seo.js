@@ -143,18 +143,15 @@ export const ALLOWED_BOTS = [
   'Applebot-Extended',
 ];
 
-// Auth-gated, per-kid, token-bearing or admin surfaces. Never useful in an
-// index, and some carry tokens in the query string.
+// Only API/admin/generation endpoints are disallowed. Auth pages (/login,
+// /digest, /progress, /parent/*, password pages) are deliberately NOT
+// disallowed: a disallowed URL can't be fetched, so Google would never see
+// their noindex and could still list the bare URL. They stay out of the
+// index via NOINDEX_PATHS (X-Robots-Tag) + <meta name="robots"> instead.
 export const ROBOTS_DISALLOW = [
   '/api/',
   '/admin',
-  '/digest',
-  '/progress',
   '/generate',
-  '/parent/',
-  '/reset-password',
-  '/forgot-password',
-  '/login',
 ];
 
 export function buildRobotsTxt() {

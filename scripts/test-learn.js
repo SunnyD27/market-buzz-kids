@@ -150,16 +150,11 @@ async function main() {
 
       const isPrinciple = url.startsWith('/learn/');
       if (isPrinciple) {
-        const faq = parsed.find((o) => o['@type'] === 'FAQPage');
-        const text = visibleText(html);
-        ok('FAQPage present', !!faq);
-        ok('  every FAQ Q&A is visible on the page', faq && faq.mainEntity.every((q) => text.includes(q.name) && text.includes(q.acceptedAnswer.text)));
         ok('"For parents" box', html.includes('class="parents-box"'));
         ok('"Check yourself" section', html.includes('id="check-h"'));
         ok('links back to hub', html.includes('href="/learn"'));
-      } else {
-        ok('no FAQPage on non-principle page', !types.includes('FAQPage'));
       }
+      ok('no FAQPage markup (practice Qs are not FAQs)', !types.includes('FAQPage'));
       ok('CTA to /#signup', html.includes('href="/#signup"'));
 
       const words = mainWords(html);

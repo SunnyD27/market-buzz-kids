@@ -324,15 +324,6 @@ ${ctaBox()}
       author: PUBLISHER,
       image: SITE.ogImage,
     },
-    {
-      '@context': 'https://schema.org',
-      '@type': 'FAQPage',
-      mainEntity: p.check.map((c) => ({
-        '@type': 'Question',
-        name: plain(c.q),
-        acceptedAnswer: { '@type': 'Answer', text: plain(c.a) },
-      })),
-    },
   ];
   return layout({ path, title: p.title, description: p.description, ld, body });
 }
@@ -386,7 +377,7 @@ function renderParents() {
   <ul>
     <li><strong>Parental consent for kids under 13 (COPPA).</strong> When you sign up a child aged 10–12, we email you a consent request. Your child's account stays inactive — no digest, no data processing beyond signup — until you click to give consent. If you don't, the signup expires.</li>
     <li><strong>Parents sign up, not kids.</strong> We ask for the parent's email, never the child's, at every age.</li>
-    <li><strong>We collect very little.</strong> Your kid's first name (no last name), age, login, and their game progress. No phone number, no location beyond timezone.</li>
+    <li><strong>We collect very little.</strong> Your kid's first name (no last name), age, login, and their game progress. No phone number, no location beyond timezone, plus the signup IP address we keep as part of the parental-consent record.</li>
     <li><strong>We don't sell or share data for advertising</strong>, we don't use kids' data to train AI models, and we don't track kids across the web.</li>
     <li><strong>No public usernames or profiles.</strong> There's no chat and no social feed.</li>
     <li><strong>You're in control.</strong> You can <a href="/parent/delete-data">delete your child's data</a> at any time.</li>

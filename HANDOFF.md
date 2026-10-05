@@ -2332,6 +2332,12 @@ registrar forward that 404s on every deep path (only `/` works there).
 - `public/llms.txt` (new).
 - `scripts/test-seo.js`, `scripts/test-learn.js` (new smoke tests).
 
+**Review follow-ups (independent review pass):** robots.txt now disallows only
+`/api/`, `/admin`, `/generate` — auth pages rely on noindex so crawlers can
+actually see it; dropped FAQPage markup on principle pages (practice Qs aren't
+FAQs); `/parents` now discloses the consent-record IP; learn URLs carry
+sitemap lastmod.
+
 **Decisions / deviations:** Canonical host is **www**, not apex, because the
 apex is a registrar forward that drops paths (verified live: apex `/privacy`
 → 404). To move to apex later: point apex at Railway, flip `CANONICAL_HOST`,

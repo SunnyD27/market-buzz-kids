@@ -76,7 +76,7 @@ app.get('/robots.txt', (req, res) => {
   res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(buildRobotsTxt());
 });
 app.get('/sitemap.xml', (req, res) => {
-  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(buildSitemapXml(LEARN_URLS));
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(buildSitemapXml(LEARN_URLS.map((p) => ({ path: p, lastmod: '2026-10-05', changefreq: 'monthly', priority: p === '/learn' || p === '/parents' ? '0.8' : '0.7' }))));
 });
 
 // SEO content pages — /learn hub, 11 principle pages, /parents (src/learn.js).
