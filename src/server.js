@@ -28,6 +28,8 @@ import { sendTelegram, buildFailureAlert, buildSuccessPing } from './notify.js';
 import { runMorningPipeline } from './morning-run.js';
 import { getVapidPublicKey, sendMorningPushes, sendStreakRiskPush, shouldSendStreakRiskPush } from './push.js';
 import { isCorrectGuess } from './mystery.js';
+import { canonicalHostRedirect, noindexHeader, buildSitemapXml, buildRobotsTxt } from './seo.js';
+import { registerLearnRoutes, LEARN_URLS } from './learn.js';
 import { createPick, getPickState, targetLabelFor, createWeeklyHoldPick, getWeeklyHoldState } from './picks.js';
 import { getWatchlistState, addWatchlist, removeWatchlist, recordMilestone, recordOffer, saveWatchlist } from './watchlist.js';
 import {
@@ -57,6 +59,28 @@ const PORT = process.env.PORT || 3000;
 // X-Forwarded-For — important for rate limiting and for the consent/signup
 // IPs we store for COPPA audit.
 app.set('trust proxy', 1);
+
+// SEO — canonical-host 301 (src/seo.js). Runs FIRST so a non-canonical host
+// never reaches static files or routes. GET/HEAD only + exact host match, so
+// webhooks/cron POSTs, localhost and *.up.railway.app are never redirected.
+app.use(canonicalHostRedirect);
+
+// SEO — `X-Robots-Tag: noindex` on auth/utility/per-kid surfaces (/digest,
+// /progress, /login, /parent/*, /admin, ...). Header only; never blocks.
+app.use(noindexHeader);
+
+// SEO — robots.txt + sitemap.xml are generated from src/seo.js and registered
+// BEFORE express.static so a stray public/robots.txt can never shadow them.
+// /llms.txt is a static file (public/llms.txt) served by express.static.
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').set('Cache-Control', 'public, max-age=3600').send(buildRobotsTxt());
+});
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(buildSitemapXml(LEARN_URLS.map((p) => ({ path: p, lastmod: '2026-10-05', changefreq: 'monthly', priority: p === '/learn' || p === '/parents' ? '0.8' : '0.7' }))));
+});
+
+// SEO content pages — /learn hub, 11 principle pages, /parents (src/learn.js).
+registerLearnRoutes(app);
 
 // Parse JSON bodies for /api endpoints (signup, deletion).
 // Capture the raw bytes alongside the parsed body so the Resend webhook

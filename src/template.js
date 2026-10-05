@@ -5,6 +5,7 @@
 
 import { getActiveGlossary } from './glossary-runtime.js';
 import { watchlistCard, watchlistPicker, WATCHLIST_CSS, WATCHLIST_CONTROLLER } from './watchlist-ui.js';
+import { absoluteUrl } from './seo.js';
 
 // Short principle labels for the glossary tooltip's "Ties to:" tie-in line.
 // Server-side mirror of public/games/shared.js PRINCIPLES, trimmed to fit the
@@ -913,7 +914,7 @@ export function buildHTML(content, opts = {}) {
 <link rel="manifest" href="/manifest.webmanifest">
 <link rel="apple-touch-icon" href="/icons/icon.svg">
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
-<title>Market Juice</title>
+${buildHeadMeta(opts)}
 <!-- Phase 19 type system: Fredoka (display), Lexend (body/labels), Space Grotesk
      (numerals). preconnect speeds the CDN handshake; display=swap keeps text
      visible during font load (no FOIT/invisible-text flash on slow links). -->
@@ -2166,6 +2167,41 @@ ${WATCHLIST_CONTROLLER}
 
 </body>
 </html>`;
+}
+
+// SEO head tags (title/description/canonical/OG). Only the public /sample
+// render (opts.isSample) is indexable; every other buildHTML render — the
+// auth-gated /digest, its no-row sample fallback, and the on-disk
+// public/index.html — is a per-kid surface and gets noindex. Exported for
+// scripts/test-seo.js.
+export const SAMPLE_SEO = {
+  title: 'Sample Daily Digest for Kids — Market Juice',
+  description: 'See a free sample of Market Juice: a 3-minute daily market digest for kids ages 10-16 — the market scoreboard, kid-friendly stories, and games that teach real investing principles.',
+  path: '/sample',
+};
+
+export function buildHeadMeta(opts = {}) {
+  if (!opts.isSample) {
+    return `<title>Market Juice</title>
+<meta name="robots" content="noindex, nofollow">`;
+  }
+  const t = escapeHTML(SAMPLE_SEO.title);
+  const d = escapeHTML(SAMPLE_SEO.description);
+  const url = escapeHTML(absoluteUrl(SAMPLE_SEO.path));
+  const img = escapeHTML(absoluteUrl('/icons/logo.png'));
+  return `<title>${t}</title>
+<meta name="description" content="${d}">
+<link rel="canonical" href="${url}">
+<meta property="og:type" content="website">
+<meta property="og:site_name" content="Market Juice">
+<meta property="og:title" content="${t}">
+<meta property="og:description" content="${d}">
+<meta property="og:url" content="${url}">
+<meta property="og:image" content="${img}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="${t}">
+<meta name="twitter:description" content="${d}">
+<meta name="twitter:image" content="${img}">`;
 }
 
 function escapeHTML(str) {
