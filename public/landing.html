@@ -7,12 +7,154 @@
 <title>Market Juice — Your daily squeeze of market smarts</title>
 <meta name="description" content="Fresh market smarts, squeezed daily for kids ages 10-16. Real investing principles, taught through games. 100% free. 3 minutes a day.">
 
-<!-- Open Graph for shareable links -->
-<meta property="og:title" content="Market Juice — Your daily squeeze of market smarts">
-<meta property="og:description" content="Fresh market smarts, squeezed daily — games, stories, and real investing lessons in 3 minutes a day. Built for kids ages 10-16.">
+<!-- Canonical host is WWW (see src/seo.js CANONICAL_HOST — the apex only
+     forwards "/" and 404s deep paths). scripts/test-seo.js asserts every
+     absolute URL in this file matches SITE_ORIGIN. -->
+<link rel="canonical" href="https://www.themarketjuice.com/">
+
+<!-- Open Graph / Twitter for shareable links -->
 <meta property="og:type" content="website">
-<meta property="og:url" content="https://themarketjuice.com">
-<link rel="canonical" href="https://themarketjuice.com">
+<meta property="og:site_name" content="Market Juice">
+<meta property="og:title" content="Market Juice — Your daily squeeze of market smarts">
+<meta property="og:description" content="Fresh market smarts, squeezed daily — games, stories, and real investing lessons in 3 minutes a day. Built for kids ages 10-16. 100% free.">
+<meta property="og:url" content="https://www.themarketjuice.com/">
+<meta property="og:image" content="https://www.themarketjuice.com/icons/logo.png">
+<meta property="og:image:alt" content="Market Juice logo">
+<meta property="og:locale" content="en_US">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="Market Juice — Your daily squeeze of market smarts">
+<meta name="twitter:description" content="Fresh market smarts, squeezed daily — games, stories, and real investing lessons in 3 minutes a day. Built for kids ages 10-16. 100% free.">
+<meta name="twitter:image" content="https://www.themarketjuice.com/icons/logo.png">
+
+<!-- Structured data. Facts here must match the visible copy below (ages,
+     price, cadence, the 11 principles, and the FAQ section word-for-word). -->
+<script type="application/ld+json">
+{
+  "@context": "https://schema.org",
+  "@graph": [
+    {
+      "@type": "Organization",
+      "@id": "https://www.themarketjuice.com/#organization",
+      "name": "Market Juice",
+      "url": "https://www.themarketjuice.com/",
+      "logo": {
+        "@type": "ImageObject",
+        "url": "https://www.themarketjuice.com/icons/logo.png",
+        "width": 1024,
+        "height": 1024
+      },
+      "email": "hello@themarketjuice.com",
+      "description": "A free daily market-literacy digest for kids ages 10-16: the market scoreboard, kid-friendly stories, and games that teach real investing principles in about 3 minutes a day."
+    },
+    {
+      "@type": "WebSite",
+      "@id": "https://www.themarketjuice.com/#website",
+      "name": "Market Juice",
+      "url": "https://www.themarketjuice.com/",
+      "inLanguage": "en-US",
+      "publisher": { "@id": "https://www.themarketjuice.com/#organization" }
+    },
+    {
+      "@type": "Course",
+      "@id": "https://www.themarketjuice.com/#daily-digest",
+      "name": "Market Juice Daily Digest",
+      "description": "A free daily digest that teaches kids ages 10-16 how the stock market works: a market scoreboard, kid-friendly news stories, a word of the day, and three short games, with every lesson tied to one of 11 core investing principles. About 3 minutes a day; a new edition publishes every morning at 7 AM Eastern.",
+      "url": "https://www.themarketjuice.com/",
+      "inLanguage": "en-US",
+      "isAccessibleForFree": true,
+      "educationalLevel": "Beginner",
+      "timeRequired": "PT3M",
+      "learningResourceType": "Daily digest with games",
+      "provider": { "@id": "https://www.themarketjuice.com/#organization" },
+      "audience": {
+        "@type": "PeopleAudience",
+        "audienceType": "Kids ages 10-16 and their parents",
+        "suggestedMinAge": 10,
+        "suggestedMaxAge": 16
+      },
+      "offers": {
+        "@type": "Offer",
+        "price": 0,
+        "priceCurrency": "USD",
+        "category": "Free",
+        "availability": "https://schema.org/InStock",
+        "url": "https://www.themarketjuice.com/#signup"
+      },
+      "hasCourseInstance": {
+        "@type": "CourseInstance",
+        "courseMode": "Online",
+        "courseWorkload": "PT3M",
+        "courseSchedule": {
+          "@type": "Schedule",
+          "repeatFrequency": "P1D",
+          "repeatCount": 365,
+          "startTime": "07:00",
+          "scheduleTimezone": "America/New_York"
+        }
+      },
+      "teaches": [
+        "Pay Yourself First",
+        "Compound Growth",
+        "Wealth Is the Gap",
+        "Know What You Own",
+        "Diversify",
+        "Be Patient",
+        "Control Your Emotions",
+        "Think Like an Owner",
+        "Stay Consistent",
+        "Price vs Value",
+        "Own Assets"
+      ]
+    },
+    {
+      "@type": "FAQPage",
+      "@id": "https://www.themarketjuice.com/#faq",
+      "mainEntity": [
+        {
+          "@type": "Question",
+          "name": "What is Market Juice?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Market Juice is a free daily digest that teaches kids how the stock market works. Each morning there's a market scoreboard, a few kid-friendly news stories, a word of the day, and three short games. Every game and story connects back to one of 11 core investing principles, like compound growth and diversification." }
+        },
+        {
+          "@type": "Question",
+          "name": "What ages is it for?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Kids ages 10 to 16. For kids 12 and under, we email the parent for consent before the account turns on." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is it really free?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Yes. 100% free: no subscription, no upsells, no paywalls, and no ads." }
+        },
+        {
+          "@type": "Question",
+          "name": "How much time does it take each day?",
+          "acceptedAnswer": { "@type": "Answer", "text": "About 3 minutes. A new digest is ready every morning at 7 AM Eastern, seven days a week. Sunday's edition wraps up the week that just ended, and Monday's previews the week ahead." }
+        },
+        {
+          "@type": "Question",
+          "name": "Does my kid need real money or a brokerage account?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Nobody buys or sells anything. Kids earn pretend Market Coins for playing, and any picks they make are practice predictions with no money involved. There's nothing to connect, link, or pay for." }
+        },
+        {
+          "@type": "Question",
+          "name": "What data do you collect about my kid?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Very little: the parent's email, the kid's first name and age, a username and password, game progress like Market Coins and streaks, and a few technical details such as timezone. We don't sell data, don't show ads, and don't use kids' data to train AI models. Parents can delete everything at any time. Full details are in our privacy policy at https://www.themarketjuice.com/privacy." }
+        },
+        {
+          "@type": "Question",
+          "name": "Is this financial advice?",
+          "acceptedAnswer": { "@type": "Answer", "text": "No. Market Juice is education, not financial advice. We explain what happened in the market and why, and teach timeless investing principles. Nothing in it is a recommendation to buy or sell anything." }
+        },
+        {
+          "@type": "Question",
+          "name": "How is the content made and checked?",
+          "acceptedAnswer": { "@type": "Answer", "text": "Each day's digest is drafted by AI from real market data and current news, then passes automated checks before it publishes: a kid-safe language filter, a strict format check, and guardrails on the daily puzzle. Company spotlights come from a hand-picked list of 75 well-known companies kids recognize. New glossary words only go live after a person on our team approves them. Once a day's digest is published it never changes, so every kid sees the same edition." }
+        }
+      ]
+    }
+  ]
+}
+</script>
 
 <link rel="icon" type="image/svg+xml" href="/icons/icon.svg">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -132,20 +274,65 @@
   <!-- in sync when this list changes.                               -->
   <section class="principles">
     <h2>What they'll learn</h2>
-    <p class="section-sub">Every game, every reveal, every fact traces back to one of these 11 core principles.</p>
+    <p class="section-sub">Every game, every reveal, every fact traces back to one of these 11 core principles. <a href="/learn">Read all 11, explained for kids →</a></p>
     <div class="principles-grid">
-      <div class="principle"><div class="pri-num">1</div><div class="pri-icon">💰</div><div class="pri-text"><h4>Pay Yourself First</h4><p>Save before you spend. The first dollar of every paycheck has your name on it.</p></div></div>
-      <div class="principle"><div class="pri-num">2</div><div class="pri-icon">🚀</div><div class="pri-text"><h4>Compound Growth</h4><p>Make your money work for you. Compound growth is the closest thing to magic in finance.</p></div></div>
-      <div class="principle"><div class="pri-num">3</div><div class="pri-icon">🧾</div><div class="pri-text"><h4>Wealth Is the Gap</h4><p>Spend less than you earn. The bigger the gap, the faster wealth builds.</p></div></div>
-      <div class="principle"><div class="pri-num">4</div><div class="pri-icon">🔍</div><div class="pri-text"><h4>Know What You Own</h4><p>Invest in what you understand. Know how a company actually makes money.</p></div></div>
-      <div class="principle"><div class="pri-num">5</div><div class="pri-icon">🧺</div><div class="pri-text"><h4>Diversify</h4><p>Don't put all your eggs in one basket. Spread risk across many things.</p></div></div>
-      <div class="principle"><div class="pri-num">6</div><div class="pri-icon">⏳</div><div class="pri-text"><h4>Be Patient</h4><p>Think in years, not days. Markets reward people who can sit still.</p></div></div>
-      <div class="principle"><div class="pri-num">7</div><div class="pri-icon">🧘</div><div class="pri-text"><h4>Control Your Emotions</h4><p>Don't follow the crowd. The best decisions feel boring at the time.</p></div></div>
-      <div class="principle"><div class="pri-num">8</div><div class="pri-icon">🏛️</div><div class="pri-text"><h4>Think Like an Owner</h4><p>Stocks are real businesses. Buying a share = owning a slice of a company.</p></div></div>
-      <div class="principle"><div class="pri-num">9</div><div class="pri-icon">📆</div><div class="pri-text"><h4>Stay Consistent</h4><p>Regular investing beats perfect timing. Same amount, every month, for years.</p></div></div>
-      <div class="principle"><div class="pri-num">10</div><div class="pri-icon">🏷️</div><div class="pri-text"><h4>Price vs Value</h4><p>Expensive isn't always valuable. The price is what you pay; value is what you get.</p></div></div>
-      <div class="principle"><div class="pri-num">11</div><div class="pri-icon">🏠</div><div class="pri-text"><h4>Own Assets</h4><p>Make money while you sleep. Own things that pay you — not just stuff that sits.</p></div></div>
+      <div class="principle"><div class="pri-num">1</div><div class="pri-icon">💰</div><div class="pri-text"><h4><a class="pri-link" href="/learn/pay-yourself-first">Pay Yourself First</a></h4><p>Save before you spend. The first dollar of every paycheck has your name on it.</p></div></div>
+      <div class="principle"><div class="pri-num">2</div><div class="pri-icon">🚀</div><div class="pri-text"><h4><a class="pri-link" href="/learn/compound-growth">Compound Growth</a></h4><p>Make your money work for you. Compound growth is the closest thing to magic in finance.</p></div></div>
+      <div class="principle"><div class="pri-num">3</div><div class="pri-icon">🧾</div><div class="pri-text"><h4><a class="pri-link" href="/learn/wealth-is-the-gap">Wealth Is the Gap</a></h4><p>Spend less than you earn. The bigger the gap, the faster wealth builds.</p></div></div>
+      <div class="principle"><div class="pri-num">4</div><div class="pri-icon">🔍</div><div class="pri-text"><h4><a class="pri-link" href="/learn/know-what-you-own">Know What You Own</a></h4><p>Invest in what you understand. Know how a company actually makes money.</p></div></div>
+      <div class="principle"><div class="pri-num">5</div><div class="pri-icon">🧺</div><div class="pri-text"><h4><a class="pri-link" href="/learn/diversify">Diversify</a></h4><p>Don't put all your eggs in one basket. Spread risk across many things.</p></div></div>
+      <div class="principle"><div class="pri-num">6</div><div class="pri-icon">⏳</div><div class="pri-text"><h4><a class="pri-link" href="/learn/be-patient">Be Patient</a></h4><p>Think in years, not days. Markets reward people who can sit still.</p></div></div>
+      <div class="principle"><div class="pri-num">7</div><div class="pri-icon">🧘</div><div class="pri-text"><h4><a class="pri-link" href="/learn/control-your-emotions">Control Your Emotions</a></h4><p>Don't follow the crowd. The best decisions feel boring at the time.</p></div></div>
+      <div class="principle"><div class="pri-num">8</div><div class="pri-icon">🏛️</div><div class="pri-text"><h4><a class="pri-link" href="/learn/think-like-an-owner">Think Like an Owner</a></h4><p>Stocks are real businesses. Buying a share = owning a slice of a company.</p></div></div>
+      <div class="principle"><div class="pri-num">9</div><div class="pri-icon">📆</div><div class="pri-text"><h4><a class="pri-link" href="/learn/stay-consistent">Stay Consistent</a></h4><p>Regular investing beats perfect timing. Same amount, every month, for years.</p></div></div>
+      <div class="principle"><div class="pri-num">10</div><div class="pri-icon">🏷️</div><div class="pri-text"><h4><a class="pri-link" href="/learn/price-vs-value">Price vs Value</a></h4><p>Expensive isn't always valuable. The price is what you pay; value is what you get.</p></div></div>
+      <div class="principle"><div class="pri-num">11</div><div class="pri-icon">🏠</div><div class="pri-text"><h4><a class="pri-link" href="/learn/own-assets">Own Assets</a></h4><p>Make money while you sleep. Own things that pay you — not just stuff that sits.</p></div></div>
     </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <!-- FAQ — parent-facing. Mirrors the FAQPage JSON-LD in <head>;   -->
+  <!-- keep the two word-for-word in sync (scripts/test-seo.js       -->
+  <!-- asserts every JSON-LD question appears here).                 -->
+  <!-- ============================================================ -->
+  <section class="faq" id="faq" aria-labelledby="faq-heading">
+    <h2 id="faq-heading">Questions parents ask</h2>
+    <p class="section-sub">The quick answers. Anything else? Email <a href="mailto:hello@themarketjuice.com">hello@themarketjuice.com</a>.</p>
+    <div class="faq-list">
+      <div class="faq-item">
+        <h3>What is Market Juice?</h3>
+        <p>Market Juice is a free daily digest that teaches kids how the stock market works. Each morning there's a market scoreboard, a few kid-friendly news stories, a word of the day, and three short games. Every game and story connects back to one of 11 core investing principles, like compound growth and diversification.</p>
+      </div>
+      <div class="faq-item">
+        <h3>What ages is it for?</h3>
+        <p>Kids ages 10 to 16. For kids 12 and under, we email the parent for consent before the account turns on.</p>
+      </div>
+      <div class="faq-item">
+        <h3>Is it really free?</h3>
+        <p>Yes. 100% free: no subscription, no upsells, no paywalls, and no ads.</p>
+      </div>
+      <div class="faq-item">
+        <h3>How much time does it take each day?</h3>
+        <p>About 3 minutes. A new digest is ready every morning at 7&nbsp;AM Eastern, seven days a week. Sunday's edition wraps up the week that just ended, and Monday's previews the week ahead.</p>
+      </div>
+      <div class="faq-item">
+        <h3>Does my kid need real money or a brokerage account?</h3>
+        <p>No. Nobody buys or sells anything. Kids earn pretend Market Coins for playing, and any picks they make are practice predictions with no money involved. There's nothing to connect, link, or pay for.</p>
+      </div>
+      <div class="faq-item">
+        <h3>What data do you collect about my kid?</h3>
+        <p>Very little: the parent's email, the kid's first name and age, a username and password, game progress like Market Coins and streaks, and a few technical details such as timezone. We don't sell data, don't show ads, and don't use kids' data to train AI models. Parents can delete everything at any time. Full details are in our <a href="/privacy">privacy policy</a>.</p>
+      </div>
+      <div class="faq-item">
+        <h3>Is this financial advice?</h3>
+        <p>No. Market Juice is education, not financial advice. We explain what happened in the market and why, and teach timeless investing principles. Nothing in it is a recommendation to buy or sell anything.</p>
+      </div>
+      <div class="faq-item">
+        <h3>How is the content made and checked?</h3>
+        <p>Each day's digest is drafted by AI from real market data and current news, then passes automated checks before it publishes: a kid-safe language filter, a strict format check, and guardrails on the daily puzzle. Company spotlights come from a hand-picked list of 75 well-known companies kids recognize. New glossary words only go live after a person on our team approves them. Once a day's digest is published it never changes, so every kid sees the same edition.</p>
+      </div>
+    </div>
+    <p class="faq-cta"><a href="/sample" class="btn btn-ghost">See a sample digest</a></p>
   </section>
 
   <!-- ============================================================ -->
@@ -269,7 +456,9 @@
   <footer class="footer">
     <div>📈 Market Juice</div>
     <div class="foot-links">
-      <a href="/digest">Today's sample digest</a>
+      <a href="/sample">See a sample digest</a>
+      <a href="/learn">Investing basics for kids</a>
+      <a href="/parents">For parents &amp; teachers</a>
       <a href="/privacy">Privacy</a>
       <a href="/parent/delete-data">Delete data</a>
     </div>

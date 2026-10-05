@@ -515,3 +515,28 @@ section h2 {
 @media (prefers-reduced-motion: reduce) {
   .phone-frame, .star { animation: none !important; }
 }
+
+/* ---- FAQ (parent-facing; mirrors the FAQPage JSON-LD in landing.html) ---- */
+.faq { border-top: 1px solid var(--border); }
+.faq .section-sub a { color: var(--blue); }
+.faq-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 12px;
+}
+@media (min-width: 720px) { .faq-list { grid-template-columns: 1fr 1fr; } }
+.faq-item {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  padding: 20px 22px;
+}
+.faq-item h3 { font-size: 17px; font-weight: 700; color: var(--bright); margin-bottom: 6px; }
+.faq-item p { color: var(--text); font-size: 15px; line-height: 1.55; }
+.faq-item a { color: var(--blue); }
+.faq-item a:hover { text-decoration: underline; }
+.faq-cta { margin-top: 24px; text-align: center; }
+
+/* SEO internal links — principle titles link to /learn/<slug> */
+.pri-link { color: inherit; text-decoration: none; }
+.pri-link:hover, .pri-link:focus-visible { text-decoration: underline; }

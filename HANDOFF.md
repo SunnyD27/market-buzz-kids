@@ -2296,3 +2296,66 @@ render and the live email teaser (same `buildHTML` path, no behavior change
 beyond the normalization). The DB-backed engine tests (mystery/push/picks/
 weekly/watchlist) were not run — unrelated paths, need live Neon + a same-day
 digest row.
+
+## Session: SEO + AI discoverability (off-roadmap, requested by Sunny 2026-10-05)
+
+**Why:** Live audit of themarketjuice.com found the site effectively invisible:
+`/robots.txt`, `/sitemap.xml`, `/llms.txt` all 404; `site:` search returns
+nothing; no JSON-LD; `/sample` had a bare "Market Juice" title and no meta;
+the landing footer's "Today's sample digest" pointed at the auth-gated
+`/digest`; and the landing canonical pointed at the **apex**, which is a
+registrar forward that 404s on every deep path (only `/` works there).
+
+**What changed:**
+- `src/seo.js` (new, pure): `CANONICAL_HOST = 'www.themarketjuice.com'`,
+  apex→www 301 middleware (GET/HEAD only, exact-host match, path+query kept),
+  `X-Robots-Tag: noindex` middleware for auth/admin paths, `buildRobotsTxt()`
+  (explicit allow groups for GPTBot, OAI-SearchBot, ChatGPT-User, ClaudeBot,
+  Claude-SearchBot, Claude-User, PerplexityBot, Google-Extended,
+  Applebot-Extended, Bingbot, Googlebot), `buildSitemapXml(extraUrls)`.
+- `src/server.js`: wires the above before `express.static`; `/robots.txt`,
+  `/sitemap.xml` (includes `LEARN_URLS`); `registerLearnRoutes(app)`.
+- `src/learn.js` + `src/learn-content.js` + `public/learn.css` (new):
+  server-rendered `/learn` hub, 11 principle pages `/learn/<slug>`, `/parents`.
+  BreadcrumbList + LearningResource/Article (+ FAQPage on principle pages).
+  Rendered once, cached in memory. Origin comes from `seo.js` SITE_ORIGIN.
+- `src/template.js`: `buildHeadMeta()` — `/sample` gets real title/description/
+  canonical/OG; every other digest render gets `noindex, nofollow`.
+  No CSS/content changes.
+- `public/landing.html` + `landing.css`: canonical/OG/Twitter, JSON-LD @graph
+  (Organization, WebSite, Course, FAQPage), new visible "Questions parents ask"
+  FAQ (8 Q&As, word-for-word with the JSON-LD), principle titles link to
+  `/learn/<slug>`, footer links to `/learn` + `/parents`, footer sample link →
+  `/sample`.
+- `public/privacy.html`: description/canonical/OG. Login/forgot/reset/
+  delete-data/games-preview: `noindex` meta.
+- `public/llms.txt` (new).
+- `scripts/test-seo.js`, `scripts/test-learn.js` (new smoke tests).
+
+**Decisions / deviations:** Canonical host is **www**, not apex, because the
+apex is a registrar forward that drops paths (verified live: apex `/privacy`
+→ 404). To move to apex later: point apex at Railway, flip `CANONICAL_HOST`,
+update hardcoded origins in landing/privacy/llms.txt (test-seo fails if they
+disagree). Not a ROADMAP phase — nothing checked off there.
+
+**Verified live (local boot, no DB):** all 13 learn URLs, `/`, `/sample`,
+`/privacy`, `/robots.txt`, `/sitemap.xml` (16 URLs), `/llms.txt` → 200;
+`/login`, `/digest` carry `X-Robots-Tag`; `Host: themarketjuice.com` → 301 to
+www with path+query; cron/webhook POSTs not redirected; static-leak gate
+intact. `test-seo` (144), `test-learn` (426), `test-template-newlines`,
+`test-theme` all green. **Not verified:** production deploy behavior; Google
+indexing (needs Search Console).
+
+**Open items (Sunny):**
+- Verify the site in Google Search Console + Bing Webmaster Tools; submit
+  `https://www.themarketjuice.com/sitemap.xml`.
+- Registrar: make apex forwarding a 301 with path forwarding (or point apex at
+  Railway).
+- Make a 1200×630 social card (<300 KB) → switch `twitter:card` to
+  `summary_large_image`. Current og:image is the 1.4 MB square logo.
+- Copy inconsistencies left alone: manifest says ages 10-14 (needs sw.js
+  VERSION bump), `/sample` banner says "every weekday at 7 AM EST" (cadence is
+  7-day), privacy says delivery is 7 AM local vs landing 7 AM EST, privacy
+  promises a "weekly summary email" that doesn't appear to exist.
+- CONTEXT.md "`/digest` is publicly accessible" gotcha is stale (it's behind
+  requireAuth since Phase 7).

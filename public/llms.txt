@@ -1,0 +1,54 @@
+# Market Juice
+
+> Market Juice is a free daily market-literacy digest for kids ages 10-16. Each morning a short digest (about 3 minutes) explains what the stock market did and why, in kid-friendly language, with three games that each teach one of 11 core investing principles. Parents sign their kids up; it is education, not financial advice.
+
+## Key facts
+
+- Price: 100% free. No subscription, no upsells, no paywalls, no ads.
+- Audience: kids ages 10-16. Parents sign up; for kids 12 and under, a parent must give consent by email before the account turns on (COPPA).
+- Time: about 3 minutes a day.
+- Schedule: a new digest is published every morning at 7 AM Eastern, seven days a week. Most editions cover the previous trading day; Sunday's edition wraps up the past week and Monday's previews the week ahead.
+- What's in a digest: a market scoreboard (S&P 500, Nasdaq, Dow), the biggest mover (or a company to watch), two or three kid-friendly news stories, a "did you know" fact, a word of the day, and a daily challenge of three games, plus a guess-the-company puzzle (Mystery Mover).
+- Progress: kids earn pretend Market Coins, keep streaks, and climb ranks from Rookie to Wall Street Legend. No real money or brokerage account is involved.
+- How content is made: each digest is drafted by AI from real market data and current news, then passes automated checks (kid-safe language filter, strict format validation, puzzle guardrails) before publishing. Company spotlights come from a hand-picked list of 75 companies kids recognize. New glossary terms go live only after human approval. A published digest never changes.
+- Privacy: collects very little: the parent's email, the kid's first name and age, login credentials, game progress, and a few technical details such as timezone and the signup IP address (kept for COPPA consent records). No data selling, no ads, no training AI on kids' data; parents can delete everything at any time.
+
+## The 11 investing principles
+
+1. Pay Yourself First: save before you spend.
+2. Compound Growth: make your money work for you.
+3. Wealth Is the Gap: spend less than you earn.
+4. Know What You Own: invest in what you understand.
+5. Diversify: don't put all your eggs in one basket.
+6. Be Patient: think in years, not days.
+7. Control Your Emotions: don't follow the crowd.
+8. Think Like an Owner: a share is a slice of a real business.
+9. Stay Consistent: regular investing beats perfect timing.
+10. Price vs Value: the price is what you pay; value is what you get.
+11. Own Assets: own things that pay you.
+
+## Pages
+
+- [Home and signup](https://www.themarketjuice.com/): what Market Juice is, how it works, the 11 principles, parent FAQ, and the signup form.
+- [Sample digest](https://www.themarketjuice.com/sample): a complete, public example of a daily digest, including a playable Mystery Mover puzzle.
+- [Privacy policy](https://www.themarketjuice.com/privacy): plain-English, COPPA-focused policy covering what is collected, retention, and deletion.
+
+## Learn
+
+- [Learn](https://www.themarketjuice.com/learn): kid-friendly explainers on market and investing basics.
+- [Pay Yourself First](https://www.themarketjuice.com/learn/pay-yourself-first): the "Pay Yourself First" principle explained for kids, with a worked example and check-yourself questions.
+- [Compound Growth](https://www.themarketjuice.com/learn/compound-growth): the "Compound Growth" principle explained for kids, with a worked example and check-yourself questions.
+- [Wealth Is the Gap](https://www.themarketjuice.com/learn/wealth-is-the-gap): the "Wealth Is the Gap" principle explained for kids, with a worked example and check-yourself questions.
+- [Know What You Own](https://www.themarketjuice.com/learn/know-what-you-own): the "Know What You Own" principle explained for kids, with a worked example and check-yourself questions.
+- [Diversify](https://www.themarketjuice.com/learn/diversify): the "Diversify" principle explained for kids, with a worked example and check-yourself questions.
+- [Be Patient](https://www.themarketjuice.com/learn/be-patient): the "Be Patient" principle explained for kids, with a worked example and check-yourself questions.
+- [Control Your Emotions](https://www.themarketjuice.com/learn/control-your-emotions): the "Control Your Emotions" principle explained for kids, with a worked example and check-yourself questions.
+- [Think Like an Owner](https://www.themarketjuice.com/learn/think-like-an-owner): the "Think Like an Owner" principle explained for kids, with a worked example and check-yourself questions.
+- [Stay Consistent](https://www.themarketjuice.com/learn/stay-consistent): the "Stay Consistent" principle explained for kids, with a worked example and check-yourself questions.
+- [Price vs Value](https://www.themarketjuice.com/learn/price-vs-value): the "Price vs Value" principle explained for kids, with a worked example and check-yourself questions.
+- [Own Assets](https://www.themarketjuice.com/learn/own-assets): the "Own Assets" principle explained for kids, with a worked example and check-yourself questions.
+- [For parents](https://www.themarketjuice.com/parents): how Market Juice works and how to talk with kids about money and markets.
+
+## Optional
+
+- Contact: hello@themarketjuice.com
